@@ -1,0 +1,260 @@
+//
+// Created by jazema on 4/21/26.
+//
+
+#include "Core.hpp"
+
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <thread>
+
+#include "../common/IUserInterface.hpp"
+#include "cluster/ClusterModule.hpp"
+#include "cluster/render/ClusterRenderer.hpp"
+#include "cluster/server/ClusterServer.hpp"
+#include "scene/builder/SceneBuilder.hpp"
+#include "utils/RenderExporter.hpp"
+#include "scene/SceneRegister.hpp"
+#include "scene/factory/PrimitiveFactory.hpp"
+
+namespace rc
+{
+    Core::Core() : _userInterface(nullptr), _scene(nullptr), _defaultRenderer(nullptr), _clusteredRenderer(nullptr), _viewportRenderer(nullptr), _running(false), _state(CoreState::INITIALIZING)
+    {
+        this->_clusterModule = new ClusterModule();
+        this->_ownedClusterRenderer = std::make_unique<ClusterRenderer>();
+        this->_clusteredRenderer = this->_ownedClusterRenderer.get();
+    }
+
+    Core::~Core()
+    {
+        unloadRenderers();
+        unloadScene();
+        unloadUserInterface();
+        delete (this->_clusterModule);
+    }
+
+    void Core::loadUserInterface()
+    {
+        std::vector<PluginLoader::PluginHandle> interfaces;
+
+        if (this->_userInterface)
+            unloadUserInterface();
+        interfaces = this->_pluginLoader.getPlugins(PluginType::USER_INTERFACE);
+        if (interfaces.empty())
+        {
+            std::cout << "Could not find any user interface.. Skipping" << std::endl;
+            return;
+        }
+        this->_userInterface = dynamic_cast<IUserInterface *>(interfaces[0].instance);
+        if (this->_userInterface == nullptr)
+        {
+            std::cout << "Could not find any user interface.. Skipping" << std::endl;
+            return;
+        }
+        this->_userInterface->create(*this);
+    }
+
+    void Core::loadScene(const std::string &scene_path)
+    {
+        if (this->_state != CoreState::READY && this->_state != CoreState::INITIALIZING)
+            return;
+        this->_state = CoreState::LOADING_SCENE;
+        this->_configObserver = FileObserver(scene_path);
+        if (this->_scene)
+            unloadScene();
+        this->_scene = this->_sceneParser.parseScene(scene_path);
+        this->_state = CoreState::READY;
+    }
+
+    void Core::loadRenderers()
+    {
+        for (auto &plugin : this->_pluginLoader.getPlugins(PluginType::RENDERER))
+        {
+            auto candidate = dynamic_cast<ISceneRenderer *>(plugin.instance);
+            if (!candidate)
+                continue;
+            if (candidate->getRendererName().find("Default") != std::string::npos)
+                this->_defaultRenderer = candidate;
+            else if (candidate->getRendererName().find("Viewport") != std::string::npos)
+                this->_viewportRenderer = candidate;
+        }
+        if (this->_clusteredRenderer == nullptr && this->_ownedClusterRenderer)
+            this->_clusteredRenderer = this->_ownedClusterRenderer.get();
+        if (this->_defaultRenderer == nullptr)
+            throw std::runtime_error("Default renderer could not be loaded");
+    }
+
+    void Core::unloadUserInterface()
+    {
+        if (!this->_userInterface)
+            return;
+        this->_userInterface->destroy();
+    }
+
+    void Core::unloadScene()
+    {
+        if (!this->_scene)
+            return;
+        delete (this->_scene);
+        this->_scene = nullptr;
+    }
+
+    void Core::unloadRenderers()
+    {
+        this->_defaultRenderer = nullptr;
+        // this->_fastRenderer = nullptr;
+        this->_clusteredRenderer = this->_ownedClusterRenderer.get();
+        this->_viewportRenderer = nullptr;
+    }
+
+    void Core::loadPlugins()
+    {
+        for (const auto &entry : std::filesystem::directory_iterator("./plugins"))
+        {
+            if (entry.path().extension() == ".so")
+                this->_pluginLoader.load(entry.path());
+        }
+        auto renderers = this->_pluginLoader.getPlugins(PluginType::RENDERER);
+        std::cout << "Loaded " << renderers.size() << " renderer plugin(s)" << std::endl;
+        for (const auto &p : renderers)
+        {
+            auto r = dynamic_cast<ISceneRenderer *>(p.instance);
+            if (r)
+                std::cout << " - " << r->getRendererName() << std::endl;
+            else
+                std::cout << " - (unknown renderer instance)" << std::endl;
+        }
+    }
+
+    IClusterModule *Core::getClusterModule() const
+    {
+        return (this->_clusterModule);
+    }
+
+    void Core::requestRender()
+    {
+        this->_renderRequested.exchange(true);
+    }
+    
+    std::string Core::getCurrentScenePath()
+    {
+        return (this->_configObserver.getFilePath());
+    }
+    
+
+    void Core::renderFrame()
+    {
+        if (this->_state != CoreState::READY)
+            return;
+        this->_state = CoreState::RENDERING;
+        this->_scene->buildBvh();
+        if (this->getClusterModule()->getClusterMode() == ClusterMode::SERVER)
+        {
+            auto *clusterRenderer = dynamic_cast<ClusterRenderer *>(this->_clusteredRenderer);
+            auto *clusterServer = dynamic_cast<ClusterServer *>(this->getClusterModule()->getClusterServer());
+            if (clusterRenderer)
+                clusterRenderer->setClusterServer(clusterServer);
+        }
+        this->getRenderer()->renderScene(*this->_scene);
+        std::cout << "Finished rendering scene! Saving to file.." << std::endl;
+        RenderExporter::saveToFile(this->getRenderer()->getRender(), "render.ppm");
+        std::cout << "Render has been saved to file '" << "render.ppm" << "'" << std::endl;
+        this->_state = CoreState::READY;
+    }
+
+    void Core::startRendering()
+    {
+        if (this->_state != CoreState::INITIALIZING && this->_state != CoreState::READY)
+            return;
+        this->_renderRequested = false;
+        this->_state = CoreState::READY;
+        if (this->_userInterface == nullptr)
+        {
+            this->renderFrame();
+            return;
+        }
+        this->_scene->buildBvh();
+        this->_running = true;
+        while (this->_running)
+        {
+            bool reloadScene = this->_configObserver.pollChanges();
+            if (reloadScene)
+                this->loadScene(this->_configObserver.getFilePath());
+            if (this->getClusterModule()->getClusterMode() == ClusterMode::CLIENT)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                continue;
+            }
+            if (this->_renderRequested.exchange(false))
+            {
+                std::cout << "Rendering full frame..." << std::endl;
+                this->renderFrame();
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        this->_state = CoreState::EXITING;
+    }
+
+    void Core::stop()
+    {
+        if (this->getRenderer() && this->getRenderer()->isRendering())
+            this->getRenderer()->stopRendering();
+        while (this->getRenderer()->isRendering())
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        this->_running = false;
+        this->_state = CoreState::EXITING;
+    }
+
+    void Core::clearScene()
+    {
+        if (!this->_scene)
+            return;
+        this->_scene->clear();
+    }
+
+    void Core::saveScene(const std::string &scene_path)
+    {
+        SceneRegister registerer;
+
+        registerer.saveScene(scene_path, this->_scene);
+    }
+
+    IScene &Core::loadNewScene(const std::string &scene_path)
+    {
+        IScene *scene = this->_sceneParser.parseScene(scene_path);
+
+        for (auto &primitive : scene->getPrimitives())
+            this->_scene->addPrimitive(primitive);
+
+        return *scene;
+    }
+
+    IScene *Core::getScene() const
+    {
+        return (this->_scene);
+    }
+
+    ISceneRenderer *Core::getRenderer() const
+    {
+        if (this->_clusterModule && this->_clusterModule->getClusterMode() == ClusterMode::SERVER)
+            return (this->_clusteredRenderer ? this->_clusteredRenderer : this->_defaultRenderer);
+        return (this->_defaultRenderer);
+    }
+
+    ICoreAccess::CoreState Core::getState() const
+    {
+        return (this->_state);
+    }
+
+    ISceneRenderer *Core::getViewportRenderer() const
+    {
+        return (this->_viewportRenderer);
+    }
+
+    IPluginLoader *Core::getPluginLoader() const
+    {
+        return const_cast<PluginLoader *>(&this->_pluginLoader);
+    }
+}

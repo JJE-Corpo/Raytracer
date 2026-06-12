@@ -1,0 +1,47 @@
+#ifndef POINTLIGHT_HPP
+#define POINTLIGHT_HPP
+
+#include "../../common/scene/ILight.hpp"
+#include "../../common/Vector.hpp"
+#include "../../common/Color.hpp"
+
+namespace rc
+{
+    class PointLight : public ILight
+    {
+        private:
+            Vector3f _position = {0.0f, 0.0f, 0.0f};
+            Vector3f _rotation = {0.0f, 0.0f, 0.0f};
+            Vector3f _scale = {1.0f, 1.0f, 1.0f};
+            float _intensity = 1000000.0f;
+            ColorF _colorF = ColorF::fromColor(Color(255, 255, 255));
+            std::string _name = "Point light";
+
+            bool _hidden = false;
+        public:
+            PointLight() = default;
+            PointLight(std::string name, const Vector3f &position, float intensity, Color color);
+            ~PointLight() override = default;
+
+            std::string getName() const override;
+            std::string getTypeName() const override;
+            Vector3f getPosition() const override;
+            Vector3f getRotation() const override;
+            Vector3f getScale() const override;
+            void setPosition(const Vector3f &position) override;
+            void setRotation(const Vector3f &rotation) override;
+            void setScale(const Vector3f &scale) override;
+
+            float getIntensity() const override;
+            void setIntensity(float intensity) override;
+            ColorF getColorF() const override;
+            void setColorF(const ColorF &color) override;
+
+            bool isHidden() const override;
+            void setHidden(bool hidden) override;
+
+            LightKind getKind() const override;
+    };
+}
+
+#endif
