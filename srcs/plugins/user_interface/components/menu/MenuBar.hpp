@@ -79,12 +79,12 @@ namespace rc
                     activeMenu->update(mouse);
             }
 
-            void draw(sf::RenderWindow &window) override
+            void draw(sf::RenderTarget &target, sf::RenderStates states) const override
             {
-                window.draw(bar);
+                target.draw(bar, states);
 
                 for (auto &menu : menus)
-                    menu.draw(window);
+                    target.draw(menu, states);
             }
 
             void handleEvent(const sf::Event &event, const sf::Vector2i mouse) override

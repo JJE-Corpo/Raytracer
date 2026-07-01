@@ -151,7 +151,7 @@ namespace rc
                 window.draw(this->_renderSprite);
                 window.draw(this->_title);
                 window.draw(this->_status);
-                this->_leaveButton.draw(window);
+                window.draw(this->_leaveButton);
                 this->_toastManager.update();
                 this->_toastManager.draw(window);
             }

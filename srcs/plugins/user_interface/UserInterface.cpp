@@ -660,23 +660,23 @@ namespace rc
         this->_window.draw(sceneText);
         layout.next(20);
 
-        this->_hierarchyPanel.draw(this->_window);
+        this->_window.draw(this->_hierarchyPanel);
         layout.y = this->_hierarchyPanel.getBottomY();
 
         this->_sepSelection.layout(layout.x, layout.y, SIDEBAR_WIDTH - 40);
-        this->_sepSelection.draw(this->_window);
+        this->_window.draw(this->_sepSelection);
         layout.next(18);
 
         if (this->_hierarchyPanel.isCameraSelected())
         {
             this->_cameraPanel.layout(layout.x, layout.y, SIDEBAR_WIDTH - 40.0f);
-            this->_cameraPanel.draw(this->_window);
+            this->_window.draw(this->_cameraPanel);
             layout.next(this->_cameraPanel.height);
         }
         if (!this->_hierarchyPanel.getSelection().empty())
         {
             this->_objectPanel.layout(layout.x, layout.y, SIDEBAR_WIDTH - 40.0);
-            this->_objectPanel.draw(this->_window);
+            this->_window.draw(this->_objectPanel);
             layout.next(this->_objectPanel.height);
         }
         else
@@ -693,11 +693,11 @@ namespace rc
         if (this->_hierarchyPanel.tryCast<const IPrimitive>())
         {
             this->_sepMaterial.layout(layout.x, layout.y, SIDEBAR_WIDTH - 40);
-            this->_sepMaterial.draw(this->_window);
+            this->_window.draw(this->_sepMaterial);
             layout.next(12);
 
             this->_materialPanel.layout(layout.x, layout.y, SIDEBAR_WIDTH - 40.0);
-            this->_materialPanel.draw(this->_window);
+            this->_window.draw(this->_materialPanel);
             layout.next(this->_materialPanel.height);
         }
     }
@@ -707,7 +707,7 @@ namespace rc
         sf::Vector2u windowSize = this->_window.getSize();
         this->_rendererPanel.layout(SIDEBAR_WIDTH, MENU_HEIGHT, static_cast<float>(windowSize.x) - SIDEBAR_WIDTH, static_cast<float>(windowSize.y) - MENU_HEIGHT);
         this->_rendererPanel.updateRender(renderer->getRender());
-        this->_rendererPanel.draw(this->_window);
+        this->_window.draw(this->_rendererPanel);
     }
 
     void UserInterface::syncSelectionToRenderer()
@@ -953,7 +953,7 @@ namespace rc
                 if (renderer)
                     this->drawRenderer(renderer);
                 this->_menuBar.layout(this->_window.getSize().x);
-                this->_menuBar.draw(this->_window);
+                this->_window.draw(this->_menuBar);
                 this->_toastManager.draw(this->_window);
                 this->_window.display();
             }

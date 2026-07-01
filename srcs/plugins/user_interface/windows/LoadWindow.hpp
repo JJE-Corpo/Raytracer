@@ -341,7 +341,7 @@ namespace rc
 
             // Visual separator
             separator1.layout(layout.x, layout.y, 500.f);
-            separator1.draw(window);
+            window.draw(separator1);
             layout.next(8);
 
             // === COLUMNS HEADER ===
@@ -364,9 +364,9 @@ namespace rc
 
             // === CAMERA SECTION ===
             cameraCheckbox.layout(layout.x, layout.y);
-            cameraCheckbox.draw(window);
+            window.draw(cameraCheckbox);
             loadCameraCheckbox.layout(layout.x + SPACE_WIDTH, layout.y);
-            loadCameraCheckbox.draw(window);
+            window.draw(loadCameraCheckbox);
             layout.next(24);
 
             layout.x += 20.f;
@@ -374,9 +374,9 @@ namespace rc
             if (scene->getCamera().getPosition() != loadedScene->getCamera().getPosition())
             {
                 cameraPositionCheckbox.layout(layout.x, layout.y);
-                cameraPositionCheckbox.draw(window);
+                window.draw(cameraPositionCheckbox);
                 loadCameraPositionCheckbox.layout(layout.x + SPACE_WIDTH, layout.y);
-                loadCameraPositionCheckbox.draw(window);
+                window.draw(loadCameraPositionCheckbox);
                 layout.next(20);
 
                 layout.x += 20.f;
@@ -399,9 +399,9 @@ namespace rc
             if (scene->getCamera().getResolution() != loadedScene->getCamera().getResolution())
             {
                 cameraResolutionCheckbox.layout(layout.x, layout.y);
-                cameraResolutionCheckbox.draw(window);
+                window.draw(cameraResolutionCheckbox);
                 loadCameraResolutionCheckbox.layout(layout.x + SPACE_WIDTH, layout.y);
-                loadCameraResolutionCheckbox.draw(window);
+                window.draw(loadCameraResolutionCheckbox);
                 layout.next(20);
 
                 layout.x += 20.f;
@@ -420,9 +420,9 @@ namespace rc
             if (scene->getCamera().getRotation() != loadedScene->getCamera().getRotation())
             {
                 cameraRotationCheckbox.layout(layout.x, layout.y);
-                cameraRotationCheckbox.draw(window);
+                window.draw(cameraRotationCheckbox);
                 loadCameraRotationCheckbox.layout(layout.x + SPACE_WIDTH, layout.y);
-                loadCameraRotationCheckbox.draw(window);
+                window.draw(loadCameraRotationCheckbox);
                 layout.next(20);
 
                 layout.x += 20.f;
@@ -445,9 +445,9 @@ namespace rc
             if (scene->getCamera().getFov() != loadedScene->getCamera().getFov())
             {
                 cameraFovCheckbox.layout(layout.x, layout.y);
-                cameraFovCheckbox.draw(window);
+                window.draw(cameraFovCheckbox);
                 loadCameraFovCheckbox.layout(layout.x + SPACE_WIDTH, layout.y);
-                loadCameraFovCheckbox.draw(window);
+                window.draw(loadCameraFovCheckbox);
                 layout.next(20);
 
                 layout.x += 20.f;
@@ -462,9 +462,9 @@ namespace rc
             if (scene->getCamera().getSamplesPerPixel() != loadedScene->getCamera().getSamplesPerPixel())
             {
                 cameraSppCheckbox.layout(layout.x, layout.y);
-                cameraSppCheckbox.draw(window);
+                window.draw(cameraSppCheckbox);
                 loadCameraSppCheckbox.layout(layout.x + SPACE_WIDTH, layout.y);
-                loadCameraSppCheckbox.draw(window);
+                window.draw(loadCameraSppCheckbox);
                 layout.next(20);
 
                 layout.x += 20.f;
@@ -481,14 +481,14 @@ namespace rc
 
             // Visual separator
             separator2.layout(layout.x, layout.y, 500.f);
-            separator2.draw(window);
+            window.draw(separator2);
             layout.next(12);
 
             // === LIGHTS SECTION ===
             lightsCheckbox.layout(layout.x, layout.y);
-            lightsCheckbox.draw(window);
+            window.draw(lightsCheckbox);
             loadLightsCheckbox.layout(layout.x + SPACE_WIDTH, layout.y);
-            loadLightsCheckbox.draw(window);
+            window.draw(loadLightsCheckbox);
             layout.next(24);
 
             if (scene->getAmbientCoefficient() != loadedScene->getAmbientCoefficient())
@@ -496,9 +496,9 @@ namespace rc
                 layout.x += 20.f;
 
                 lightAmbientCheckbox.layout(layout.x, layout.y);
-                lightAmbientCheckbox.draw(window);
+                window.draw(lightAmbientCheckbox);
                 loadLightAmbientCheckbox.layout(layout.x + SPACE_WIDTH, layout.y);
-                loadLightAmbientCheckbox.draw(window);
+                window.draw(loadLightAmbientCheckbox);
                 layout.next(20);
 
                 layout.x += 20.f;
@@ -515,9 +515,9 @@ namespace rc
                 layout.x += 20.f;
 
                 lightDiffuseCheckbox.layout(layout.x, layout.y);
-                lightDiffuseCheckbox.draw(window);
+                window.draw(lightDiffuseCheckbox);
                 loadLightDiffuseCheckbox.layout(layout.x + SPACE_WIDTH, layout.y);
-                loadLightDiffuseCheckbox.draw(window);
+                window.draw(loadLightDiffuseCheckbox);
                 layout.next(20);
 
                 layout.x += 20.f;
@@ -533,7 +533,7 @@ namespace rc
 
             // === ACTION BUTTON ===
             saveButton.layout(layout.x, layout.y, 500.f, 50);
-            saveButton.draw(window);
+            window.draw(saveButton);
         }
 
         void updateUi()

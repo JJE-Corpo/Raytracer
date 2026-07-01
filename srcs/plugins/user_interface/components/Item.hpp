@@ -83,7 +83,7 @@ namespace rc
             }
         }
 
-        void draw(sf::RenderWindow &w) override
+        void draw(sf::RenderTarget &target, sf::RenderStates states) const override
         {
             sf::RectangleShape bg;
             bg.setPosition({bounds.left, bounds.top});
@@ -96,7 +96,7 @@ namespace rc
             else
                 bg.setFillColor(theme::BG_ITEM);
 
-            w.draw(bg);
+            target.draw(bg, states);
 
             if (selected)
             {
@@ -104,7 +104,7 @@ namespace rc
                 accent.setPosition({bounds.left, bounds.top});
                 accent.setSize({3.f, bounds.height});
                 accent.setFillColor(theme::ACCENT);
-                w.draw(accent);
+                target.draw(accent, states);
             }
 
             sf::Text text;
@@ -113,7 +113,7 @@ namespace rc
             text.setFillColor(hidden ? theme::TEXT_DIM : theme::TEXT_MAIN);
             text.setString(label);
             text.setPosition({bounds.left + 8.f, bounds.top + 2.f});
-            w.draw(text);
+            target.draw(text, states);
         }
     };
 }

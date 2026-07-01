@@ -14,7 +14,7 @@ namespace rc
 {
     struct Checkbox : Component
     {
-        sf::RectangleShape box;
+        mutable sf::RectangleShape box;
         sf::Text label;
 
         bool checked = false;
@@ -81,7 +81,7 @@ namespace rc
             }
         }
 
-        void draw(sf::RenderWindow &w) override
+        void draw(sf::RenderTarget &target, sf::RenderStates states) const override
         {
             if (this->checked)
                 this->box.setFillColor(theme::CHECKED);
@@ -90,8 +90,8 @@ namespace rc
             else
                 this->box.setFillColor(theme::BG_CONTROL);
 
-            w.draw(this->box);
-            w.draw(this->label);
+            target.draw(this->box, states);
+            target.draw(this->label, states);
         }
     };
 }

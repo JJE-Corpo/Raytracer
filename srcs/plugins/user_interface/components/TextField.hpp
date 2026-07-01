@@ -14,10 +14,10 @@ namespace rc
 {
     struct TextField: Component
     {
-        sf::RectangleShape box;
+        mutable sf::RectangleShape box;
         sf::Text text;
 
-        sf::RectangleShape caret;
+        mutable sf::RectangleShape caret;
         sf::Clock caretClock;
 
         std::string value;
@@ -182,14 +182,14 @@ namespace rc
 
         }
 
-        void draw(sf::RenderWindow &w) override
+        void draw(sf::RenderTarget &target, sf::RenderStates states) const override
         {
             this->box.setFillColor(!this->enabled ? theme::BG_DISABLED
                                      : this->focused ? theme::BG_CONTROL_HOVER
                                                : theme::BG_CONTROL);
 
-            w.draw(this->box);
-            w.draw(this->text);
+            target.draw(this->box, states);
+            target.draw(this->text, states);
             if (this->focused && this->caretVisible && this->enabled)
             {
                 sf::Vector2f caretPos = this->text.findCharacterPos(this->cursorPos);
@@ -198,7 +198,7 @@ namespace rc
                     caretPos.x,
                     this->text.getPosition().y
                 );
-                w.draw(this->caret);
+                target.draw(this->caret, states);
             }
         }
 

@@ -79,16 +79,16 @@ namespace rc
                 header.setFillColor(hovered || open ? theme::BG_CONTROL : theme::BG_BAR);
             }
 
-            void draw(sf::RenderWindow &window) override
+            void draw(sf::RenderTarget &target, sf::RenderStates states) const override
             {
-                window.draw(header);
-                window.draw(text);
+                target.draw(header, states);
+                target.draw(text, states);
 
                 if (open)
                 {
-                    window.draw(panel);
+                    target.draw(panel, states);
                     for (auto &i: items)
-                        i.draw(window);
+                        target.draw(i, states);
                 }
             }
 

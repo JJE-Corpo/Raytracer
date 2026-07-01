@@ -224,7 +224,7 @@ namespace rc
         updateScrollbarGeometry();
     }
 
-    void HierarchyPanel::draw(sf::RenderWindow &window)
+    void HierarchyPanel::draw(sf::RenderTarget &target, sf::RenderStates states) const
     {
         if (!this->_font)
             return;
@@ -235,7 +235,7 @@ namespace rc
         header.setCharacterSize(12);
         header.setFillColor(theme::TEXT_DIM);
         header.setPosition({this->_originX, this->_originY});
-        window.draw(header);
+        target.draw(header, states);
 
         for (const auto &item : this->_items)
         {
@@ -250,7 +250,7 @@ namespace rc
             else
                 bg.setFillColor(theme::BG_ITEM);
 
-            window.draw(bg);
+            target.draw(bg, states);
 
             if (item.selected)
             {
@@ -258,7 +258,7 @@ namespace rc
                 accent.setPosition({item.bounds.left, item.bounds.top});
                 accent.setSize({3.f, item.bounds.height});
                 accent.setFillColor(theme::ACCENT);
-                window.draw(accent);
+                target.draw(accent, states);
             }
 
             sf::Text text;
@@ -267,7 +267,7 @@ namespace rc
             text.setFillColor(item.hidden ? theme::TEXT_DIM : theme::TEXT_MAIN);
             text.setString(item.label);
             text.setPosition({item.bounds.left + 8.f, item.bounds.top + 2.f});
-            window.draw(text);
+            target.draw(text, states);
 
             if (item.type == ItemType::PRIMITIVE || item.type == ItemType::LIGHT)
             {
@@ -277,7 +277,7 @@ namespace rc
                 btn.setFillColor(item.hidden ? theme::TEXT_DIM : theme::BG_ITEM);
                 btn.setOutlineColor(theme::TEXT_DIM);
                 btn.setOutlineThickness(1.f);
-                window.draw(btn);
+                target.draw(btn, states);
             }
         }
 
@@ -287,13 +287,13 @@ namespace rc
             track.setPosition({this->_scrollbarTrack.left, this->_scrollbarTrack.top});
             track.setSize({this->_scrollbarTrack.width, this->_scrollbarTrack.height});
             track.setFillColor(theme::BG_CONTROL);
-            window.draw(track);
+            target.draw(track, states);
 
             sf::RectangleShape thumb;
             thumb.setPosition({this->_scrollbarThumb.left, this->_scrollbarThumb.top});
             thumb.setSize({this->_scrollbarThumb.width, this->_scrollbarThumb.height});
             thumb.setFillColor(this->_scrollbarDragging || this->_scrollbarHovered ? theme::TEXT_WHITE : theme::TEXT_DIM);
-            window.draw(thumb);
+            target.draw(thumb, states);
         }
     }
 

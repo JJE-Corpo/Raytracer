@@ -15,7 +15,7 @@ namespace rc
 {
     struct Button : Component
     {
-        sf::RectangleShape shape;
+        mutable sf::RectangleShape shape;
         sf::Text label;
 
         bool pressed = false;
@@ -78,7 +78,7 @@ namespace rc
             return (CursorType::ARROW);
         }
 
-        void draw(sf::RenderWindow &w) override
+        void draw(sf::RenderTarget &target, sf::RenderStates states) const override
         {
             if (!enabled)
                 this->shape.setFillColor(theme::BG_CONTROL_HOVER);
@@ -88,8 +88,8 @@ namespace rc
                 this->shape.setFillColor(theme::BG_CONTROL);
             else
                 this->shape.setFillColor(theme::BG_ITEM);
-            w.draw(this->shape);
-            w.draw(this->label);
+            target.draw(this->shape, states);
+            target.draw(this->label, states);
         }
     };
 }

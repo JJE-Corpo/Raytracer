@@ -323,30 +323,30 @@ namespace rc
                 this->_scaleField.handleEvent(event, mouse);
             }
 
-            void draw(sf::RenderWindow &window) override
+            void draw(sf::RenderTarget &target, sf::RenderStates states) const override
             {
-                window.draw(this->_title);
+                target.draw(this->_title, states);
 
                 for (auto &slider : this->_objectSliders)
                 {
-                    slider.draw(window);
+                    target.draw(slider, states);
                 }
 
-                this->_positionField.draw(window);
-                this->_rotationField.draw(window);
-                this->_scaleField.draw(window);
+                target.draw(this->_positionField, states);
+                target.draw(this->_rotationField, states);
+                target.draw(this->_scaleField, states);
 
                 if (this->isLight)
                 {
-                    window.draw(this->_intensityLabel);
-                    this->_lightIntensityField.draw(window);
-                    this->_lightColorPicker.draw(window);
+                    target.draw(this->_intensityLabel, states);
+                    target.draw(this->_lightIntensityField, states);
+                    target.draw(this->_lightColorPicker, states);
                 }
 
                 if (this->isPrimitive)
                 {
-                    window.draw(this->_materialLabel);
-                    this->_materialDropdown.draw(window);
+                    target.draw(this->_materialLabel, states);
+                    target.draw(this->_materialDropdown, states);
                 }
             }
 

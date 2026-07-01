@@ -93,11 +93,11 @@ namespace rc
                 this->_positionField.handleEvent(event, mouse);
                 this->_rotationField.handleEvent(event, mouse);
             }
-            void draw(sf::RenderWindow &window) override
+            void draw(sf::RenderTarget &target, sf::RenderStates states) const override
             {
-                window.draw(this->_title);
-                this->_positionField.draw(window);
-                this->_rotationField.draw(window);
+                target.draw(this->_title, states);
+                target.draw(this->_positionField, states);
+                target.draw(this->_rotationField, states);
             }
     };
 }

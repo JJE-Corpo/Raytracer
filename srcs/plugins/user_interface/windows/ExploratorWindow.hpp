@@ -197,11 +197,11 @@ namespace rc
 
             currentPathField.layout(layout.x, layout.y, 720.f, 28.f);
             currentPathField.setValue(currentPath.string());
-            currentPathField.draw(window);
+            window.draw(currentPathField);
             layout.next(34.f);
 
             separator.layout(layout.x, layout.y, 720.f);
-            separator.draw(window);
+            window.draw(separator);
             layout.next(14.f);
 
             drawText("Entries", layout);
@@ -254,7 +254,7 @@ namespace rc
 
             layout.next(8.f);
             separator.layout(layout.x, layout.y, 720.f);
-            separator.draw(window);
+            window.draw(separator);
             layout.next(14.f);
 
             if (mode == ExploratorMode::SAVE)
@@ -263,11 +263,11 @@ namespace rc
                 layout.next(18.f);
 
                 filenameField.layout(layout.x, layout.y, 320.f, 28.f);
-                filenameField.draw(window);
+                window.draw(filenameField);
                 layout.next(38.f);
 
                 saveButton.layout(layout.x, layout.y, 160.f, 34.f);
-                saveButton.draw(window);
+                window.draw(saveButton);
             }
             else
             {
@@ -275,7 +275,7 @@ namespace rc
                 layout.next(24.f);
 
                 saveButton.layout(layout.x, layout.y, 160.f, 34.f);
-                saveButton.draw(window);
+                window.draw(saveButton);
             }
 
             if (maxRowStartHeight == minRowStartHeight)

@@ -105,12 +105,12 @@ namespace rc
                 this->z.update(mouse);
             }
 
-            void draw(sf::RenderWindow &window) override
+            void draw(sf::RenderTarget &target, sf::RenderStates states) const override
             {
-                window.draw(this->_title);
-                this->x.draw(window);
-                this->y.draw(window);
-                this->z.draw(window);
+                target.draw(this->_title, states);
+                target.draw(this->x, states);
+                target.draw(this->y, states);
+                target.draw(this->z, states);
             }
 
             CursorType getCursor() override

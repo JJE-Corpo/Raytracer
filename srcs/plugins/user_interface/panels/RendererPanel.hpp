@@ -10,8 +10,8 @@ namespace rc
 {
     struct RendererPanel : Component
     {
-        sf::IntRect viewportBounds = {0, 0, 0, 0};
-        float viewportScale = 1.0f;
+        mutable sf::IntRect viewportBounds = {0, 0, 0, 0};
+        mutable float viewportScale = 1.0f;
         std::function<void()> closeRenderCallback = [] {};
         std::function<bool()> isRenderViewCallback = [] {return (false);};
         std::function<std::string()> getRendererCommentCallback = []{return ("");};
@@ -77,7 +77,7 @@ namespace rc
             this->_closeRenderButton.handleEvent(event, mouse);
         }
 
-        void draw(sf::RenderWindow &window) override
+        void draw(sf::RenderTarget &target, sf::RenderStates states) const override
         {
             sf::Image image;
 
@@ -114,17 +114,17 @@ namespace rc
 
             this->_renderSprite.setScale(this->viewportScale, this->viewportScale);
 
-            window.draw(this->_tabBar);
+            target.draw(this->_tabBar, states);
 
             if (this->isRenderViewCallback())
             {
                 this->_renderingText.setString(this->getRendererCommentCallback());
-                window.draw(this->_renderingText);
+                target.draw(this->_renderingText, states);
 
-                this->_closeRenderButton.draw(window);
+                target.draw(this->_closeRenderButton, states);
             }
 
-            window.draw(this->_renderSprite);
+            target.draw(this->_renderSprite, states);
         }
 
         CursorType getCursor() override
@@ -134,11 +134,11 @@ namespace rc
 
         private:
             sf::RectangleShape _tabBar;
-            sf::Text _renderingText;
+            mutable sf::Text _renderingText;
             Button _closeRenderButton;
 
-            sf::Texture _renderTexture;
-            sf::Sprite _renderSprite;
+            mutable sf::Texture _renderTexture;
+            mutable sf::Sprite _renderSprite;
             sf::Vector2f _availableViewportSize = {0, 0};
             Render _currentRender = {0, 0, {}};
     };

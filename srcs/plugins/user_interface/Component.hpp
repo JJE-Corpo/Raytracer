@@ -11,7 +11,7 @@
 
 namespace rc
 {
-    struct Component
+    struct Component : public sf::Drawable
     {
         bool enabled = true;
         bool hovered = false;
@@ -19,7 +19,7 @@ namespace rc
 
         virtual ~Component() = default;
 
-        virtual void draw(sf::RenderWindow &window) = 0;
+        void draw(sf::RenderTarget &target, sf::RenderStates states) const override = 0;
         virtual void update(sf::Vector2i mouse)
         {
             (void)mouse;

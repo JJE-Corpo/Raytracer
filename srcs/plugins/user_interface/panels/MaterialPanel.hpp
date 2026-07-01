@@ -178,18 +178,18 @@ namespace rc
             }
 
 
-            void draw(sf::RenderWindow &window) override
+            void draw(sf::RenderTarget &target, sf::RenderStates states) const override
             {
-                window.draw(this->_title);
-                window.draw(this->_description);
+                target.draw(this->_title, states);
+                target.draw(this->_description, states);
                 if (!this->_materialModelSelector.enabled)
                     return;
-                this->_materialModelSelector.draw(window);
+                target.draw(this->_materialModelSelector, states);
                 for (auto &slider : this->_materialSliders)
                 {
-                    slider.draw(window);
+                    target.draw(slider, states);
                 }
-                this->_baseColorPicker.draw(window);
+                target.draw(this->_baseColorPicker, states);
             }
     };
 }

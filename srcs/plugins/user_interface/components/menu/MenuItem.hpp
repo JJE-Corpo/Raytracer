@@ -65,10 +65,10 @@ namespace rc
             this->justClicked = false;
         }
 
-        void draw(sf::RenderWindow &window) override
+        void draw(sf::RenderTarget &target, sf::RenderStates states) const override
         {
-            window.draw(background);
-            window.draw(text);
+            target.draw(background, states);
+            target.draw(text, states);
 
             if (type == Type::Checkable)
             {
@@ -82,7 +82,7 @@ namespace rc
                 box.setOutlineThickness(1.f);
                 box.setOutlineColor(theme::OUTLINE);
 
-                window.draw(box);
+                target.draw(box, states);
 
                 if (checked)
                 {
@@ -94,7 +94,7 @@ namespace rc
                     mark.setPosition(box.getPosition().x + 3.f,
                                      box.getPosition().y - 3.f);
 
-                    window.draw(mark);
+                    target.draw(mark, states);
                 }
             }
         }

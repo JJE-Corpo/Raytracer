@@ -17,8 +17,8 @@ namespace rc
     {
         sf::Text label;
         sf::RectangleShape background;
-        sf::RectangleShape leftButton;
-        sf::RectangleShape rightButton;
+        mutable sf::RectangleShape leftButton;
+        mutable sf::RectangleShape rightButton;
         sf::Text leftText;
         sf::Text rightText;
         // sf::RectangleShape divider;
@@ -129,7 +129,7 @@ namespace rc
             }
         }
 
-        void draw(sf::RenderWindow &window) override
+        void draw(sf::RenderTarget &target, sf::RenderStates states) const override
         {
             sf::Color leftColor = (this->selectedIndex == 0) ? theme::BUTTON_PRESSED : theme::BG_ITEM;
             sf::Color rightColor = (this->selectedIndex == 1) ? theme::BUTTON_PRESSED : theme::BG_ITEM;
@@ -150,13 +150,13 @@ namespace rc
             this->leftButton.setFillColor(leftColor);
             this->rightButton.setFillColor(rightColor);
 
-            window.draw(this->label);
-            window.draw(this->background);
-            window.draw(this->leftButton);
-            window.draw(this->rightButton);
-            // window.draw(this->divider);
-            window.draw(this->leftText);
-            window.draw(this->rightText);
+            target.draw(this->label, states);
+            target.draw(this->background, states);
+            target.draw(this->leftButton, states);
+            target.draw(this->rightButton, states);
+            // target.draw(this->divider, states);
+            target.draw(this->leftText, states);
+            target.draw(this->rightText, states);
         }
 
         CursorType getCursor() override

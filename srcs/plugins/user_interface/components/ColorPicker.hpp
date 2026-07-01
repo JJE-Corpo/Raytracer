@@ -18,11 +18,11 @@ namespace rc
 {
     struct ColorPicker : Component
     {
-        sf::RectangleShape swatch;
-        sf::RectangleShape popup;
-        sf::RectangleShape preview;
+        mutable sf::RectangleShape swatch;
+        mutable sf::RectangleShape popup;
+        mutable sf::RectangleShape preview;
         sf::Text label;
-        sf::Text title;
+        mutable sf::Text title;
         Slider red;
         Slider green;
         Slider blue;
@@ -196,34 +196,34 @@ namespace rc
             (void)this->processEvent(event, mouse);
         }
 
-        void draw(sf::RenderWindow &w) override
+        void draw(sf::RenderTarget &target, sf::RenderStates states) const override
         {
             if (this->open)
             {
                 this->popup.setFillColor(theme::BG_POPUP);
                 this->popup.setOutlineThickness(1.f);
                 this->popup.setOutlineColor(theme::BG_CONTROL_HOVER);
-                w.draw(this->popup);
+                target.draw(this->popup, states);
 
                 this->title.setString("Color");
-                w.draw(this->title);
+                target.draw(this->title, states);
 
                 sf::Color previewColor = this->asSfColor();
                 this->preview.setFillColor(previewColor);
                 this->preview.setOutlineThickness(1.f);
                 this->preview.setOutlineColor(theme::OUTLINE_LIGHT);
-                w.draw(this->preview);
+                target.draw(this->preview, states);
 
-                this->red.draw(w);
-                this->green.draw(w);
-                this->blue.draw(w);
+                target.draw(this->red, states);
+                target.draw(this->green, states);
+                target.draw(this->blue, states);
             }
 
             this->swatch.setFillColor(this->asSfColor());
             this->swatch.setOutlineThickness(1.f);
             this->swatch.setOutlineColor(this->hovered ? theme::OUTLINE_HOVER : theme::OUTLINE_SOFT);
-            w.draw(this->label);
-            w.draw(this->swatch);
+            target.draw(this->label, states);
+            target.draw(this->swatch, states);
         }
 
         CursorType getCursor() override

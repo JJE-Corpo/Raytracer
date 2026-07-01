@@ -20,7 +20,7 @@ namespace rc
     {
         sf::RectangleShape track;
         sf::RectangleShape fill;
-        sf::CircleShape thumb;
+        mutable sf::CircleShape thumb;
 
         sf::Text label;
         sf::Text valueText;
@@ -170,16 +170,16 @@ namespace rc
             }
         }
 
-        void draw(sf::RenderWindow &w) override
+        void draw(sf::RenderTarget &target, sf::RenderStates states) const override
         {
             this->thumb.setFillColor(this->dragging || this->hovered ? HOVER_COLOR : THUMB_COLOR);
 
-            w.draw(this->track);
-            w.draw(this->fill);
-            w.draw(this->thumb);
+            target.draw(this->track, states);
+            target.draw(this->fill, states);
+            target.draw(this->thumb, states);
 
-            w.draw(this->label);
-            w.draw(this->valueText);
+            target.draw(this->label, states);
+            target.draw(this->valueText, states);
         }
 
         CursorType getCursor() override

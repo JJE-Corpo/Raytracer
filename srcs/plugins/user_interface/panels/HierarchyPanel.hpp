@@ -35,7 +35,7 @@ namespace rc
             void layout(float x, float y, float width);
             float getBottomY() const;
 
-            void draw(sf::RenderWindow &window) override;
+            void draw(sf::RenderTarget &target, sf::RenderStates states) const override;
             void update(sf::Vector2i mouse) override;
             void handleEvent(const sf::Event &event, sf::Vector2i mouse) override;
             CursorType getCursor() override;

@@ -104,10 +104,10 @@ namespace rc
         {
             this->window.draw(this->_title);
             this->window.draw(this->_ipLabel);
-            this->_ipField.draw(this->window);
+            this->window.draw(this->_ipField);
             this->window.draw(this->_portLabel);
-            this->_portField.draw(this->window);
-            this->_joinButton.draw(this->window);
+            this->window.draw(this->_portField);
+            this->window.draw(this->_joinButton);
         }
 
         private:

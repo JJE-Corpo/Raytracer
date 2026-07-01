@@ -23,9 +23,9 @@ namespace rc
             this->line.setFillColor(theme::BG_CONTROL);
         }
 
-        void draw(sf::RenderWindow &w) override
+        void draw(sf::RenderTarget &target, sf::RenderStates states) const override
         {
-            w.draw(this->line);
+            target.draw(this->line, states);
         }
     };
 }
