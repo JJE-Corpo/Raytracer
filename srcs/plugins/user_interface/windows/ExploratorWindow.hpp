@@ -55,6 +55,7 @@ namespace rc
         std::filesystem::path currentPath;
         TextField currentPathField;
         std::vector<ExplorerEntry> entries;
+        std::vector<std::string> selectedEntries;
         std::size_t selectedEntry = static_cast<std::size_t>(-1);
 
         float rowstartheight = 24.0f;
@@ -90,7 +91,10 @@ namespace rc
                     if (entry.is_directory())
                         directories.push_back(entry);
                     else
-                        files.push_back(entry);
+                    {
+                        if (std::find(selectedEntries.begin(), selectedEntries.end(), entry.path().extension().string()) != selectedEntries.end())
+                            files.push_back(entry);
+                    }
                 }
 
                 auto sorter = [](const auto &lhs, const auto &rhs)
@@ -109,6 +113,11 @@ namespace rc
             catch (const std::filesystem::filesystem_error &)
             {
             }
+        }
+
+        void setSelectedEntry(std::vector<std::string> selected)
+        {
+            this->selectedEntries = selected;
         }
 
         bool isInsideRow(const sf::FloatRect &bounds, const sf::Vector2i mouse) const
@@ -132,7 +141,7 @@ namespace rc
 
             currentPath = std::filesystem::current_path();
 
-            windowWidth = 800;
+            windowWidth = 1000;
             windowHeight = 600;
             windowTitle = (mode == ExploratorMode::SAVE) ? "Save scene" : "Load scene";
 
@@ -191,9 +200,6 @@ namespace rc
 
             drawTitle((mode == ExploratorMode::SAVE) ? "Save scene" : "Load scene", layout);
             layout.next(20.f);
-
-            drawText("Current folder", layout);
-            layout.next(18.f);
 
             currentPathField.layout(layout.x, layout.y, 720.f, 28.f);
             currentPathField.setValue(currentPath.string());
@@ -304,7 +310,6 @@ namespace rc
             {
                 VerticalLayout layout{28.f, rowstartheight, 10.f};
                 layout.next(20.f);
-                layout.next(18.f);
                 layout.next(34.f);
                 layout.next(14.f);
                 layout.next(18.f);

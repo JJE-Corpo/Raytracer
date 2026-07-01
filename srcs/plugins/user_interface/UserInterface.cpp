@@ -27,6 +27,7 @@ namespace rc
 
     UserInterface::UserInterface() : _running(false), _coreAccess(nullptr), _clusterClientLayout(), _loadWindow(), _exploratorWindow()
     {
+        this->_exploratorWindow.setSelectedEntry({".cfg"});
     }
 
     UserInterface::~UserInterface()
