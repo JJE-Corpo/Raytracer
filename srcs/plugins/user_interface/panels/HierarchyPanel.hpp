@@ -37,8 +37,14 @@ namespace rc
 
             void draw(sf::RenderTarget &target, sf::RenderStates states) const override;
             void update(sf::Vector2i mouse) override;
-            void handleEvent(const sf::Event &event, sf::Vector2i mouse) override;
+            bool handleEvent(const sf::Event &event, sf::Vector2i mouse) override;
             CursorType getCursor() override;
+
+            // The panel keeps the pointer while its scrollbar thumb is dragged.
+            bool isCapturing() const override
+            {
+                return (this->_scrollbarDragging);
+            }
 
             const std::vector<const ISceneObject *> &getSelection() const;
 

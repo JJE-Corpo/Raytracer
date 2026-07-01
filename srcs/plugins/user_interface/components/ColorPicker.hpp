@@ -96,15 +96,30 @@ namespace rc
             return this->open;
         }
 
-        bool contains(const sf::Vector2i &mouse) const
+        sf::FloatRect getBounds() const override
         {
-            const float mx = static_cast<float>(mouse.x);
-            const float my = static_cast<float>(mouse.y);
+            return (this->swatch.getGlobalBounds());
+        }
+
+        bool contains(sf::Vector2i point) const override
+        {
+            const float mx = static_cast<float>(point.x);
+            const float my = static_cast<float>(point.y);
             if (this->swatch.getGlobalBounds().contains(mx, my))
                 return true;
             if (this->open && this->popup.getGlobalBounds().contains(mx, my))
                 return true;
             return false;
+        }
+
+        int zLayer() const override
+        {
+            return (this->open ? zlayer::POPUP : zlayer::BASE);
+        }
+
+        bool isCapturing() const override
+        {
+            return (this->open);
         }
 
         bool processEvent(const sf::Event &event, const sf::Vector2i mouse)
@@ -191,9 +206,9 @@ namespace rc
             this->blue.update(mouse);
         }
 
-        void handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
+        bool handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
         {
-            (void)this->processEvent(event, mouse);
+            return (this->processEvent(event, mouse));
         }
 
         void draw(sf::RenderTarget &target, sf::RenderStates states) const override

@@ -111,10 +111,32 @@ namespace rc
             }
         }
 
-        void handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
+        sf::FloatRect getBounds() const override
         {
-            if (!this->focused || !this->enabled)
-                return;
+            return (this->box.getGlobalBounds());
+        }
+
+        // A focused field captures keyboard events wherever the cursor is.
+        bool isCapturing() const override
+        {
+            return (this->focused && this->enabled);
+        }
+
+        bool handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
+        {
+            if (!this->enabled)
+                return (false);
+
+            // Focus is applied in update() from mouse polling; here we simply
+            // consume the click that lands on the field so it doesn't fall
+            // through to whatever is underneath.
+            if (event.type == sf::Event::MouseButtonPressed
+                && event.mouseButton.button == sf::Mouse::Left
+                && this->box.getGlobalBounds().contains((float)mouse.x, (float)mouse.y))
+                return (true);
+
+            if (!this->focused)
+                return (false);
 
             (void)mouse;
             if (event.type == sf::Event::TextEntered)
@@ -150,6 +172,7 @@ namespace rc
                     }
                 }
                 this->text.setString(this->value);
+                return (true);
             }
 
             if (event.type == sf::Event::KeyPressed)
@@ -160,7 +183,7 @@ namespace rc
                     {
                         bool allowed = this->onValidate(this->value);
                         if (!allowed)
-                            return;
+                            return (true);
                         this->focused = false;
                     }
                 }
@@ -178,8 +201,10 @@ namespace rc
                     this->caretClock.restart();
                     this->caretVisible = true;
                 }
+                return (true);
             }
 
+            return (false);
         }
 
         void draw(sf::RenderTarget &target, sf::RenderStates states) const override

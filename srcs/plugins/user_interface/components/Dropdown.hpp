@@ -117,6 +117,32 @@ namespace rc
                 }
             }
 
+            sf::FloatRect getBounds() const override
+            {
+                return (header.getGlobalBounds());
+            }
+
+            // While open, the pop-up panel is part of the interactive surface.
+            bool contains(sf::Vector2i point) const override
+            {
+                const sf::Vector2f p = static_cast<sf::Vector2f>(point);
+                if (header.getGlobalBounds().contains(p))
+                    return (true);
+                if (open && panel.getGlobalBounds().contains(p))
+                    return (true);
+                return (false);
+            }
+
+            int zLayer() const override
+            {
+                return (open ? zlayer::POPUP : zlayer::BASE);
+            }
+
+            bool isCapturing() const override
+            {
+                return (this->open);
+            }
+
             void update(sf::Vector2i mouse) override
             {
                 hovered = header.getGlobalBounds().contains((sf::Vector2f) mouse);
@@ -143,47 +169,45 @@ namespace rc
                 }
             }
 
-            void handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
+            bool handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
             {
                 if (!enabled)
-                    return;
+                    return (false);
 
-                if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left)
+                if (event.type != sf::Event::MouseButtonPressed || event.mouseButton.button != sf::Mouse::Left)
+                    return (false);
+
+                const bool inHeader = header.getGlobalBounds().contains((sf::Vector2f) mouse);
+
+                if (inHeader)
                 {
-                    const bool inHeader = header.getGlobalBounds().contains((sf::Vector2f) mouse);
-                    const bool inPanel = open && panel.getGlobalBounds().contains((sf::Vector2f) mouse);
-
-                    if (inHeader)
-                    {
-                        open = !open;
-                        return;
-                    }
-
-                    if (open && !inPanel)
-                    {
-                        open = false;
-                        return;
-                    }
+                    open = !open;
+                    return (true);
                 }
 
                 if (!open)
-                    return;
+                    return (false);
+
+                if (!panel.getGlobalBounds().contains((sf::Vector2f) mouse))
+                {
+                    open = false;
+                    return (true);
+                }
 
                 for (size_t i = 0; i < items.size(); ++i)
                 {
-                    auto &item = items[i];
-                    item.handleEvent(event, mouse);
-                    if (event.type == sf::Event::MouseButtonPressed &&
-                        event.mouseButton.button == sf::Mouse::Left &&
-                        item.hovered)
+                    if (items[i].hovered)
                     {
                         setSelectedIndex(static_cast<int>(i));
                         open = false;
                         if (onSelect)
                             onSelect(static_cast<int>(i));
-                        return;
+                        return (true);
                     }
                 }
+                // Click landed on the open panel (padding/gap): consume it so it
+                // does not fall through to components underneath the pop-up.
+                return (true);
             }
 
             CursorType getCursor() override

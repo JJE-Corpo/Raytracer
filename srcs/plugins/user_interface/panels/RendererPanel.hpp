@@ -72,9 +72,9 @@ namespace rc
             return (true);
         }
 
-        void handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
+        bool handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
         {
-            this->_closeRenderButton.handleEvent(event, mouse);
+            return (this->_closeRenderButton.handleEvent(event, mouse));
         }
 
         void draw(sf::RenderTarget &target, sf::RenderStates states) const override

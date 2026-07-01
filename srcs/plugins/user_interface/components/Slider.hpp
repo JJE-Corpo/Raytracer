@@ -109,16 +109,25 @@ namespace rc
             this->updateVisuals();
         }
 
-        void update(sf::Vector2i mouse) override
+        sf::FloatRect getBounds() const override
         {
-            sf::FloatRect hover_bounds(
+            return sf::FloatRect(
                 this->track.getPosition().x - THUMB_RADIUS,
                 this->track.getPosition().y - HITBOX_HEIGHT * 0.5f,
                 this->track.getSize().x + THUMB_RADIUS * 2.f,
                 HITBOX_HEIGHT
             );
+        }
 
-            this->hovered = hover_bounds.contains(
+        // A slider being dragged keeps the pointer until the button is released.
+        bool isCapturing() const override
+        {
+            return (this->dragging);
+        }
+
+        void update(sf::Vector2i mouse) override
+        {
+            this->hovered = this->getBounds().contains(
                 static_cast<float>(mouse.x),
                 static_cast<float>(mouse.y)
             );
@@ -129,36 +138,26 @@ namespace rc
             this->setValueFromMouse(mouse.x);
         }
 
-        void handleEvent(
+        bool handleEvent(
             const sf::Event &event,
             const sf::Vector2i mouse
         ) override
         {
             if (!this->enabled)
-                return;
+                return (false);
 
             if (
                 event.type == sf::Event::MouseButtonPressed &&
-                event.mouseButton.button == sf::Mouse::Left
+                event.mouseButton.button == sf::Mouse::Left &&
+                this->getBounds().contains(
+                    static_cast<float>(mouse.x),
+                    static_cast<float>(mouse.y)
+                )
             )
             {
-                sf::FloatRect click_bounds(
-                    this->track.getPosition().x - THUMB_RADIUS,
-                    this->track.getPosition().y - HITBOX_HEIGHT * 0.5f,
-                    this->track.getSize().x + THUMB_RADIUS * 2.f,
-                    HITBOX_HEIGHT
-                );
-
-                if (
-                    click_bounds.contains(
-                        static_cast<float>(mouse.x),
-                        static_cast<float>(mouse.y)
-                    )
-                )
-                {
-                    this->dragging = true;
-                    this->setValueFromMouse(mouse.x);
-                }
+                this->dragging = true;
+                this->setValueFromMouse(mouse.x);
+                return (true);
             }
 
             if (
@@ -166,8 +165,11 @@ namespace rc
                 event.mouseButton.button == sf::Mouse::Left
             )
             {
+                const bool wasDragging = this->dragging;
                 this->dragging = false;
+                return (wasDragging);
             }
+            return (false);
         }
 
         void draw(sf::RenderTarget &target, sf::RenderStates states) const override

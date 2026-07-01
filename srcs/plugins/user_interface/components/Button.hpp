@@ -46,27 +46,35 @@ namespace rc
             });
         }
 
+        sf::FloatRect getBounds() const override
+        {
+            return (this->shape.getGlobalBounds());
+        }
+
         void update(const sf::Vector2i mouse) override
         {
             this->hovered = this->shape.getGlobalBounds().contains((float)mouse.x, (float)mouse.y);
         }
 
-        void handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
+        bool handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
         {
             if (!this->enabled)
-                return;
-            if (event.type == sf::Event::MouseButtonPressed)
+                return (false);
+            const bool inside = shape.getGlobalBounds().contains((float)mouse.x, (float)mouse.y);
+            if (event.type == sf::Event::MouseButtonPressed && inside)
             {
-                if (shape.getGlobalBounds().contains((float)mouse.x, (float)mouse.y))
-                    this->pressed = true;
+                this->pressed = true;
+                return (true);
             }
             if (event.type == sf::Event::MouseButtonReleased)
             {
-                bool inside = shape.getGlobalBounds().contains((float)mouse.x, (float)mouse.y);
-                if (this->pressed && inside)
-                    if (this->onClick) this->onClick();
+                const bool consumed = this->pressed && inside;
+                if (consumed && this->onClick)
+                    this->onClick();
                 this->pressed = false;
+                return (consumed);
             }
+            return (false);
         }
 
         CursorType getCursor() override

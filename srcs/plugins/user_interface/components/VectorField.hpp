@@ -4,6 +4,7 @@
 
 #ifndef VECTORFIELD_HPP
 #define VECTORFIELD_HPP
+#include <algorithm>
 #include "TextField.hpp"
 #include "../Component.hpp"
 #include "../../../common/Axis.hpp"
@@ -91,11 +92,29 @@ namespace rc
                 this->z.enabled = true;
             }
 
-            void handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
+            sf::FloatRect getBounds() const override
             {
-                this->x.handleEvent(event, mouse);
-                this->y.handleEvent(event, mouse);
-                this->z.handleEvent(event, mouse);
+                const sf::FloatRect a = this->x.getBounds();
+                const sf::FloatRect b = this->z.getBounds();
+                const float left = std::min(a.left, b.left);
+                const float top = std::min(a.top, b.top);
+                const float right = std::max(a.left + a.width, b.left + b.width);
+                const float bottom = std::max(a.top + a.height, b.top + b.height);
+                return sf::FloatRect(left, top, right - left, bottom - top);
+            }
+
+            // Capture events while any of the three sub-fields holds focus.
+            bool isCapturing() const override
+            {
+                return (this->x.isCapturing() || this->y.isCapturing() || this->z.isCapturing());
+            }
+
+            bool handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
+            {
+                bool consumed = this->x.handleEvent(event, mouse);
+                consumed = this->y.handleEvent(event, mouse) || consumed;
+                consumed = this->z.handleEvent(event, mouse) || consumed;
+                return (consumed);
             }
 
             void update(sf::Vector2i mouse) override

@@ -87,10 +87,44 @@ namespace rc
                     target.draw(menu, states);
             }
 
-            void handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
+            sf::FloatRect getBounds() const override
             {
-                if (activeMenu)
-                    activeMenu->handleEvent(event, mouse);
+                return (this->bar.getGlobalBounds());
+            }
+
+            // The bar itself plus the open menu's drop-down panel.
+            bool contains(sf::Vector2i point) const override
+            {
+                const sf::Vector2f p = static_cast<sf::Vector2f>(point);
+                if (bar.getGlobalBounds().contains(p))
+                    return (true);
+                if (activeMenu && activeMenu->open && activeMenu->panel.getGlobalBounds().contains(p))
+                    return (true);
+                return (false);
+            }
+
+            int zLayer() const override
+            {
+                return (zlayer::MENU);
+            }
+
+            bool isCapturing() const override
+            {
+                return (this->isOpen());
+            }
+
+            bool handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
+            {
+                if (!activeMenu)
+                    return (false);
+
+                const bool consumed = activeMenu->handleEvent(event, mouse);
+
+                // While a menu is open it owns pointer presses, so a click never
+                // leaks to the panels or viewport behind the drop-down.
+                if (event.type == sf::Event::MouseButtonPressed)
+                    return (true);
+                return (consumed);
             }
 
             bool isOpen() const

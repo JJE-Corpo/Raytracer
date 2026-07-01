@@ -92,20 +92,26 @@ namespace rc
                 }
             }
 
-            void handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
+            bool isCapturing() const override
+            {
+                return (this->open);
+            }
+
+            bool handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
             {
                 if (!open)
-                    return;
+                    return (false);
 
                 for (auto &i: items)
                 {
-                    i.handleEvent(event, mouse);
-                    if (i.justClicked)
+                    if (i.handleEvent(event, mouse))
                     {
-                        open = false;
-                        return;
+                        if (i.justClicked)
+                            open = false;
+                        return (true);
                     }
                 }
+                return (false);
             }
     };
 }

@@ -23,7 +23,7 @@ namespace rc
         static constexpr float BOX_SIZE = 18.f;
         static constexpr float PADDING_X = 10.f;
 
-        sf::FloatRect getBounds() const
+        sf::FloatRect getBounds() const override
         {
             sf::FloatRect b = this->box.getGlobalBounds();
             sf::FloatRect l = this->label.getGlobalBounds();
@@ -68,17 +68,17 @@ namespace rc
             this->hovered = getBounds().contains((float)mouse.x, (float)mouse.y);
         }
 
-        void handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
+        bool handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
         {
             (void)mouse;
-            if (event.type == sf::Event::MouseButtonPressed)
+            if (event.type == sf::Event::MouseButtonPressed && this->hovered)
             {
-                if (!this->hovered)
-                    return;
                 this->checked = !this->checked;
                 if (this->onToggle)
                     this->onToggle(this->checked);
+                return (true);
             }
+            return (false);
         }
 
         void draw(sf::RenderTarget &target, sf::RenderStates states) const override

@@ -25,7 +25,7 @@ namespace rc
 
         Item() = default;
 
-        sf::FloatRect getBounds() const
+        sf::FloatRect getBounds() const override
         {
             return bounds;
         }
@@ -71,16 +71,17 @@ namespace rc
             this->hovered = getBounds().contains((float)mouse.x, (float)mouse.y);
         }
 
-        void handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
+        bool handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
         {
             (void)mouse;
-            if (event.type == sf::Event::MouseButtonPressed)
+            if (event.type == sf::Event::MouseButtonPressed
+                && event.mouseButton.button == sf::Mouse::Left
+                && this->buttonBounds.contains((float)mouse.x, (float)mouse.y))
             {
-                if (event.mouseButton.button == sf::Mouse::Left && this->buttonBounds.contains((float)mouse.x, (float)mouse.y))
-                {
-                    hidden = !hidden;
-                }
+                hidden = !hidden;
+                return (true);
             }
+            return (false);
         }
 
         void draw(sf::RenderTarget &target, sf::RenderStates states) const override

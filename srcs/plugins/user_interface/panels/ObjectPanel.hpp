@@ -5,7 +5,9 @@
 #ifndef OBJECTPANEL_HPP
 #define OBJECTPANEL_HPP
 #include <functional>
+#include <vector>
 #include "../Component.hpp"
+#include "../EventRouter.hpp"
 #include "../Theme.hpp"
 #include "../VerticalLayout.hpp"
 #include "../components/Dropdown.hpp"
@@ -298,29 +300,37 @@ namespace rc
                 };
             }
 
-            void handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
+            bool isCapturing() const override
             {
+                return (this->_lightColorPicker.isCapturing()
+                    || this->_materialDropdown.isCapturing()
+                    || this->_lightIntensityField.isCapturing()
+                    || this->_positionField.isCapturing()
+                    || this->_rotationField.isCapturing()
+                    || this->_scaleField.isCapturing());
+            }
+
+            bool handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
+            {
+                std::vector<Component *> children;
+
                 if (this->isLight)
                 {
-                    if (this->_lightColorPicker.processEvent(event, mouse))
-                        return;
-                    this->_lightIntensityField.handleEvent(event, mouse);
+                    children.push_back(&this->_lightColorPicker);
+                    children.push_back(&this->_lightIntensityField);
                 }
-
-                if (!this->_materialDropdown.open)
-                {
-                    for (auto &slider : this->_objectSliders)
-                    {
-                        slider.handleEvent(event, mouse);
-                    }
-                }
-
                 if (this->isPrimitive)
-                    this->_materialDropdown.handleEvent(event, mouse);
+                    children.push_back(&this->_materialDropdown);
+                for (auto &slider : this->_objectSliders)
+                    children.push_back(&slider);
+                children.push_back(&this->_positionField);
+                children.push_back(&this->_rotationField);
+                children.push_back(&this->_scaleField);
 
-                this->_positionField.handleEvent(event, mouse);
-                this->_rotationField.handleEvent(event, mouse);
-                this->_scaleField.handleEvent(event, mouse);
+                // Open pop-ups (color picker, material dropdown) capture events and
+                // are served first, so their clicks no longer leak to the sliders
+                // or fields they overlap.
+                return (EventRouter::route(children, event, mouse) != nullptr);
             }
 
             void draw(sf::RenderTarget &target, sf::RenderStates states) const override

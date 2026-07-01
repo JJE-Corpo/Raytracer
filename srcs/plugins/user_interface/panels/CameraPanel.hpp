@@ -86,12 +86,19 @@ namespace rc
                 this->_positionField.update(mouse);
                 this->_rotationField.update(mouse);
             }
-            void handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
+            bool isCapturing() const override
+            {
+                return (this->enabled
+                    && (this->_positionField.isCapturing() || this->_rotationField.isCapturing()));
+            }
+
+            bool handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
             {
                 if (!this->enabled)
-                    return;
-                this->_positionField.handleEvent(event, mouse);
-                this->_rotationField.handleEvent(event, mouse);
+                    return (false);
+                bool consumed = this->_positionField.handleEvent(event, mouse);
+                consumed = this->_rotationField.handleEvent(event, mouse) || consumed;
+                return (consumed);
             }
             void draw(sf::RenderTarget &target, sf::RenderStates states) const override
             {

@@ -330,20 +330,22 @@ namespace rc
         }
     }
 
-    void HierarchyPanel::handleEvent(const sf::Event &event, const sf::Vector2i mouse)
+    bool HierarchyPanel::handleEvent(const sf::Event &event, const sf::Vector2i mouse)
     {
         if (!this->enabled)
-            return;
+            return (false);
         if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left)
         {
+            const bool wasDragging = this->_scrollbarDragging;
             this->_scrollbarDragging = false;
+            return (wasDragging);
         }
         if (event.type == sf::Event::MouseWheelScrolled)
         {
             if (!this->_panelBounds.contains(static_cast<sf::Vector2f>(mouse)))
-                return;
+                return (false);
             if (this->_totalItems <= this->_visibleItems)
-                return;
+                return (false);
             int step = 0;
             if (event.mouseWheelScroll.delta > 0.f)
                 step = -1;
@@ -356,18 +358,18 @@ namespace rc
                 this->_scrollOffset = std::clamp(this->_scrollOffset, 0, maxOffset);
                 this->buildItems();
             }
-            return;
+            return (true);
         }
         if (event.type != sf::Event::MouseButtonPressed)
-            return;
+            return (false);
         if (event.mouseButton.button != sf::Mouse::Left)
-            return;
+            return (false);
 
         if (this->_scrollbarVisible && this->_scrollbarThumb.contains(static_cast<sf::Vector2f>(mouse)))
         {
             this->_scrollbarDragging = true;
             this->_scrollbarDragOffset = static_cast<float>(mouse.y) - this->_scrollbarThumb.top;
-            return;
+            return (true);
         }
 
         bool ctrl_pressed = sf::Keyboard::isKeyPressed(sf::Keyboard::LControl) || sf::Keyboard::isKeyPressed(sf::Keyboard::RControl);
@@ -377,7 +379,7 @@ namespace rc
             if ((item.type == ItemType::PRIMITIVE || item.type == ItemType::LIGHT) && item.buttonBounds.contains(static_cast<sf::Vector2f>(mouse)))
             {
                 if (!this->_onItemHideRequest)
-                    return;
+                    return (true);
                 const ISceneObject *asObject = static_cast<const ISceneObject *>(item.payload);
                 if (this->isSelected(asObject))
                 {
@@ -385,10 +387,10 @@ namespace rc
                     {
                         this->_onItemHideRequest(object);
                     }
-                    return;
+                    return (true);
                 }
                 this->_onItemHideRequest(asObject);
-                return;
+                return (true);
             }
             if (!item.selectable)
                 continue;
@@ -404,8 +406,9 @@ namespace rc
                     break;
             }
             this->_selectionChanged = true;
-            return;
+            return (true);
         }
+        return (false);
     }
 
     CursorType HierarchyPanel::getCursor()

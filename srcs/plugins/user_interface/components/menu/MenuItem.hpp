@@ -99,11 +99,16 @@ namespace rc
             }
         }
 
-        void handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
+        sf::FloatRect getBounds() const override
+        {
+            return (this->background.getGlobalBounds());
+        }
+
+        bool handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
         {
             (void)mouse;
             if (!hovered || !enabled)
-                return;
+                return (false);
             if (event.type == sf::Event::MouseButtonPressed)
             {
                 if (type == Type::Checkable)
@@ -117,7 +122,9 @@ namespace rc
                     onClick();
                     this->justClicked = true;
                 }
+                return (true);
             }
+            return (false);
         }
 
         CursorType getCursor() override

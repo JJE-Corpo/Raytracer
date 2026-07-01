@@ -14,6 +14,7 @@
 #include <limits>
 
 #include "VerticalLayout.hpp"
+#include "EventRouter.hpp"
 #include "components/menu/Menu.hpp"
 #include "Theme.hpp"
 #include "ViewportHelper.hpp"
@@ -804,13 +805,8 @@ namespace rc
         if (this->_loadWindow.running)
             return;
 
-        this->_menuBar.handleEvent(event, mouse);
-
-        if (this->_menuBar.isOpen())
-            return;
-
-        this->_rendererPanel.handleEvent(event, mouse);
-
+        // Right mouse drives the viewport camera rotation independently of the
+        // component routing below.
         if (event.type == sf::Event::MouseButtonPressed &&
             event.mouseButton.button == sf::Mouse::Right)
         {
@@ -824,24 +820,36 @@ namespace rc
             this->_rightMouseHeld = false;
         }
 
-        if (this->_viewMode == ViewMode::RENDERING)
-            return;
+        // Build the set of top-level components that are live in the current view
+        // mode, then let the router pick the single best one for this event
+        // (menu bar and open pop-ups win over the panels and the viewport).
+        const bool viewportMode = this->_viewMode == ViewMode::VIEWPORT;
 
-        this->_hierarchyPanel.handleEvent(event, mouse);
-        if (this->_hierarchyPanel.isCameraSelected())
-            this->_cameraPanel.handleEvent(event, mouse);
-        if (!this->_hierarchyPanel.getSelection().empty())
+        std::vector<Component *> candidates = {&this->_menuBar, &this->_rendererPanel};
+
+        if (viewportMode)
         {
-            this->_objectPanel.handleEvent(event, mouse);
-            this->_materialPanel.handleEvent(event, mouse);
+            candidates.push_back(&this->_hierarchyPanel);
+            if (this->_hierarchyPanel.isCameraSelected())
+                candidates.push_back(&this->_cameraPanel);
+            if (!this->_hierarchyPanel.getSelection().empty())
+            {
+                candidates.push_back(&this->_objectPanel);
+                candidates.push_back(&this->_materialPanel);
+            }
         }
+
+        const Component *consumer = EventRouter::route(candidates, event, mouse);
 
         if (this->_hierarchyPanel.consumeSelectionChanged() || this->_objectPanel.consumeMaterialChanged())
         {
             this->syncSelectionToRenderer();
         }
 
-        if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left)
+        // Fall back to viewport picking only when no UI component claimed the
+        // click, so clicks on panels or pop-ups no longer leak to the scene.
+        if (viewportMode && consumer == nullptr &&
+            event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left)
         {
             if (mouse.x > SIDEBAR_WIDTH && mouse.y >= static_cast<int>(MENU_HEIGHT))
                 this->updateSelectionFromClick(mouse);

@@ -107,26 +107,34 @@ namespace rc
             this->hovered = this->leftHovered || this->rightHovered;
         }
 
-        void handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
+        sf::FloatRect getBounds() const override
+        {
+            return (this->background.getGlobalBounds());
+        }
+
+        bool handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
         {
             if (!this->enabled)
-                return;
+                return (false);
 
             if (event.type != sf::Event::MouseButtonPressed || event.mouseButton.button != sf::Mouse::Left)
-                return;
+                return (false);
 
             if (this->leftButton.getGlobalBounds().contains((float)mouse.x, (float)mouse.y))
             {
                 this->selectedIndex = 0;
                 if (this->onChange)
                     this->onChange(this->selectedIndex);
+                return (true);
             }
-            else if (this->rightButton.getGlobalBounds().contains((float)mouse.x, (float)mouse.y))
+            if (this->rightButton.getGlobalBounds().contains((float)mouse.x, (float)mouse.y))
             {
                 this->selectedIndex = 1;
                 if (this->onChange)
                     this->onChange(this->selectedIndex);
+                return (true);
             }
+            return (false);
         }
 
         void draw(sf::RenderTarget &target, sf::RenderStates states) const override

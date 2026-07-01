@@ -4,6 +4,8 @@
 
 #ifndef MATERIALPANEL_HPP
 #define MATERIALPANEL_HPP
+#include <vector>
+#include "../EventRouter.hpp"
 #include "../ViewportHelper.hpp"
 #include "../../../common/Material.hpp"
 #include "../../../common/scene/IPrimitive.hpp"
@@ -165,16 +167,23 @@ namespace rc
                 return (cursorType);
             }
 
-            void handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
+            bool isCapturing() const override
+            {
+                return (this->_baseColorPicker.isCapturing());
+            }
+
+            bool handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
             {
                 if (!this->_materialModelSelector.enabled)
-                    return;
-                this->_baseColorPicker.handleEvent(event, mouse);
-                this->_materialModelSelector.handleEvent(event, mouse);
-                if (this->_baseColorPicker.open)
-                    return;
+                    return (false);
+
+                std::vector<Component *> children = {&this->_baseColorPicker, &this->_materialModelSelector};
                 for (auto &slider : this->_materialSliders)
-                    slider.handleEvent(event, mouse);
+                    children.push_back(&slider);
+
+                // The router serves the color-picker pop-up first while it is open,
+                // so it consumes clicks that overlap the sliders underneath it.
+                return (EventRouter::route(children, event, mouse) != nullptr);
             }
 
 
