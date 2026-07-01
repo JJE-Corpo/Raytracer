@@ -360,6 +360,14 @@ namespace rc
                 }
             }
 
+            void drawOverlay(sf::RenderTarget &target, sf::RenderStates states) const override
+            {
+                if (this->isLight)
+                    this->_lightColorPicker.drawOverlay(target, states);
+                if (this->isPrimitive)
+                    this->_materialDropdown.drawOverlay(target, states);
+            }
+
             void setScene(IScene *scene)
             {
                 this->scene = scene;

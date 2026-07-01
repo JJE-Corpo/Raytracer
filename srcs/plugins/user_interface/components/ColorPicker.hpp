@@ -213,32 +213,37 @@ namespace rc
 
         void draw(sf::RenderTarget &target, sf::RenderStates states) const override
         {
-            if (this->open)
-            {
-                this->popup.setFillColor(theme::BG_POPUP);
-                this->popup.setOutlineThickness(1.f);
-                this->popup.setOutlineColor(theme::BG_CONTROL_HOVER);
-                target.draw(this->popup, states);
-
-                this->title.setString("Color");
-                target.draw(this->title, states);
-
-                sf::Color previewColor = this->asSfColor();
-                this->preview.setFillColor(previewColor);
-                this->preview.setOutlineThickness(1.f);
-                this->preview.setOutlineColor(theme::OUTLINE_LIGHT);
-                target.draw(this->preview, states);
-
-                target.draw(this->red, states);
-                target.draw(this->green, states);
-                target.draw(this->blue, states);
-            }
-
             this->swatch.setFillColor(this->asSfColor());
             this->swatch.setOutlineThickness(1.f);
             this->swatch.setOutlineColor(this->hovered ? theme::OUTLINE_HOVER : theme::OUTLINE_SOFT);
             target.draw(this->label, states);
             target.draw(this->swatch, states);
+        }
+
+        // The open pop-up is drawn in the overlay pass so it can extend past a
+        // scrolling section without being clipped.
+        void drawOverlay(sf::RenderTarget &target, sf::RenderStates states) const override
+        {
+            if (!this->open)
+                return;
+
+            this->popup.setFillColor(theme::BG_POPUP);
+            this->popup.setOutlineThickness(1.f);
+            this->popup.setOutlineColor(theme::BG_CONTROL_HOVER);
+            target.draw(this->popup, states);
+
+            this->title.setString("Color");
+            target.draw(this->title, states);
+
+            sf::Color previewColor = this->asSfColor();
+            this->preview.setFillColor(previewColor);
+            this->preview.setOutlineThickness(1.f);
+            this->preview.setOutlineColor(theme::OUTLINE_LIGHT);
+            target.draw(this->preview, states);
+
+            target.draw(this->red, states);
+            target.draw(this->green, states);
+            target.draw(this->blue, states);
         }
 
         CursorType getCursor() override

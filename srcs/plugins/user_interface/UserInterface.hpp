@@ -19,6 +19,7 @@
 #include "../../common/IUserInterface.hpp"
 #include "../../common/ICoreAccess.hpp"
 #include "components/ColorPicker.hpp"
+#include "components/ResizeHandle.hpp"
 #include "components/Separator.hpp"
 #include "components/menu/MenuBar.hpp"
 #include "layouts/ClusterClientLayout.hpp"
@@ -28,6 +29,7 @@
 #include "panels/MaterialPanel.hpp"
 #include "panels/ObjectPanel.hpp"
 #include "panels/RendererPanel.hpp"
+#include "panels/SidebarStack.hpp"
 #include "windows/ExploratorWindow.hpp"
 #include "windows/LoadWindow.hpp"
 
@@ -62,12 +64,17 @@ namespace rc
 
             MenuBar _menuBar;
 
+            // Resizable left sidebar.
+            float _sidebarWidth = 260.0f;
+            ResizeHandle _sidebarResize;
+
             HierarchyPanel _hierarchyPanel;
-            Separator _sepSelection;
             ObjectPanel _objectPanel;
             CameraPanel _cameraPanel;
-            Separator _sepMaterial;
             MaterialPanel _materialPanel;
+
+            // Collapsible/resizable/scrollable stack wrapping the panels above.
+            SidebarStack _sidebar;
 
             RendererPanel _rendererPanel;
 
@@ -90,6 +97,8 @@ namespace rc
             sf::Cursor _cursorText;
             sf::Cursor _cursorNotAllowed;
             sf::Cursor _cursorViewport;
+            sf::Cursor _cursorResize;
+            sf::Cursor _cursorResizeV;
             //
 
             // viewport
@@ -102,6 +111,12 @@ namespace rc
             void updateUI();
 
             void setupLayout(Layout &layout);
+
+            void layoutSidebarResize();
+            void setupSidebarSection(SidebarStack::Slot slot, const std::string &id, const std::string &title,
+                Component *content, std::function<void(float, float, float)> layoutContent,
+                std::function<float()> contentHeight);
+            void refreshSidebarVisibility();
 
             void drawUI();
             void drawRenderer(ISceneRenderer *renderer);

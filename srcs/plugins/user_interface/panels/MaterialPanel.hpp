@@ -71,7 +71,10 @@ namespace rc
                 layout.next(12);
 
                 if (!this->_materialModelSelector.enabled)
+                {
+                    this->height = layout.y - y;
                     return;
+                }
                 this->_baseColorPicker.layout(layout.x, layout.y);
                 layout.next(24);
 
@@ -199,6 +202,12 @@ namespace rc
                     target.draw(slider, states);
                 }
                 target.draw(this->_baseColorPicker, states);
+            }
+
+            void drawOverlay(sf::RenderTarget &target, sf::RenderStates states) const override
+            {
+                if (this->_materialModelSelector.enabled)
+                    this->_baseColorPicker.drawOverlay(target, states);
             }
     };
 }

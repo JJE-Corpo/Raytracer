@@ -40,11 +40,8 @@ namespace rc
             bool handleEvent(const sf::Event &event, sf::Vector2i mouse) override;
             CursorType getCursor() override;
 
-            // The panel keeps the pointer while its scrollbar thumb is dragged.
-            bool isCapturing() const override
-            {
-                return (this->_scrollbarDragging);
-            }
+            // Total laid-out content height (the wrapping ScrollView reads this).
+            float height = 0.f;
 
             const std::vector<const ISceneObject *> &getSelection() const;
 
@@ -93,17 +90,6 @@ namespace rc
             float _originY = 0.f;
             float _width = 0.f;
             float _bottomY = 0.f;
-            sf::FloatRect _panelBounds;
-            int _scrollOffset = 0;
-            int _totalItems = 0;
-            int _visibleItems = 0;
-            float _contentWidth = 0.f;
-            sf::FloatRect _scrollbarTrack;
-            sf::FloatRect _scrollbarThumb;
-            bool _scrollbarVisible = false;
-            bool _scrollbarHovered = false;
-            bool _scrollbarDragging = false;
-            float _scrollbarDragOffset = 0.f;
 
             std::vector<const ISceneObject *> _selection;
             bool _cameraSelected = false;

@@ -22,8 +22,9 @@
 
 namespace rc
 {
-    constexpr float SIDEBAR_WIDTH = 260.0f;
     constexpr float MENU_HEIGHT = 28.0f;
+    constexpr float SIDEBAR_MIN = 220.0f;   // narrowest the sidebar may be dragged
+    constexpr float VIEWPORT_MIN = 360.0f;  // space always kept for the viewport
 
     UserInterface::UserInterface() : _running(false), _coreAccess(nullptr), _clusterClientLayout(), _loadWindow(), _exploratorWindow()
     {
@@ -555,6 +556,36 @@ namespace rc
             this->markViewportBvhDirty();
         };
         this->_materialPanel.setFont(this->_font);
+
+        this->_sidebarResize.onResize = [this](float width)
+        {
+            this->_sidebarWidth = width;
+        };
+
+        this->setupSidebarSection(SidebarStack::HIERARCHY, "hierarchy", "Hierarchy", &this->_hierarchyPanel,
+            [this](float x, float y, float w) { this->_hierarchyPanel.layout(x, y, w); },
+            [this] { return this->_hierarchyPanel.height; });
+        this->setupSidebarSection(SidebarStack::CAMERA, "camera", "Camera", &this->_cameraPanel,
+            [this](float x, float y, float w) { this->_cameraPanel.layout(x, y, w); },
+            [this] { return this->_cameraPanel.height; });
+        this->setupSidebarSection(SidebarStack::OBJECT, "object", "Object", &this->_objectPanel,
+            [this](float x, float y, float w) { this->_objectPanel.layout(x, y, w); },
+            [this] { return this->_objectPanel.height; });
+        this->setupSidebarSection(SidebarStack::MATERIAL, "material", "Material", &this->_materialPanel,
+            [this](float x, float y, float w) { this->_materialPanel.layout(x, y, w); },
+            [this] { return this->_materialPanel.height; });
+    }
+
+    void UserInterface::setupSidebarSection(SidebarStack::Slot slot, const std::string &id, const std::string &title,
+        Component *content, std::function<void(float, float, float)> layoutContent, std::function<float()> contentHeight)
+    {
+        Section &section = this->_sidebar.section(slot);
+        section.id = id;
+        section.setTitle(title);
+        section.setFont(this->_font);
+        section.body.content = content;
+        section.body.layoutContent = std::move(layoutContent);
+        section.body.contentHeight = std::move(contentHeight);
     }
 
     void UserInterface::setCursor(CursorType cursorType)
@@ -563,6 +594,8 @@ namespace rc
                         cursorType == CursorType::ARROW ? this->_cursorArrow :
                         cursorType == CursorType::HAND ? this->_cursorHand :
                         cursorType == CursorType::TEXT ? this->_cursorText :
+                        cursorType == CursorType::RESIZE_H ? this->_cursorResize :
+                        cursorType == CursorType::RESIZE_V ? this->_cursorResizeV :
                         this->_cursorNotAllowed);
 
         this->_window.setMouseCursor(cursor);
@@ -608,28 +641,26 @@ namespace rc
 
         this->updateViewportCamera();
 
-        VerticalLayout layout{20.f, MENU_HEIGHT + 20.f, 12.f};
-        layout.next(20);
+        this->layoutSidebarResize();
+
         this->_hierarchyPanel.setScene(this->_coreAccess ? this->_coreAccess->getScene() : nullptr);
-        this->_hierarchyPanel.layout(layout.x, layout.y, SIDEBAR_WIDTH - 40.f);
-        this->_hierarchyPanel.update(mouse);
+        this->refreshSidebarVisibility();
+        this->_sidebar.layout(this->_sidebarWidth, MENU_HEIGHT, static_cast<float>(this->_window.getSize().y));
+        this->_sidebar.update(mouse);
 
-        this->_cameraPanel.update(mouse);
-        this->_objectPanel.update(mouse);
-        this->_materialPanel.update(mouse);
-
-        const std::vector<Component *> _panels = {&this->_hierarchyPanel, &this->_objectPanel, &this->_materialPanel};
-
-        for (Component *panel : _panels)
-        {
-            if (cursorType == CursorType::ARROW && panel->getCursor() != CursorType::ARROW)
-                cursorType = panel->getCursor();
-        }
+        if (cursorType == CursorType::ARROW && this->_sidebar.getCursor() != CursorType::ARROW)
+            cursorType = this->_sidebar.getCursor();
 
         bool inViewport = this->_viewMode == ViewMode::VIEWPORT && cursorType == CursorType::ARROW && this->_rendererPanel.viewportBounds.contains(mouse);
 
         if (inViewport)
             cursorType = CursorType::CROSS;
+
+        // The sidebar splitter takes precedence over the viewport cross so that
+        // grabbing the edge always shows the resize cursor.
+        this->_sidebarResize.update(mouse);
+        if (this->_sidebarResize.getCursor() != CursorType::ARROW)
+            cursorType = this->_sidebarResize.getCursor();
 
         this->setCursor(cursorType);
 
@@ -638,75 +669,30 @@ namespace rc
 
     void UserInterface::drawUI()
     {
+        this->layoutSidebarResize();
+
         auto size = this->_window.getSize();
 
         sf::RectangleShape panel;
         panel.setPosition({0, MENU_HEIGHT});
-        panel.setSize({SIDEBAR_WIDTH, (float)size.y - MENU_HEIGHT});
+        panel.setSize({this->_sidebarWidth, (float)size.y - MENU_HEIGHT});
         panel.setFillColor(theme::BG_PANEL);
         this->_window.draw(panel);
 
         if (this->_viewMode == ViewMode::RENDERING)
             return;
 
-        VerticalLayout layout{20.f, MENU_HEIGHT + 20.f, 12.f};
+        this->refreshSidebarVisibility();
+        this->_sidebar.layout(this->_sidebarWidth, MENU_HEIGHT, static_cast<float>(size.y));
+        this->_sidebar.draw(this->_window);
 
-        // Scene
-        sf::Text sceneText;
-        sceneText.setFont(_font);
-        sceneText.setString("Scene");
-        sceneText.setCharacterSize(14);
-        sceneText.setFillColor(theme::TEXT_DIM);
-        sceneText.setPosition({layout.x, layout.y});
-        this->_window.draw(sceneText);
-        layout.next(20);
-
-        this->_window.draw(this->_hierarchyPanel);
-        layout.y = this->_hierarchyPanel.getBottomY();
-
-        this->_sepSelection.layout(layout.x, layout.y, SIDEBAR_WIDTH - 40);
-        this->_window.draw(this->_sepSelection);
-        layout.next(18);
-
-        if (this->_hierarchyPanel.isCameraSelected())
-        {
-            this->_cameraPanel.layout(layout.x, layout.y, SIDEBAR_WIDTH - 40.0f);
-            this->_window.draw(this->_cameraPanel);
-            layout.next(this->_cameraPanel.height);
-        }
-        if (!this->_hierarchyPanel.getSelection().empty())
-        {
-            this->_objectPanel.layout(layout.x, layout.y, SIDEBAR_WIDTH - 40.0);
-            this->_window.draw(this->_objectPanel);
-            layout.next(this->_objectPanel.height);
-        }
-        else
-        {
-            sf::Text noMatText;
-            noMatText.setFont(_font);
-            noMatText.setCharacterSize(12);
-            noMatText.setFillColor(theme::TEXT_DIM);
-            noMatText.setString("(no selection)");
-            noMatText.setPosition({layout.x, layout.y});
-            this->_window.draw(noMatText);
-        }
-
-        if (this->_hierarchyPanel.tryCast<const IPrimitive>())
-        {
-            this->_sepMaterial.layout(layout.x, layout.y, SIDEBAR_WIDTH - 40);
-            this->_window.draw(this->_sepMaterial);
-            layout.next(12);
-
-            this->_materialPanel.layout(layout.x, layout.y, SIDEBAR_WIDTH - 40.0);
-            this->_window.draw(this->_materialPanel);
-            layout.next(this->_materialPanel.height);
-        }
+        this->_window.draw(this->_sidebarResize);
     }
 
     void UserInterface::drawRenderer(ISceneRenderer *renderer)
     {
         sf::Vector2u windowSize = this->_window.getSize();
-        this->_rendererPanel.layout(SIDEBAR_WIDTH, MENU_HEIGHT, static_cast<float>(windowSize.x) - SIDEBAR_WIDTH, static_cast<float>(windowSize.y) - MENU_HEIGHT);
+        this->_rendererPanel.layout(this->_sidebarWidth, MENU_HEIGHT, static_cast<float>(windowSize.x) - this->_sidebarWidth, static_cast<float>(windowSize.y) - MENU_HEIGHT);
         this->_rendererPanel.updateRender(renderer->getRender());
         this->_window.draw(this->_rendererPanel);
     }
@@ -829,14 +815,9 @@ namespace rc
 
         if (viewportMode)
         {
-            candidates.push_back(&this->_hierarchyPanel);
-            if (this->_hierarchyPanel.isCameraSelected())
-                candidates.push_back(&this->_cameraPanel);
-            if (!this->_hierarchyPanel.getSelection().empty())
-            {
-                candidates.push_back(&this->_objectPanel);
-                candidates.push_back(&this->_materialPanel);
-            }
+            this->layoutSidebarResize();
+            candidates.push_back(&this->_sidebarResize);
+            this->_sidebar.collectComponents(candidates);
         }
 
         const Component *consumer = EventRouter::route(candidates, event, mouse);
@@ -851,7 +832,7 @@ namespace rc
         if (viewportMode && consumer == nullptr &&
             event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left)
         {
-            if (mouse.x > SIDEBAR_WIDTH && mouse.y >= static_cast<int>(MENU_HEIGHT))
+            if (mouse.x > this->_sidebarWidth && mouse.y >= static_cast<int>(MENU_HEIGHT))
                 this->updateSelectionFromClick(mouse);
         }
     }
@@ -987,6 +968,24 @@ namespace rc
         this->_viewportBvhDirty = true;
     }
 
+    void UserInterface::layoutSidebarResize()
+    {
+        const sf::Vector2u size = this->_window.getSize();
+        const float maxWidth = std::max(SIDEBAR_MIN + 40.f, static_cast<float>(size.x) - VIEWPORT_MIN);
+
+        this->_sidebarWidth = std::clamp(this->_sidebarWidth, SIDEBAR_MIN, maxWidth);
+        this->_sidebarResize.setRange(SIDEBAR_MIN, maxWidth);
+        this->_sidebarResize.setBounds(this->_sidebarWidth, MENU_HEIGHT, static_cast<float>(size.y) - MENU_HEIGHT);
+    }
+
+    void UserInterface::refreshSidebarVisibility()
+    {
+        this->_sidebar.setVisible(SidebarStack::HIERARCHY, true);
+        this->_sidebar.setVisible(SidebarStack::CAMERA, this->_hierarchyPanel.isCameraSelected());
+        this->_sidebar.setVisible(SidebarStack::OBJECT, !this->_hierarchyPanel.getSelection().empty());
+        this->_sidebar.setVisible(SidebarStack::MATERIAL, this->_hierarchyPanel.tryCast<const IPrimitive>() != nullptr);
+    }
+
     void UserInterface::create(ICoreAccess &core_access)
     {
         this->_coreAccess = &core_access;
@@ -998,6 +997,8 @@ namespace rc
         this->_cursorText.loadFromSystem(sf::Cursor::Text);
         this->_cursorNotAllowed.loadFromSystem(sf::Cursor::NotAllowed);
         this->_cursorViewport.loadFromSystem(sf::Cursor::Cross);
+        this->_cursorResize.loadFromSystem(sf::Cursor::SizeHorizontal);
+        this->_cursorResizeV.loadFromSystem(sf::Cursor::SizeVertical);
         this->setupLayout(this->_clusterClientLayout);
         this->setupLayout(this->_defaultLayout);
         this->_clusterClientLayout.setOnLeave([this]

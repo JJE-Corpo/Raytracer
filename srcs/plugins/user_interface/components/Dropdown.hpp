@@ -160,13 +160,17 @@ namespace rc
             {
                 target.draw(header, states);
                 target.draw(text, states);
+            }
 
-                if (open)
-                {
-                    target.draw(panel, states);
-                    for (auto &item : items)
-                        target.draw(item, states);
-                }
+            // The open list is drawn in the overlay pass so it is never clipped
+            // by a scrolling section.
+            void drawOverlay(sf::RenderTarget &target, sf::RenderStates states) const override
+            {
+                if (!open)
+                    return;
+                target.draw(panel, states);
+                for (auto &item : items)
+                    target.draw(item, states);
             }
 
             bool handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
