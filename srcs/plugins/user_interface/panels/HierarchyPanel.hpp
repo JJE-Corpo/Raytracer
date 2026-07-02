@@ -11,6 +11,7 @@
 #include <functional>
 
 #include "../Component.hpp"
+#include "../components/TextField.hpp"
 #include "../../../common/scene/ISceneObject.hpp"
 
 namespace rc
@@ -39,6 +40,7 @@ namespace rc
             void update(sf::Vector2i mouse) override;
             bool handleEvent(const sf::Event &event, sf::Vector2i mouse) override;
             CursorType getCursor() override;
+            bool isCapturing() const override;
 
             // Total laid-out content height (the wrapping ScrollView reads this).
             float height = 0.f;
@@ -80,8 +82,14 @@ namespace rc
             };
 
             void buildItems();
+            void refreshHoverState();
             void select(const ISceneObject *primitive, bool ctrlPressed);
             void selectCamera();
+
+            void beginRename(const Item &item);
+            void commitRename();
+            void cancelRename();
+            void layoutRenameField(const sf::FloatRect &itemBounds, const sf::FloatRect &buttonBounds);
 
             sf::Font *_font = nullptr;
             IScene *_scene = nullptr;
@@ -94,7 +102,14 @@ namespace rc
             std::vector<const ISceneObject *> _selection;
             bool _cameraSelected = false;
             bool _selectionChanged = false;
+            sf::Vector2i _lastMouse{-100000, -100000};
             std::function<void(const ISceneObject *)> _onItemHideRequest;
+
+            // Inline rename: nullptr when no row is being renamed.
+            const ISceneObject *_renamingObject = nullptr;
+            TextField _renameField;
+            sf::Clock _clickClock;
+            const void *_lastClickedPayload = nullptr;
     };
 }
 

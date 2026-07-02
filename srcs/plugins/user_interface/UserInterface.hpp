@@ -14,9 +14,10 @@
 #include "../../common/ISceneRenderer.hpp"
 #include "../../common/IUserInterface.hpp"
 #include "../../common/ICoreAccess.hpp"
+#include "CursorManager.hpp"
 #include "screens/ClusterClientScreen.hpp"
 #include "screens/DefaultScreen.hpp"
-#include "screens/Screen.hpp"
+#include "screens/AScreen.hpp"
 
 namespace rc
 {
@@ -32,6 +33,10 @@ namespace rc
 
             ICoreAccess *_coreAccess;
 
+            // Shared by both screens (see AScreen::setCursorManager) so cursor
+            // loading/mapping lives in one place instead of per-screen.
+            CursorManager _cursorManager;
+
             // The two screens UserInterface can drive: the normal editing UI, and
             // the read-only view shown while spectating a cluster render. Which one
             // is "active" is decided purely by the cluster mode - both are pushed
@@ -41,7 +46,7 @@ namespace rc
             DefaultScreen _defaultScreen;
             ClusterClientScreen _clusterClientScreen;
 
-            Screen &activeScreen();
+            AScreen &activeScreen();
 
             void eventLoop();
 

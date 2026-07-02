@@ -1,9 +1,9 @@
 //
 // Created by jazema on 7/1/26.
 //
-// A sidebar section: a clickable, collapsible header on top of a scrollable body
-// (ScrollView) wrapping one panel. The SidebarStack owns a list of these, sizes
-// them, and puts draggable dividers between them.
+// A sidebar section: a fixed header on top of a scrollable body (ScrollView)
+// wrapping one panel. The SidebarStack owns a list of these, sizes them, and
+// puts draggable dividers between them.
 //
 
 #ifndef SECTION_HPP
@@ -21,17 +21,20 @@ namespace rc
         public:
             std::string id;
             ScrollView body;
-            bool collapsed = false;
 
             static constexpr float HEADER_H = 26.f;
             static constexpr float PAD_X = 14.f;  // horizontal inset of the body content
             static constexpr float PAD_Y = 8.f;   // gap under the header
 
+            // Per-section override of the body's horizontal inset (defaults to
+            // PAD_X). Set to 0 for panels that want edge-to-edge rows.
+            float padX = PAD_X;
+
             void setFont(sf::Font &font) override;
             void setTitle(const std::string &title);
 
             // Position the section: header of fixed height on top, body filling
-            // bodyHeight below it (0 while collapsed). Called every frame by the stack.
+            // bodyHeight below it. Called every frame by the stack.
             void place(float x, float y, float width, float bodyHeight);
 
             float bodyBottom() const;
@@ -50,10 +53,6 @@ namespace rc
             sf::Text _title;
             sf::FloatRect _fullRect;
             sf::FloatRect _headerRect;
-            bool _headerHovered = false;
-
-            // A small triangle pointing down (expanded) or right (collapsed).
-            sf::ConvexShape makeChevron() const;
     };
 }
 

@@ -10,7 +10,7 @@
 
 namespace rc
 {
-    UserInterface::UserInterface() : _running(false), _coreAccess(nullptr), _clusterClientScreen()
+    UserInterface::UserInterface() : _running(false), _coreAccess(nullptr)
     {
     }
 
@@ -19,7 +19,7 @@ namespace rc
         this->UserInterface::destroy();
     }
 
-    Screen &UserInterface::activeScreen()
+    AScreen &UserInterface::activeScreen()
     {
         if (this->_coreAccess->getClusterModule()->getClusterMode() == ClusterMode::CLIENT)
             return (this->_clusterClientScreen);
@@ -35,7 +35,7 @@ namespace rc
         }
         while (!this->shouldExit())
         {
-            Screen &screen = this->activeScreen();
+            AScreen &screen = this->activeScreen();
 
             sf::Event event;
             while (this->_window.pollEvent(event) && !this->shouldExit())
@@ -75,6 +75,10 @@ namespace rc
 
         this->_window.create({1280, 720}, "Raytracer UI grrahboom", sf::Style::Default);
         this->_window.setActive(false);
+
+        this->_cursorManager.load();
+        this->_defaultScreen.setCursorManager(this->_cursorManager);
+        this->_clusterClientScreen.setCursorManager(this->_cursorManager);
 
         this->_defaultScreen.setCoreAccess(this->_coreAccess);
         this->_defaultScreen.onClusterJoined = [this](IClusterClient *client)

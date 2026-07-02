@@ -34,14 +34,6 @@ namespace rc
 
     void DefaultScreen::buildUI()
     {
-        this->_cursorArrow.loadFromSystem(sf::Cursor::Arrow);
-        this->_cursorHand.loadFromSystem(sf::Cursor::Hand);
-        this->_cursorText.loadFromSystem(sf::Cursor::Text);
-        this->_cursorNotAllowed.loadFromSystem(sf::Cursor::NotAllowed);
-        this->_cursorViewport.loadFromSystem(sf::Cursor::Cross);
-        this->_cursorResize.loadFromSystem(sf::Cursor::SizeHorizontal);
-        this->_cursorResizeV.loadFromSystem(sf::Cursor::SizeVertical);
-
         this->_viewportBvhDirty = true;
         this->_toastManager.setFont(*this->_font);
 
@@ -570,6 +562,7 @@ namespace rc
         this->setupSidebarSection(SidebarStack::HIERARCHY, "hierarchy", "Hierarchy", &this->_hierarchyPanel,
             [this](float x, float y, float w) { this->_hierarchyPanel.layout(x, y, w); },
             [this] { return this->_hierarchyPanel.height; });
+        this->_sidebar.section(SidebarStack::HIERARCHY).padX = 0.f;
         this->setupSidebarSection(SidebarStack::CAMERA, "camera", "Camera", &this->_cameraPanel,
             [this](float x, float y, float w) { this->_cameraPanel.layout(x, y, w); },
             [this] { return this->_cameraPanel.height; });
@@ -591,19 +584,6 @@ namespace rc
         section.body.content = content;
         section.body.layoutContent = std::move(layoutContent);
         section.body.contentHeight = std::move(contentHeight);
-    }
-
-    void DefaultScreen::setCursor(sf::RenderWindow &window, CursorType cursorType)
-    {
-        sf::Cursor &cursor = (cursorType == CursorType::CROSS ? this->_cursorViewport :
-                        cursorType == CursorType::ARROW ? this->_cursorArrow :
-                        cursorType == CursorType::HAND ? this->_cursorHand :
-                        cursorType == CursorType::TEXT ? this->_cursorText :
-                        cursorType == CursorType::RESIZE_H ? this->_cursorResize :
-                        cursorType == CursorType::RESIZE_V ? this->_cursorResizeV :
-                        this->_cursorNotAllowed);
-
-        window.setMouseCursor(cursor);
     }
 
     void DefaultScreen::update(sf::RenderWindow &window)
@@ -630,7 +610,7 @@ namespace rc
 
         if (this->_menuBar.isOpen())
         {
-            this->setCursor(window, this->_menuBar.getCursor());
+            this->applyCursor(window, this->_menuBar.getCursor());
             return;
         }
 
@@ -640,7 +620,7 @@ namespace rc
 
         if (this->_viewMode == ViewMode::RENDERING)
         {
-            this->setCursor(window, cursorType);
+            this->applyCursor(window, cursorType);
             return;
         }
 
@@ -667,7 +647,7 @@ namespace rc
         if (this->_sidebarResize.getCursor() != CursorType::ARROW)
             cursorType = this->_sidebarResize.getCursor();
 
-        this->setCursor(window, cursorType);
+        this->applyCursor(window, cursorType);
 
         this->_toastManager.update();
     }
@@ -791,6 +771,46 @@ namespace rc
         this->syncSelectionToRenderer();
     }
 
+    void DefaultScreen::clearHover()
+    {
+        if (!this->_coreAccess)
+            return;
+        auto *hover_renderer = dynamic_cast<ISelectionAwareRenderer *>(this->_coreAccess->getViewportRenderer());
+        if (hover_renderer)
+            hover_renderer->setHover(nullptr);
+    }
+
+    void DefaultScreen::updateHoverFromMouse(const sf::Vector2i &mouse)
+    {
+        if (!this->_coreAccess)
+            return;
+
+        auto *hover_renderer = dynamic_cast<ISelectionAwareRenderer *>(this->_coreAccess->getViewportRenderer());
+        if (!hover_renderer)
+            return;
+
+        IScene *scene = this->_coreAccess->getScene();
+        sf::Vector2i pixel;
+        if (!scene || !this->_rendererPanel.getViewportPixel(mouse, pixel))
+        {
+            hover_renderer->setHover(nullptr);
+            return;
+        }
+
+        const ISceneObject *hoveredObject = ViewportHelper::pickViewportLight(*scene, scene->getCamera(), pixel);
+
+        if (!hoveredObject)
+        {
+            Intersection hit;
+            const Ray ray = scene->getCamera().generateRay(pixel.x, pixel.y);
+            const bool has_hit = scene->intersect(ray, 0.001f, std::numeric_limits<float>::infinity(), hit);
+            if (has_hit && hit.primitive)
+                hoveredObject = hit.primitive;
+        }
+
+        hover_renderer->setHover(hoveredObject);
+    }
+
     void DefaultScreen::handleEvent(sf::RenderWindow &window, sf::Event &event)
     {
         const sf::Vector2i mouse = sf::Mouse::getPosition(window);
@@ -847,6 +867,16 @@ namespace rc
         {
             if (mouse.x > this->_sidebarWidth && mouse.y >= static_cast<int>(MENU_HEIGHT))
                 this->updateSelectionFromClick(mouse);
+        }
+
+        // Track what's under the cursor so the viewport can highlight it, the
+        // same way the click fallback above picks the object to select.
+        if (event.type == sf::Event::MouseMoved || event.type == sf::Event::MouseLeft)
+        {
+            if (viewportMode && consumer == nullptr && event.type == sf::Event::MouseMoved)
+                this->updateHoverFromMouse(mouse);
+            else
+                this->clearHover();
         }
     }
 

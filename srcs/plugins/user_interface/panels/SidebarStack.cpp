@@ -30,24 +30,16 @@ namespace rc
         const float bodyPool = std::max(0.f, availableH - static_cast<float>(count) * Section::HEADER_H);
 
         float sumW = 0.f;
-        std::size_t expandedCount = 0;
         for (Section *s : this->_order)
-        {
-            if (!s->collapsed)
-            {
-                sumW += this->weightRef(s->id);
-                ++expandedCount;
-            }
-        }
+            sumW += this->weightRef(s->id);
 
-        const float extra = std::max(0.f, bodyPool - static_cast<float>(expandedCount) * MIN_BODY);
+        const float extra = std::max(0.f, bodyPool - static_cast<float>(count) * MIN_BODY);
 
         float y = top;
-        for (std::size_t i = 0; i < count; ++i)
+        for (Section *s : this->_order)
         {
-            Section *s = this->_order[i];
             float bodyH = 0.f;
-            if (!s->collapsed && sumW > 0.f)
+            if (sumW > 0.f)
                 bodyH = MIN_BODY + extra * (this->weightRef(s->id) / sumW);
             s->place(0.f, y, width, bodyH);
             y = s->bodyBottom();
@@ -112,12 +104,8 @@ namespace rc
             Section *b = this->_order[i + 1];
             ResizeHandleV &divider = this->_dividers[i];
 
-            const bool interactive = !a->collapsed && !b->collapsed;
-            divider.enabled = interactive;
+            divider.enabled = true;
             divider.setBounds(a->bodyBottom(), 0.f, width);
-
-            if (!interactive)
-                continue;
 
             const float aTop = a->bodyTop();
             const float pairPixels = a->bodyHeight() + b->bodyHeight();

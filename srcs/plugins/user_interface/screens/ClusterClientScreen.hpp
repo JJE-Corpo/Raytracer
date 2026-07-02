@@ -6,7 +6,7 @@
 #define CLUSTERCLIENTSCREEN_HPP
 #include <functional>
 
-#include "Screen.hpp"
+#include "AScreen.hpp"
 #include "../LayoutPen.hpp"
 #include "../components/Button.hpp"
 #include "../toast/ToastManager.hpp"
@@ -14,7 +14,7 @@
 
 namespace rc
 {
-    struct ClusterClientScreen : Screen
+    struct ClusterClientScreen : AScreen
     {
         private:
             void updateRenderPreview()
@@ -144,6 +144,8 @@ namespace rc
 
                 this->_renderSprite.setScale(viewportScale, viewportScale);
                 this->_renderSprite.setPosition({10, 10});
+
+                this->applyCursor(window, this->_leaveButton.getCursor());
             }
 
             void draw(sf::RenderWindow &window) override

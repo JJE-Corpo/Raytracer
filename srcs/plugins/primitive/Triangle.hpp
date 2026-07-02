@@ -42,6 +42,7 @@ namespace rc
             AABB bounding_box() const override;
 
             std::string getName() const override;
+            void setName(const std::string &name) override { this->_name = name; }
             std::string getTypeName() const override;
 
             std::map<std::string, std::pair<std::string, PropertyType>> getProperties() const override;

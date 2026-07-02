@@ -54,6 +54,7 @@ PLUGINS_PATH = ./plugins
 
 USERINTERFACE_NAME = user_interface.so
 USERINTERFACE_SOURCES = srcs/plugins/user_interface/UserInterface.cpp \
+		srcs/plugins/user_interface/CursorManager.cpp \
 		srcs/plugins/user_interface/panels/CameraPanel.cpp \
 		srcs/plugins/user_interface/panels/HierarchyPanel.cpp \
 		srcs/plugins/user_interface/panels/MaterialPanel.cpp \
