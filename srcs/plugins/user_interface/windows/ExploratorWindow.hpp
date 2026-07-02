@@ -65,6 +65,7 @@ namespace rc
 
         Button backButton;
         Button nextButton;
+        Button upButton;
 
         Button saveButton;
         TextField filenameField;
@@ -84,8 +85,8 @@ namespace rc
 
             try
             {
-                if (getCurrentPath().has_parent_path() && getCurrentPath() != getCurrentPath().root_path())
-                    entries.push_back({getCurrentPath().parent_path(), true});
+                // if (getCurrentPath().has_parent_path() && getCurrentPath() != getCurrentPath().root_path())
+                //     entries.push_back({getCurrentPath().parent_path(), true});
 
                 std::vector<std::filesystem::directory_entry> directories;
                 std::vector<std::filesystem::directory_entry> files;
@@ -93,6 +94,8 @@ namespace rc
                 for (const auto &entry : std::filesystem::directory_iterator(getCurrentPath()))
                 {
                     const std::string name = entry.path().filename().string();
+
+                    std::cout << name << std::endl;
 
                     if (!name.empty() && name[0] == '.')
                         continue;
@@ -163,6 +166,14 @@ namespace rc
             }
         }
 
+        void goUp()
+        {
+            if (getCurrentPath().has_parent_path())
+            {
+                openDirectory(getCurrentPath().parent_path());
+            }
+        }
+
         void create(sf::Font &f, ExploratorMode m, std::string &result)
         {
             font = &f;
@@ -194,6 +205,10 @@ namespace rc
             nextButton.setFont(*font);
             nextButton.setLabel(">");
             nextButton.onClick = [&] { goForward(); };
+
+            upButton.setFont(*font);
+            upButton.setLabel("^");
+            upButton.onClick = [&] { goUp(); };
 
             filenameField.setFont(*font);
             filenameField.setCharacterSize(14);
@@ -248,6 +263,9 @@ namespace rc
             currentPathField.layout(layout.x + 80.f, layout.y, 720.f, 28.f);
             currentPathField.setValue(getCurrentPath().string());
             window.draw(currentPathField);
+
+            upButton.layout(layout.x + 810.f, layout.y, 34.f, 28.f);
+            window.draw(upButton);
             layout.next(34.f);
 
             separator.layout(layout.x, layout.y, 720.f);
@@ -342,6 +360,7 @@ namespace rc
 
             backButton.update(mouse);
             nextButton.update(mouse);
+            upButton.update(mouse);
 
             saveButton.update(mouse);
         }
@@ -408,6 +427,7 @@ namespace rc
 
             backButton.handleEvent(event, mouse);
             nextButton.handleEvent(event, mouse);
+            upButton.handleEvent(event, mouse);
 
             saveButton.handleEvent(event, mouse);
         }
