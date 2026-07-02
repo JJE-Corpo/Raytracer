@@ -9,43 +9,19 @@
 #include <thread>
 #include <mutex>
 #include <atomic>
-#include <condition_variable>
 
-#include "Component.hpp"
-#include "windows/JoinClusterWindow.hpp"
-#include "toast/ToastManager.hpp"
 #include "../../common/IPlugin.hpp"
 #include "../../common/ISceneRenderer.hpp"
 #include "../../common/IUserInterface.hpp"
 #include "../../common/ICoreAccess.hpp"
-#include "components/ColorPicker.hpp"
-#include "components/ResizeHandle.hpp"
-#include "components/Separator.hpp"
-#include "components/menu/MenuBar.hpp"
-#include "layouts/ClusterClientLayout.hpp"
-#include "layouts/DefaultLayout.hpp"
-#include "panels/CameraPanel.hpp"
-#include "panels/HierarchyPanel.hpp"
-#include "panels/MaterialPanel.hpp"
-#include "panels/ObjectPanel.hpp"
-#include "panels/RendererPanel.hpp"
-#include "panels/SidebarStack.hpp"
-#include "windows/ExploratorWindow.hpp"
-#include "windows/LoadWindow.hpp"
-
-constexpr float padding    = 20.f;
-constexpr float itemHeight = 40.f;
+#include "screens/ClusterClientScreen.hpp"
+#include "screens/DefaultScreen.hpp"
+#include "screens/Screen.hpp"
 
 namespace rc
 {
     class UserInterface : public IUserInterface
     {
-        enum class ViewMode
-        {
-            VIEWPORT,
-            RENDERING
-        };
-
         private:
             sf::RenderWindow _window;
             sf::Font _font;
@@ -56,80 +32,17 @@ namespace rc
 
             ICoreAccess *_coreAccess;
 
-            ViewMode _viewMode = ViewMode::VIEWPORT;
-            bool _viewportBvhDirty = true;
+            // The two screens UserInterface can drive: the normal editing UI, and
+            // the read-only view shown while spectating a cluster render. Which one
+            // is "active" is decided purely by the cluster mode - both are pushed
+            // through the exact same Screen lifecycle (setFont/handleEvent/
+            // prepareFrame/tick/shutdown), so adding a third screen later is just
+            // another member plus a branch in activeScreen().
+            DefaultScreen _defaultScreen;
+            ClusterClientScreen _clusterClientScreen;
 
-            DefaultLayout _defaultLayout;
-            ClusterClientLayout _clusterClientLayout;
+            Screen &activeScreen();
 
-            MenuBar _menuBar;
-
-            // Resizable left sidebar.
-            float _sidebarWidth = 260.0f;
-            ResizeHandle _sidebarResize;
-
-            HierarchyPanel _hierarchyPanel;
-            ObjectPanel _objectPanel;
-            CameraPanel _cameraPanel;
-            MaterialPanel _materialPanel;
-
-            // Collapsible/resizable/scrollable stack wrapping the panels above.
-            SidebarStack _sidebar;
-
-            RendererPanel _rendererPanel;
-
-            // Windows
-            // Elements de l'UI
-            bool _isNewScene = false;
-            JoinClusterWindow _joinClusterWindow;
-            LoadWindow _loadWindow;
-            ExploratorWindow _exploratorWindow;
-
-            std::string _exploratorResult;
-            bool _exploratorJustClosed = false;
-            std::function<void()> _exploratorOnClose;
-
-            ToastManager _toastManager;
-
-            // Curseurs
-            sf::Cursor _cursorArrow;
-            sf::Cursor _cursorHand;
-            sf::Cursor _cursorText;
-            sf::Cursor _cursorNotAllowed;
-            sf::Cursor _cursorViewport;
-            sf::Cursor _cursorResize;
-            sf::Cursor _cursorResizeV;
-            //
-
-            // viewport
-            sf::Vector2i _lastMouse;
-            bool _rightMouseHeld = false;
-            float _cameraSpeed = 5.0f;
-            //
-
-            void buildUI();
-            void updateUI();
-
-            void setupLayout(Layout &layout);
-
-            void layoutSidebarResize();
-            void setupSidebarSection(SidebarStack::Slot slot, const std::string &id, const std::string &title,
-                Component *content, std::function<void(float, float, float)> layoutContent,
-                std::function<float()> contentHeight);
-            void refreshSidebarVisibility();
-
-            void drawUI();
-            void drawRenderer(ISceneRenderer *renderer);
-
-            void setCursor(CursorType cursorType);
-
-            void updateSelectionFromClick(const sf::Vector2i &mouse);
-            void syncSelectionToRenderer();
-            void markViewportBvhDirty();
-
-            void updateViewportCamera();
-
-            void handleWindowEvent(const sf::Event &event);
             void eventLoop();
 
             void exit();

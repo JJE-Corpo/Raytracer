@@ -70,11 +70,6 @@ namespace rc
             this->updateVisuals();
         }
 
-        float getValue() const
-        {
-            return this->value;
-        }
-
         void setRange(float min_val, float max_val)
         {
             this->minValue = min_val;

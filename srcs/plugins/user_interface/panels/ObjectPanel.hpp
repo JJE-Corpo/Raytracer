@@ -4,20 +4,47 @@
 
 #ifndef OBJECTPANEL_HPP
 #define OBJECTPANEL_HPP
+
 #include <functional>
 #include <vector>
+
 #include "../Component.hpp"
-#include "../EventRouter.hpp"
-#include "../Theme.hpp"
-#include "../VerticalLayout.hpp"
+#include "../components/ColorPicker.hpp"
 #include "../components/Dropdown.hpp"
 #include "../components/VectorField.hpp"
-#include "../../../common/Material.hpp"
 
 namespace rc
 {
-    struct ObjectPanel : Component
+    class IScene;
+    class ISceneObject;
+    struct Material;
+
+    class ObjectPanel : public Component
     {
+        public:
+            float height = 0.0;
+
+            bool isLight = false;
+            bool isPrimitive = false;
+            std::function<void()> onSceneMutated;
+
+            void setFont(sf::Font &font) override;
+            void layout(float x, float y, float width);
+            void setScene(IScene *scene);
+
+            // Rebuilds the light/primitive-specific fields (color, intensity,
+            // material dropdown, property sliders) for currentObject.
+            void rebuild(const ISceneObject *currentObject);
+
+            void update(sf::Vector2i mouse) override;
+            bool isCapturing() const override;
+            bool handleEvent(const sf::Event &event, sf::Vector2i mouse) override;
+            void draw(sf::RenderTarget &target, sf::RenderStates states) const override;
+            void drawOverlay(sf::RenderTarget &target, sf::RenderStates states) const override;
+            CursorType getCursor() override;
+
+            bool consumeMaterialChanged();
+
         private:
             sf::Text _title;
 
@@ -31,7 +58,7 @@ namespace rc
 
             ColorPicker _lightColorPicker;
             sf::Text _intensityLabel;
-            TextField _lightIntensityField; //todo voir si on le met dans les objectSliders ?
+            TextField _lightIntensityField;
             std::vector<Slider> _objectSliders;
 
             VectorField _positionField;
@@ -39,387 +66,6 @@ namespace rc
             VectorField _scaleField;
 
             sf::Font _font;
-        public:
-            float height = 0.0;
-
-            bool isLight = false;
-            bool isPrimitive = false;
-            std::function<void()> onSceneMutated;
-
-            void setFont(sf::Font &font) override
-            {
-                this->_title.setFont(font);
-                this->_title.setCharacterSize(14);
-                this->_title.setFillColor(theme::TEXT_DIM);
-
-                this->_lightColorPicker.setFont(font);
-                this->_lightColorPicker.setLabel("Light color");
-
-                this->_intensityLabel.setFont(font);
-                this->_intensityLabel.setCharacterSize(12);
-                this->_intensityLabel.setFillColor(theme::TEXT_DIM);
-                this->_intensityLabel.setString("Light intensity");
-
-                this->_lightIntensityField.setFont(font);
-                this->_lightIntensityField.setCharacterSize(12);
-                // this->_lightIntensityField.setLabel("Light intensity");
-
-                this->_positionField.setLabel("Position");
-                this->_positionField.setFont(font);
-                this->_rotationField.setLabel("Rotation");
-                this->_rotationField.setFont(font);
-                this->_scaleField.setLabel("Scale");
-                this->_scaleField.setFont(font);
-
-                this->_materialLabel.setFont(font);
-                this->_materialLabel.setCharacterSize(12);
-                this->_materialLabel.setFillColor(theme::TEXT_WHITE);
-                this->_materialLabel.setString("Material");
-
-                this->_materialDropdown.setFont(font);
-                this->_materialDropdown.setPlaceholder("Select");
-
-                this->_font = font;
-            }
-
-            void layout(float x, float y, float width)
-            {
-                VerticalLayout layout{x, y};
-
-                this->_title.setPosition({layout.x, layout.y});
-                layout.next(24);
-
-                if (this->isLight)
-                {
-                    this->_lightColorPicker.layout(layout.x, layout.y);
-                    layout.next(22);
-
-                    this->_intensityLabel.setPosition(layout.x, layout.y);
-                    layout.next(12);
-
-                    this->_lightIntensityField.layout(layout.x, layout.y, width, 20);
-                    layout.next(20);
-                }
-
-                if (this->isPrimitive)
-                {
-                    this->_materialLabel.setPosition(layout.x, layout.y);
-                    this->_materialDropdown.layout(layout.x + 60, layout.y, width - 60.0f);
-                    layout.next(24);
-                }
-
-                for (auto &slider : this->_objectSliders)
-                {
-                    slider.layout(layout.x, layout.y, width);
-                    layout.next(16);
-                }
-
-                this->_positionField.layout(layout.x, layout.y, width);
-                layout.next(32);
-                this->_rotationField.layout(layout.x, layout.y, width);
-                layout.next(32);
-                this->_scaleField.layout(layout.x, layout.y, width);
-                layout.next(32);
-
-                this->height = layout.y - y;
-            }
-
-            void update(sf::Vector2i mouse) override
-            {
-                if (this->isLight)
-                {
-                    this->_lightColorPicker.update(mouse);
-                    this->_lightIntensityField.update(mouse);
-                }
-                if (this->isPrimitive)
-                    this->_materialDropdown.update(mouse);
-                for (auto &slider : this->_objectSliders)
-                {
-                    slider.update(mouse);
-                }
-                this->_positionField.update(mouse);
-                this->_rotationField.update(mouse);
-                this->_scaleField.update(mouse);
-            }
-
-            void rebuild(const ISceneObject *currentObject)
-            {
-                this->_title.setString("Object : " + currentObject->getName());
-
-                this->isLight = false;
-                this->isPrimitive = false;
-
-                this->_lightColorPicker.onChange = nullptr;
-                this->_lightIntensityField.onType = nullptr;
-                this->_lightIntensityField.onValidate = nullptr;
-                this->_materialDropdown.onSelect = nullptr;
-                this->_materialDropdown.enabled = false;
-                this->_materialDropdown.open = false;
-
-                this->_objectSliders.clear();
-
-                const auto *asLight = dynamic_cast<const ILight *>(currentObject);
-                const auto *asPrimitive = dynamic_cast<const IPrimitive *>(currentObject);
-                if (asLight)
-                {
-                    this->isLight = true;
-                    this->_lightColorPicker.onChange = [currentObject](const ColorF &color)
-                    {
-                        const auto *tmp = dynamic_cast<const ILight *>(currentObject);
-                        auto *light = const_cast<ILight *>(tmp);
-                        light->setColorF(color);
-                    };
-                    this->_lightIntensityField.enabled = true;
-                    this->_lightIntensityField.setValue(std::to_string(asLight->getIntensity()));
-                    this->_lightIntensityField.onType = [](const std::string &value)
-                    {
-                        if (!Utils::isFloat(value))
-                            return (false);
-                        if (std::stof(value) < 0)
-                            return (false);
-                        return (true);
-                    };
-                    this->_lightIntensityField.onValidate = [asLight](const std::string &value)
-                    {
-                        if (!Utils::isFloat(value))
-                            return (false);
-                        float result = std::stof(value);
-                        if (result < 0)
-                            result = 0;
-                        const_cast<ILight *>(asLight)->setIntensity(result);
-                        return (true);
-                    };
-                }
-                if (asPrimitive)
-                {
-                    this->isPrimitive = true;
-                    std::vector<std::string> labels;
-                    labels.emplace_back("(none)");
-                    labels.emplace_back("New");
-                    for (const auto &material : this->_materials)
-                        labels.push_back(material->name);
-
-                    this->_materialDropdown.setOptions(labels);
-
-                    int selectedIndex = 0;
-                    if (asPrimitive->getMaterial() != nullptr)
-                    {
-                        const std::string &currentName = asPrimitive->getMaterial()->name;
-                        for (size_t i = 1; i < labels.size(); ++i)
-                        {
-                            if (labels[i] == currentName)
-                            {
-                                selectedIndex = static_cast<int>(i);
-                                break;
-                            }
-                        }
-                    }
-
-                    this->_materialDropdown.setSelectedIndex(selectedIndex);
-                    this->_materialDropdown.onSelect = [this, asPrimitive](int index)
-                    {
-                        auto *primitive = const_cast<IPrimitive *>(asPrimitive);
-                        if (index <= 0)
-                        {
-                            primitive->setMaterial(nullptr);
-                            this->_materialChanged = true;
-                            return;
-                        }
-
-                        if (index == 1)
-                        {
-                            Material *material = this->scene->createMaterial();
-                            this->setScene(this->scene); //pour mettre a jour la liste des materials;
-                            primitive->setMaterial(material);
-                            this->rebuild(primitive);
-                            this->_materialChanged = true;
-                            return;
-                        }
-
-                        const size_t materialIndex = static_cast<size_t>(index - 2);
-                        if (materialIndex < this->_materials.size())
-                            primitive->setMaterial(this->_materials[materialIndex]);
-                        this->_materialChanged = true;
-                    };
-                    this->_materialDropdown.enabled = true;
-                    auto props = asPrimitive->getProperties();
-                    for (auto &[key, val] : props)
-                    {
-                        if (val.second != PropertyType::FLOAT)
-                            continue;
-                        std::string _tmp = key;
-                        Slider slider;
-
-                        slider.setLabel(key);
-                        slider.setFont(this->_font);
-                        slider.setRange(0.0f, 100.0f);
-                        slider.setValue(std::stof(val.first));
-                        slider.onChange = [_tmp, asPrimitive](const float value)
-                        {
-                            const_cast<IPrimitive *>(asPrimitive)->setPropertyFloat(_tmp, value);
-                        };
-                        this->_objectSliders.push_back(slider);
-                    }
-                }
-                auto *obj = const_cast<ISceneObject *>(currentObject);
-                this->_positionField.setValue(currentObject->getPosition());
-                    this->_positionField.onValidate = [this, obj](Axis axis, float value)
-                {
-                    Vector3f result = obj->getPosition();
-                    if (axis == Axis::X) result.x = value;
-                    if (axis == Axis::Y) result.y = value;
-                    if (axis == Axis::Z) result.z = value;
-                    obj->setPosition(result);
-                    if (this->onSceneMutated)
-                        this->onSceneMutated();
-                    return (true);
-                };
-                this->_rotationField.setValue(currentObject->getRotation());
-                    this->_rotationField.onValidate = [this, obj](Axis axis, float value)
-                {
-                    Vector3f result = obj->getRotation();
-                    if (axis == Axis::X) result.x = value;
-                    if (axis == Axis::Y) result.y = value;
-                    if (axis == Axis::Z) result.z = value;
-                    obj->setRotation(result);
-                    if (this->onSceneMutated)
-                        this->onSceneMutated();
-                    return (true);
-                };
-                this->_scaleField.setValue(currentObject->getScale());
-                    this->_scaleField.onValidate = [this, obj](Axis axis, float value)
-                {
-                    Vector3f result = obj->getScale();
-                    if (axis == Axis::X) result.x = value;
-                    if (axis == Axis::Y) result.y = value;
-                    if (axis == Axis::Z) result.z = value;
-                    obj->setScale(result);
-                    if (this->onSceneMutated)
-                        this->onSceneMutated();
-                    return (true);
-                };
-            }
-
-            bool isCapturing() const override
-            {
-                return (this->_lightColorPicker.isCapturing()
-                    || this->_materialDropdown.isCapturing()
-                    || this->_lightIntensityField.isCapturing()
-                    || this->_positionField.isCapturing()
-                    || this->_rotationField.isCapturing()
-                    || this->_scaleField.isCapturing());
-            }
-
-            bool handleEvent(const sf::Event &event, const sf::Vector2i mouse) override
-            {
-                std::vector<Component *> children;
-
-                if (this->isLight)
-                {
-                    children.push_back(&this->_lightColorPicker);
-                    children.push_back(&this->_lightIntensityField);
-                }
-                if (this->isPrimitive)
-                    children.push_back(&this->_materialDropdown);
-                for (auto &slider : this->_objectSliders)
-                    children.push_back(&slider);
-                children.push_back(&this->_positionField);
-                children.push_back(&this->_rotationField);
-                children.push_back(&this->_scaleField);
-
-                // Open pop-ups (color picker, material dropdown) capture events and
-                // are served first, so their clicks no longer leak to the sliders
-                // or fields they overlap.
-                return (EventRouter::route(children, event, mouse) != nullptr);
-            }
-
-            void draw(sf::RenderTarget &target, sf::RenderStates states) const override
-            {
-                target.draw(this->_title, states);
-
-                for (auto &slider : this->_objectSliders)
-                {
-                    target.draw(slider, states);
-                }
-
-                target.draw(this->_positionField, states);
-                target.draw(this->_rotationField, states);
-                target.draw(this->_scaleField, states);
-
-                if (this->isLight)
-                {
-                    target.draw(this->_intensityLabel, states);
-                    target.draw(this->_lightIntensityField, states);
-                    target.draw(this->_lightColorPicker, states);
-                }
-
-                if (this->isPrimitive)
-                {
-                    target.draw(this->_materialLabel, states);
-                    target.draw(this->_materialDropdown, states);
-                }
-            }
-
-            void drawOverlay(sf::RenderTarget &target, sf::RenderStates states) const override
-            {
-                if (this->isLight)
-                    this->_lightColorPicker.drawOverlay(target, states);
-                if (this->isPrimitive)
-                    this->_materialDropdown.drawOverlay(target, states);
-            }
-
-            void setScene(IScene *scene)
-            {
-                this->scene = scene;
-                this->_materials.clear();
-                for (const auto &entry : scene->getMaterials())
-                    this->_materials.push_back(&entry.second);
-            }
-
-            CursorType getCursor() override
-            {
-                CursorType result = CursorType::ARROW;
-
-                if (this->isLight)
-                {
-                    if (result == CursorType::ARROW && this->_lightColorPicker.getCursor() != CursorType::ARROW)
-                        result = this->_lightColorPicker.getCursor();
-                    if (result == CursorType::ARROW && this->_lightIntensityField.getCursor() != CursorType::ARROW)
-                        result = this->_lightIntensityField.getCursor();
-                }
-
-                if (this->isPrimitive)
-                {
-                    if (result == CursorType::ARROW && this->_materialDropdown.getCursor() != CursorType::ARROW)
-                        result = this->_materialDropdown.getCursor();
-                }
-
-                if (!this->_materialDropdown.open)
-                {
-                    for (auto &slider : this->_objectSliders)
-                    {
-                        if (result == CursorType::ARROW && slider.getCursor() != CursorType::ARROW)
-                            result = slider.getCursor();
-                    }
-                }
-
-                const std::vector<Component *> fields = {&this->_positionField, &this->_rotationField, &this->_scaleField};
-
-                for (auto *field : fields)
-                {
-                    if (result == CursorType::ARROW && field->getCursor() != CursorType::ARROW)
-                        result = field->getCursor();
-                }
-
-                return (result);
-            }
-
-            bool consumeMaterialChanged()
-            {
-                bool result = this->_materialChanged;
-                this->_materialChanged = false;
-                return (result);
-            }
     };
 }
 

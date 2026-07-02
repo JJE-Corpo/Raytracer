@@ -28,7 +28,7 @@
 #include "Window.hpp"
 
 #include "../Theme.hpp"
-#include "../VerticalLayout.hpp"
+#include "../LayoutPen.hpp"
 #include "../components/Button.hpp"
 #include "../components/TextField.hpp"
 #include "../components/Separator.hpp"
@@ -187,7 +187,7 @@ namespace rc
             panel.setFillColor(theme::BG_PANEL);
             window.draw(panel);
 
-            VerticalLayout layout{28.f, rowstartheight, 10.f};
+            LayoutPen layout{28.f, rowstartheight, 10.f};
 
             drawTitle((mode == ExploratorMode::SAVE) ? "Save scene" : "Load scene", layout);
             layout.next(20.f);
@@ -302,7 +302,7 @@ namespace rc
 
             if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left)
             {
-                VerticalLayout layout{28.f, rowstartheight, 10.f};
+                LayoutPen layout{28.f, rowstartheight, 10.f};
                 layout.next(20.f);
                 layout.next(18.f);
                 layout.next(34.f);

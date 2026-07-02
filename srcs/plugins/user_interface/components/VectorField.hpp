@@ -6,6 +6,7 @@
 #define VECTORFIELD_HPP
 #include <algorithm>
 #include "TextField.hpp"
+#include "../LayoutPen.hpp"
 #include "../Component.hpp"
 #include "../../../common/Axis.hpp"
 
@@ -78,7 +79,7 @@ namespace rc
 
             void layout(float x, float y, float width)
             {
-                VerticalLayout layout{x, y};
+                LayoutPen layout{x, y};
 
                 this->_title.setPosition(layout.x, layout.y);
                 layout.next(8);

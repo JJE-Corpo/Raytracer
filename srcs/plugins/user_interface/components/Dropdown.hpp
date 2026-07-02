@@ -85,11 +85,6 @@ namespace rc
                     text.setString(_placeholder);
             }
 
-            int getSelectedIndex() const
-            {
-                return _selectedIndex;
-            }
-
             void layout(float x, float y, float width)
             {
                 _x = x;

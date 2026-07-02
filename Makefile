@@ -54,7 +54,14 @@ PLUGINS_PATH = ./plugins
 
 USERINTERFACE_NAME = user_interface.so
 USERINTERFACE_SOURCES = srcs/plugins/user_interface/UserInterface.cpp \
-		srcs/plugins/user_interface/panels/HierarchyPanel.cpp
+		srcs/plugins/user_interface/panels/CameraPanel.cpp \
+		srcs/plugins/user_interface/panels/HierarchyPanel.cpp \
+		srcs/plugins/user_interface/panels/MaterialPanel.cpp \
+		srcs/plugins/user_interface/panels/ObjectPanel.cpp \
+		srcs/plugins/user_interface/panels/RendererPanel.cpp \
+		srcs/plugins/user_interface/panels/Section.cpp \
+		srcs/plugins/user_interface/panels/SidebarStack.cpp \
+		srcs/plugins/user_interface/screens/DefaultScreen.cpp
 USERINTERFACE_OBJECTS = ${USERINTERFACE_SOURCES:.cpp=.o}
 
 DEFAULTRENDERER_NAME = renderer_default.so

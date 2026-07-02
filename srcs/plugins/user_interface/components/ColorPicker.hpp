@@ -10,6 +10,7 @@
 #include <SFML/Graphics.hpp>
 
 #include "../Component.hpp"
+#include "../LayoutPen.hpp"
 #include "Slider.hpp"
 #include "../../../common/Color.hpp"
 #include "../Theme.hpp"
@@ -78,22 +79,6 @@ namespace rc
         ColorF getColor() const
         {
             return this->color;
-        }
-
-        void openAt(float x, float y)
-        {
-            this->open = true;
-            this->layout(x, y);
-        }
-
-        void close()
-        {
-            this->open = false;
-        }
-
-        bool isOpen() const
-        {
-            return this->open;
         }
 
         sf::FloatRect getBounds() const override
@@ -179,7 +164,7 @@ namespace rc
                 this->popup.setPosition({x, y + 34.f});
                 this->popup.setSize({POPUP_WIDTH, POPUP_HEIGHT});
 
-                VerticalLayout layout{x + 10, y + 40, 10.0f};
+                LayoutPen layout{x + 10, y + 40, 10.0f};
 
                 this->title.setPosition({layout.x, layout.y});
                 layout.next(30);
