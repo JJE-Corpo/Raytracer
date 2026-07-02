@@ -95,8 +95,6 @@ namespace rc
                 {
                     const std::string name = entry.path().filename().string();
 
-                    std::cout << name << std::endl;
-
                     if (!name.empty() && name[0] == '.')
                         continue;
 
@@ -195,8 +193,20 @@ namespace rc
             currentPathField.setFont(*font);
             currentPathField.setCharacterSize(14);
             currentPathField.box.setSize({620.f, 28.f});
-            currentPathField.enabled = false;
+            currentPathField.enabled = true;
             currentPathField.setValue(getCurrentPath().string());
+            currentPathField.onValidate = [&](const std::string &v) -> bool
+            {
+                std::error_code ec;
+                std::filesystem::path typed(v);
+
+                if (std::filesystem::is_directory(typed, ec))
+                    openDirectory(typed);
+                else
+                    currentPathField.setValue(getCurrentPath().string());
+
+                return true;
+            };
 
             backButton.setFont(*font);
             backButton.setLabel("<");
@@ -260,11 +270,12 @@ namespace rc
             nextButton.layout(layout.x + 40.f, layout.y, 34.f, 28.f);
             window.draw(nextButton);
 
-            currentPathField.layout(layout.x + 80.f, layout.y, 720.f, 28.f);
-            currentPathField.setValue(getCurrentPath().string());
+            currentPathField.layout(layout.x + 80.f, layout.y, 825.f, 28.f);
+            if (!currentPathField.focused) // ne pas écraser ce que l'utilisateur est en train de taper
+                currentPathField.setValue(getCurrentPath().string());
             window.draw(currentPathField);
 
-            upButton.layout(layout.x + 810.f, layout.y, 34.f, 28.f);
+            upButton.layout(layout.x + 910.f, layout.y, 34.f, 28.f);
             window.draw(upButton);
             layout.next(34.f);
 
@@ -371,6 +382,8 @@ namespace rc
 
             if (mode == ExploratorMode::SAVE)
                 filenameField.handleEvent(event, mouse);
+
+            currentPathField.handleEvent(event, mouse);
 
             if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left)
             {
