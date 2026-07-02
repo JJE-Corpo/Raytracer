@@ -14,6 +14,8 @@ namespace rc
         HAND,
         TEXT,
         NOT_ALLOWED,
+        RESIZE_H,
+        RESIZE_V,
     };
 }
 

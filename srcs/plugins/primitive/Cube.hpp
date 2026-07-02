@@ -127,6 +127,7 @@ namespace rc
             AABB bounding_box() const override;
 
             std::string getName() const override;
+            void setName(const std::string &name) override { this->_name = name; }
             std::string getTypeName() const override;
             Vector3f getPosition() const override;
             Vector3f getRotation() const override;

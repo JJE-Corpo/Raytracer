@@ -2,16 +2,19 @@
 // Created by jazema on 5/16/26.
 //
 
-#ifndef CLUSTERCLIENTLAYOUT_HPP
-#define CLUSTERCLIENTLAYOUT_HPP
+#ifndef CLUSTERCLIENTSCREEN_HPP
+#define CLUSTERCLIENTSCREEN_HPP
 #include <functional>
 
-#include "Layout.hpp"
+#include "AScreen.hpp"
+#include "../LayoutPen.hpp"
+#include "../components/Button.hpp"
+#include "../toast/ToastManager.hpp"
 #include "../../../common/cluster/IClusterClient.hpp"
 
 namespace rc
 {
-    struct ClusterClientLayout : Layout
+    struct ClusterClientScreen : AScreen
     {
         private:
             void updateRenderPreview()
@@ -93,7 +96,7 @@ namespace rc
             {
                 sf::Vector2i mouse = sf::Mouse::getPosition(window);
                 int width = window.getSize().x - 20;
-                VerticalLayout verticalLayout = {10, 10};
+                LayoutPen verticalLayout = {10, 10};
                 float viewportScale = 1.f;
 
                 if (this->_clusterClient == nullptr)
@@ -141,6 +144,8 @@ namespace rc
 
                 this->_renderSprite.setScale(viewportScale, viewportScale);
                 this->_renderSprite.setPosition({10, 10});
+
+                this->applyCursor(window, this->_leaveButton.getCursor());
             }
 
             void draw(sf::RenderWindow &window) override

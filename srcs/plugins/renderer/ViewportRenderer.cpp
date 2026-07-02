@@ -22,8 +22,10 @@ namespace
     const rc::ColorF SKY_TOP{56.0f / 255.0f, 96.0f / 255.0f, 150.0f / 255.0f};
     const rc::ColorF SKY_BOTTOM{11.0f / 255.0f, 18.0f / 255.0f, 28.0f / 255.0f};
     const rc::Color SELECTION_OUTLINE_COLOR{255, 200, 40};
+    const rc::Color HOVER_OUTLINE_COLOR{120, 200, 255};
     const rc::Color LIGHT_GIZMO_COLOR{190, 190, 190};
     const rc::Color LIGHT_SELECTED_COLOR{255, 200, 40};
+    const rc::Color LIGHT_HOVER_COLOR{170, 220, 255};
 
     struct ViewportHit
     {
@@ -104,7 +106,7 @@ namespace
         return {viewport_shade(hit, scene).toColor(), hit.primitive, true};
     }
 
-    void apply_selection_outline(rc::Render &render, const std::vector<uint8_t> &mask)
+    void apply_outline_mask(rc::Render &render, const std::vector<uint8_t> &mask, rc::Color color)
     {
         if (render.size_x <= 0 || render.size_y <= 0)
             return;
@@ -155,7 +157,7 @@ namespace
                 }
 
                 if (neighbor_selected)
-                    render.pixels[idx] = SELECTION_OUTLINE_COLOR;
+                    render.pixels[idx] = color;
             }
         }
     }
@@ -253,10 +255,12 @@ namespace
         }
     }
 
-    rc::Color light_gizmo_color(const rc::ILight *light, bool selected)
+    rc::Color light_gizmo_color(const rc::ILight *light, bool selected, bool hovered)
     {
         if (selected)
             return LIGHT_SELECTED_COLOR;
+        if (hovered)
+            return LIGHT_HOVER_COLOR;
         if (!light)
             return LIGHT_GIZMO_COLOR;
         rc::Color c = light->getColorF().toColor();
@@ -268,7 +272,7 @@ namespace
         return rc::Color(boost(c.r), boost(c.g), boost(c.b));
     }
 
-    void draw_light_gizmos(rc::Render &render, const rc::IScene &scene, const rc::ICamera &camera, const std::unordered_set<const rc::ISceneObject *> &selection)
+    void draw_light_gizmos(rc::Render &render, const rc::IScene &scene, const rc::ICamera &camera, const std::unordered_set<const rc::ISceneObject *> &selection, const rc::ISceneObject *hover)
     {
         const auto &lights = scene.getLights();
         if (lights.empty())
@@ -293,7 +297,9 @@ namespace
             if (!project_to_pixel(camera, position, render.size_x, render.size_y, center))
                 continue;
 
-            rc::Color color = light_gizmo_color(light, std::find(selection.begin(), selection.end(), light) != selection.end());
+            const bool is_selected = selection.count(light) > 0;
+            const bool is_hovered = !is_selected && hover == light;
+            rc::Color color = light_gizmo_color(light, is_selected, is_hovered);
             draw_circle(render, center, radius, color);
 
             if (light->getKind() == rc::LightKind::DIRECTIONAL)
@@ -329,6 +335,8 @@ namespace rc
             return (true);
         if (this->_lastSelectionVersion != this->_selectionVersion)
             return (true);
+        if (this->_lastHoverVersion != this->_hoverVersion)
+            return (true);
         return (false);
     }
 
@@ -356,16 +364,22 @@ namespace rc
 
         std::vector<const ISceneObject *> selection;
         size_t selection_version = 0;
+        const ISceneObject *hover = nullptr;
+        size_t hover_version = 0;
         {
             std::lock_guard lock(this->_cacheMutex);
             selection = this->_selection;
             selection_version = this->_selectionVersion;
+            hover = this->_hover;
+            hover_version = this->_hoverVersion;
         }
         const std::unordered_set selection_set(selection.begin(), selection.end());
         const bool has_selection = !selection_set.empty();
+        const bool has_hover = hover != nullptr && selection_set.count(hover) == 0;
         const size_t pixel_count = static_cast<size_t>(resolution.x) * static_cast<size_t>(resolution.y);
         std::vector<Color> frame_buffer(pixel_count, Color());
         std::vector<uint8_t> selection_mask(pixel_count, 0);
+        std::vector<uint8_t> hover_mask(pixel_count, 0);
 
         std::vector<std::thread> workers;
         std::atomic<int> next_tile = 0;
@@ -394,6 +408,8 @@ namespace rc
                     frame_buffer[idx] = hit.color;
                     if (has_selection && hit.hit && hit.primitive && selection_set.count(hit.primitive) > 0)
                         selection_mask[idx] = 1;
+                    else if (has_hover && hit.hit && hit.primitive == hover)
+                        hover_mask[idx] = 1;
                 }
             }
         };
@@ -425,11 +441,12 @@ namespace rc
 
         Render final_render = {resolution.x, resolution.y, std::move(frame_buffer)};
 
+        if (has_hover)
+            apply_outline_mask(final_render, hover_mask, HOVER_OUTLINE_COLOR);
         if (has_selection)
-            apply_selection_outline(final_render, selection_mask);
-        
-        if (!selection_set.empty())
-            draw_light_gizmos(final_render, scene, camera, selection_set);
+            apply_outline_mask(final_render, selection_mask, SELECTION_OUTLINE_COLOR);
+
+        draw_light_gizmos(final_render, scene, camera, selection_set, hover);
 
         {
             std::lock_guard lock(_renderMutex);
@@ -445,6 +462,7 @@ namespace rc
             this->_lastCameraFov = camera.getFov();
             this->_lastSamplesPerPixel = camera.getSamplesPerPixel();
             this->_lastSelectionVersion = selection_version;
+            this->_lastHoverVersion = hover_version;
         }
 
         this->_rendering = false;
@@ -468,6 +486,15 @@ namespace rc
         std::lock_guard lock(this->_cacheMutex);
         this->_selection = selection;
         this->_selectionVersion++;
+    }
+
+    void ViewportRenderer::setHover(const ISceneObject *object)
+    {
+        std::lock_guard lock(this->_cacheMutex);
+        if (this->_hover == object)
+            return;
+        this->_hover = object;
+        this->_hoverVersion++;
     }
 
     std::string ViewportRenderer::getRendererName() const

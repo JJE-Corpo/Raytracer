@@ -30,6 +30,8 @@ namespace rc
             AABB bounding_box() const override;
 
             std::string getName() const override;
+            // Internal acceleration node: its name is fixed and never user-editable.
+            void setName(const std::string &name) override { (void)name; }
             std::string getTypeName() const override;
             Vector3f getPosition() const override;
             Vector3f getRotation() const override;
