@@ -17,12 +17,13 @@ namespace
     constexpr float ITEM_HEIGHT = 18.f;
     constexpr float ITEM_INDENT = 12.f;
 
-    // Double-click window for starting an inline rename. Kept generous because
-    // the first click changes the selection, which triggers a synchronous
-    // viewport re-render inside the UI loop; if the second click lands during
-    // that render it is only processed on the next iteration, inflating the
-    // measured gap between the two clicks.
-    constexpr int DOUBLE_CLICK_MS = 500;
+    // Double-click window for starting an inline rename. Deliberately larger
+    // than a typical OS double-click (~500ms): the first click changes the
+    // selection, which triggers a synchronous viewport re-render inside the UI
+    // loop, so a second click landing during that render is only processed on
+    // the next iteration and the measured gap between the two clicks is
+    // inflated by the render time. The window must absorb that stall.
+    constexpr int DOUBLE_CLICK_MS = 700;
 }
 
 namespace rc
@@ -408,6 +409,10 @@ namespace rc
         this->_renameField.setValue(item.label);
         this->_renameField.focused = true;
         this->layoutRenameField(item.bounds, item.buttonBounds);
+
+        // Start a fresh click count so that a single click on this same row
+        // after the rename is committed/cancelled doesn't re-trigger rename.
+        this->_lastClickedPayload = nullptr;
     }
 
     void HierarchyPanel::layoutRenameField(const sf::FloatRect &itemBounds, const sf::FloatRect &buttonBounds)
