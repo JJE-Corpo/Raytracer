@@ -52,7 +52,8 @@ namespace rc
             bool isDirectory = false;
         };
 
-        std::filesystem::path currentPath;
+        int currentEntryIndex = -1;
+        std::vector<std::filesystem::path> pathHistory;
         TextField currentPathField;
         std::vector<ExplorerEntry> entries;
         std::vector<std::string> selectedEntries;
@@ -62,10 +63,18 @@ namespace rc
         float maxRowStartHeight = 24.0f;
         float minRowStartHeight = 24.0f;
 
+        Button backButton;
+        Button nextButton;
+
         Button saveButton;
         TextField filenameField;
 
         Separator separator;
+
+        std::filesystem::path getCurrentPath()
+        {
+            return pathHistory.empty() ? std::filesystem::current_path() : pathHistory[currentEntryIndex];
+        }
 
         void refreshEntries()
         {
@@ -75,13 +84,13 @@ namespace rc
 
             try
             {
-                if (currentPath.has_parent_path() && currentPath != currentPath.root_path())
-                    entries.push_back({currentPath.parent_path(), true});
+                if (getCurrentPath().has_parent_path() && getCurrentPath() != getCurrentPath().root_path())
+                    entries.push_back({getCurrentPath().parent_path(), true});
 
                 std::vector<std::filesystem::directory_entry> directories;
                 std::vector<std::filesystem::directory_entry> files;
 
-                for (const auto &entry : std::filesystem::directory_iterator(currentPath))
+                for (const auto &entry : std::filesystem::directory_iterator(getCurrentPath()))
                 {
                     const std::string name = entry.path().filename().string();
 
@@ -127,10 +136,31 @@ namespace rc
 
         void openDirectory(const std::filesystem::path &path)
         {
-            currentPath = path;
-            if (currentPath.empty())
-                currentPath = std::filesystem::current_path();
+            if (currentEntryIndex >= 0 && currentEntryIndex + 1 < static_cast<int>(pathHistory.size()))
+                pathHistory.erase(pathHistory.begin() + currentEntryIndex + 1, pathHistory.end());
+
+            pathHistory.push_back(path);
+            currentEntryIndex = static_cast<int>(pathHistory.size()) - 1;
+
             refreshEntries();
+        }
+
+        void goBack()
+        {
+            if (currentEntryIndex > 0)
+            {
+                currentEntryIndex -= 1;
+                refreshEntries();
+            }
+        }
+
+        void goForward()
+        {
+            if (currentEntryIndex < static_cast<int>(pathHistory.size()) - 1)
+            {
+                currentEntryIndex += 1;
+                refreshEntries();
+            }
         }
 
         void create(sf::Font &f, ExploratorMode m, std::string &result)
@@ -139,7 +169,10 @@ namespace rc
             mode = m;
             this->resultPath = &result;
 
-            currentPath = std::filesystem::current_path();
+            currentEntryIndex = 0;
+            
+            pathHistory.clear();
+            pathHistory.push_back(std::filesystem::current_path());
 
             windowWidth = 1000;
             windowHeight = 600;
@@ -152,7 +185,15 @@ namespace rc
             currentPathField.setCharacterSize(14);
             currentPathField.box.setSize({620.f, 28.f});
             currentPathField.enabled = false;
-            currentPathField.setValue(currentPath.string());
+            currentPathField.setValue(getCurrentPath().string());
+
+            backButton.setFont(*font);
+            backButton.setLabel("<");
+            backButton.onClick = [&] { goBack(); };
+
+            nextButton.setFont(*font);
+            nextButton.setLabel(">");
+            nextButton.onClick = [&] { goForward(); };
 
             filenameField.setFont(*font);
             filenameField.setCharacterSize(14);
@@ -168,11 +209,11 @@ namespace rc
                 {
                     if (filenameField.value.empty())
                     {
-                        *this->resultPath = currentPath.string() + "/scene_save.cfg";
+                        *this->resultPath = getCurrentPath().string() + "/scene_save.cfg";
                     }
                     else
                     {
-                        *this->resultPath = currentPath.string() + "/" + filenameField.value;    
+                        *this->resultPath = getCurrentPath().string() + "/" + filenameField.value;    
                     }
                 }
                 else
@@ -198,11 +239,14 @@ namespace rc
 
             VerticalLayout layout{28.f, rowstartheight, 10.f};
 
-            drawTitle((mode == ExploratorMode::SAVE) ? "Save scene" : "Load scene", layout);
-            layout.next(20.f);
+            backButton.layout(layout.x, layout.y, 34.f, 28.f);
+            window.draw(backButton);
 
-            currentPathField.layout(layout.x, layout.y, 720.f, 28.f);
-            currentPathField.setValue(currentPath.string());
+            nextButton.layout(layout.x + 40.f, layout.y, 34.f, 28.f);
+            window.draw(nextButton);
+
+            currentPathField.layout(layout.x + 80.f, layout.y, 720.f, 28.f);
+            currentPathField.setValue(getCurrentPath().string());
             window.draw(currentPathField);
             layout.next(34.f);
 
@@ -247,7 +291,7 @@ namespace rc
                 label.setPosition({layout.x + 10.f, layout.y + 4.f});
 
                 std::string displayName = entry.path.filename().string();
-                if (entry.path == currentPath.parent_path() && currentPath.has_parent_path())
+                if (entry.path == getCurrentPath().parent_path() && getCurrentPath().has_parent_path())
                     displayName = "..";
                 else if (entry.isDirectory)
                     displayName += "/";
@@ -296,6 +340,9 @@ namespace rc
             if (mode == ExploratorMode::SAVE)
                 filenameField.update(mouse);
 
+            backButton.update(mouse);
+            nextButton.update(mouse);
+
             saveButton.update(mouse);
         }
 
@@ -309,7 +356,6 @@ namespace rc
             if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left)
             {
                 VerticalLayout layout{28.f, rowstartheight, 10.f};
-                layout.next(20.f);
                 layout.next(34.f);
                 layout.next(14.f);
                 layout.next(18.f);
@@ -359,6 +405,9 @@ namespace rc
                     }
                 }
             }
+
+            backButton.handleEvent(event, mouse);
+            nextButton.handleEvent(event, mouse);
 
             saveButton.handleEvent(event, mouse);
         }
