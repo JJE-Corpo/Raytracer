@@ -30,7 +30,7 @@ namespace rc
         void updateUi() override
         {
             sf::Vector2i mouse = sf::Mouse::getPosition(this->window);
-            VerticalLayout vertical_layout{10, 10};
+            LayoutPen vertical_layout{10, 10};
             float width = static_cast<float>(this->window.getSize().x) - 20.0f;
 
             this->_title.setFont(this->_font);

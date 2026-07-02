@@ -25,7 +25,7 @@
 #include <SFML/Graphics.hpp>
 
 #include "../Theme.hpp"
-#include "../VerticalLayout.hpp"
+#include "../LayoutPen.hpp"
 
 
 namespace rc
@@ -56,8 +56,6 @@ namespace rc
         void destroy()
         {
             this->running = false;
-            // if (window.isOpen())
-                // window.close();
 
             if (thread.get_id() == std::this_thread::get_id())
             {
@@ -70,7 +68,7 @@ namespace rc
                 thread.join();
         }
         
-        void drawTitle(const std::string &text, VerticalLayout layout)
+        void drawTitle(const std::string &text, LayoutPen layout)
         {
             sf::Text title;
             title.setFont(*font);
@@ -81,7 +79,7 @@ namespace rc
             window.draw(title);
         }
 
-        void drawText(const std::string &text, VerticalLayout layout)
+        void drawText(const std::string &text, LayoutPen layout)
         {
             sf::Text title;
             title.setFont(*font);
