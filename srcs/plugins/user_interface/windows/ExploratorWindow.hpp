@@ -63,6 +63,10 @@ namespace rc
         float maxRowStartHeight = 24.0f;
         float minRowStartHeight = 24.0f;
 
+        Button nameSortButton;
+        Button sizeSortButton;
+        Button modifiedSortButton;
+
         Button backButton;
         Button nextButton;
         Button upButton;
@@ -208,6 +212,36 @@ namespace rc
                 return true;
             };
 
+            nameSortButton.setFont(*font);
+            nameSortButton.setLabel("Name");
+            nameSortButton.onClick = [&]
+            {
+                std::sort(entries.begin(), entries.end(), [](const auto &lhs, const auto &rhs)
+                {
+                    return lhs.path.filename().string() < rhs.path.filename().string();
+                });
+            };
+
+            sizeSortButton.setFont(*font);
+            sizeSortButton.setLabel("Size");
+            sizeSortButton.onClick = [&]
+            {
+                std::sort(entries.begin(), entries.end(), [](const auto &lhs, const auto &rhs)
+                {
+                    return std::filesystem::file_size(lhs.path) < std::filesystem::file_size(rhs.path);
+                });
+            };
+
+            modifiedSortButton.setFont(*font);
+            modifiedSortButton.setLabel("Modified");
+            modifiedSortButton.onClick = [&]
+            {
+                std::sort(entries.begin(), entries.end(), [](const auto &lhs, const auto &rhs)
+                {
+                    return std::filesystem::last_write_time(lhs.path) < std::filesystem::last_write_time(rhs.path);
+                });
+            };
+
             backButton.setFont(*font);
             backButton.setLabel("<");
             backButton.onClick = [&] { goBack(); };
@@ -271,7 +305,7 @@ namespace rc
             window.draw(nextButton);
 
             currentPathField.layout(layout.x + 80.f, layout.y, 825.f, 28.f);
-            if (!currentPathField.focused) // ne pas écraser ce que l'utilisateur est en train de taper
+            if (!currentPathField.focused)
                 currentPathField.setValue(getCurrentPath().string());
             window.draw(currentPathField);
 
@@ -279,13 +313,19 @@ namespace rc
             window.draw(upButton);
             layout.next(34.f);
 
-            separator.layout(layout.x, layout.y, 720.f);
-            window.draw(separator);
-            layout.next(14.f);
+            nameSortButton.layout(layout.x, layout.y, 683.f, 28.f);
+            window.draw(nameSortButton);
 
-            drawText("Entries", layout);
-            drawText(std::to_string(entries.size()) + " item(s)", {layout.x + 100.f, layout.y, layout.spacing});
-            layout.next(18.f);
+            sizeSortButton.layout(layout.x + 693.f, layout.y, 120.f, 28.f);
+            window.draw(sizeSortButton);
+
+            modifiedSortButton.layout(layout.x + 823.f, layout.y, 120.f, 28.f);
+            window.draw(modifiedSortButton);
+            layout.next(25.f);
+
+            separator.layout(layout.x, layout.y, 943.f);
+            window.draw(separator);
+            layout.next(5.f);
 
             const float rowHeight = 26.f;
             const float listWidth = 720.f;
@@ -369,6 +409,10 @@ namespace rc
             if (mode == ExploratorMode::SAVE)
                 filenameField.update(mouse);
 
+            nameSortButton.update(mouse);
+            sizeSortButton.update(mouse);
+            modifiedSortButton.update(mouse);
+
             backButton.update(mouse);
             nextButton.update(mouse);
             upButton.update(mouse);
@@ -389,8 +433,8 @@ namespace rc
             {
                 VerticalLayout layout{28.f, rowstartheight, 10.f};
                 layout.next(34.f);
-                layout.next(14.f);
-                layout.next(18.f);
+                layout.next(5.f);
+                layout.next(25.f);
 
                 const float rowHeight = 26.f;
                 const float listWidth = 720.f;
@@ -437,6 +481,10 @@ namespace rc
                     }
                 }
             }
+
+            nameSortButton.handleEvent(event, mouse);
+            sizeSortButton.handleEvent(event, mouse);
+            modifiedSortButton.handleEvent(event, mouse);
 
             backButton.handleEvent(event, mouse);
             nextButton.handleEvent(event, mouse);
