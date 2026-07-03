@@ -4,6 +4,8 @@
 
 #include "MaterialPanel.hpp"
 
+#include <algorithm>
+
 #include "../EventRouter.hpp"
 #include "../Theme.hpp"
 #include "../LayoutPen.hpp"
@@ -12,19 +14,33 @@
 #include "../../../common/scene/IPrimitive.hpp"
 #include "../../../common/scene/ISceneObject.hpp"
 
+namespace
+{
+    // Deliberately generous double-click window, matching the hierarchy panel:
+    // a first (selection) click can stall the UI thread on a synchronous
+    // viewport re-render, inflating the measured gap between the two clicks.
+    constexpr int NAME_DOUBLE_CLICK_MS = 700;
+    constexpr float NAME_FIELD_HEIGHT = 18.f;
+}
+
 namespace rc
 {
     void MaterialPanel::setFont(sf::Font &font)
     {
-        this->_title.setFont(font);
-        this->_title.setCharacterSize(14);
-        this->_title.setFillColor(theme::TEXT_DIM);
         this->_baseColorPicker.setFont(font);
         this->_baseColorPicker.setLabel("Base color");
-        this->_description.setFont(font);
-        this->_description.setCharacterSize(12);
-        this->_description.setFillColor(theme::TEXT_DIM);
-        this->_description.setString("(none)");
+        this->_materialName.setFont(font);
+        this->_materialName.setCharacterSize(12);
+        this->_materialName.setFillColor(theme::TEXT_DIM);
+        this->_materialName.setString("(none)");
+
+        this->_nameField.setFont(font);
+        this->_nameField.setCharacterSize(12);
+        this->_nameField.onCommit = [this](const std::string &value)
+        {
+            this->commitName(value);
+        };
+
         this->_font = font;
     }
 
@@ -32,6 +48,15 @@ namespace rc
     {
         if (!this->_materialModelSelector.enabled)
             return;
+
+        // While the name is being edited the field owns the interaction.
+        if (this->_nameField.active)
+        {
+            this->_nameField.update(mouse);
+            return;
+        }
+        this->_nameHovered = this->_nameRect.contains(static_cast<float>(mouse.x), static_cast<float>(mouse.y));
+
         this->_baseColorPicker.update(mouse);
         if (this->_baseColorPicker.open)
             return;
@@ -49,11 +74,19 @@ namespace rc
         layout.x = x;
         layout.y = y;
 
-        this->_title.setString("Material");
-        this->_title.setPosition({layout.x, layout.y});
-        layout.next(24);
+        this->_materialName.setPosition({layout.x, layout.y});
 
-        this->_description.setPosition({layout.x, layout.y});
+        // Region used both to hit-test the double-click that opens the rename and
+        // to place the edit field over the label. Kept a little wider than the
+        // text so short names still offer a comfortable target.
+        // min/max rather than std::clamp: if the panel is ever narrower than the
+        // 90px minimum, clamp's lo>hi precondition would be violated (UB).
+        const float textWidth = this->_materialName.getLocalBounds().width;
+        const float fieldWidth = std::min(std::max(textWidth + 24.f, 90.f), width);
+        this->_nameRect = sf::FloatRect(layout.x, layout.y - 2.f, fieldWidth, NAME_FIELD_HEIGHT);
+        if (this->_nameField.active)
+            this->_nameField.relayout(this->_nameRect.left, this->_nameRect.top, this->_nameRect.width, this->_nameRect.height);
+
         layout.next(12);
 
         if (!this->_materialModelSelector.enabled)
@@ -80,9 +113,16 @@ namespace rc
         this->_materialModelSelector.enabled = false;
         this->_baseColorPicker.enabled = false;
 
+        // A rebuild means the shown material may have changed; abandon any inline
+        // rename in progress so it can't commit onto the wrong material.
+        if (this->_nameField.active)
+            this->_nameField.cancel();
+        this->_namePendingClick = false;
+        this->_material = nullptr;
+
         const auto *primitive = dynamic_cast<const IPrimitive *>(currentObject);
 
-        this->_description.setString("(none)");
+        this->_materialName.setString("(none)");
 
         if (!primitive)
             return;
@@ -92,7 +132,8 @@ namespace rc
         if (!material)
             return;
 
-        this->_description.setString(material->name);
+        this->_material = const_cast<Material *>(material);
+        this->_materialName.setString(material->name);
 
         this->_materialModelSelector.setFont(this->_font);
         this->_materialModelSelector.setLabel("Model");
@@ -146,6 +187,10 @@ namespace rc
 
         if (!this->_materialModelSelector.enabled)
             return (CursorType::ARROW);
+        if (this->_nameField.active)
+            return (this->_nameField.getCursor());
+        if (this->_nameHovered)
+            return (CursorType::TEXT);
         if (this->_baseColorPicker.getCursor() != CursorType::ARROW)
             cursorType = this->_baseColorPicker.getCursor();
         for (auto &slider : this->_materialSliders)
@@ -158,7 +203,16 @@ namespace rc
 
     bool MaterialPanel::isCapturing() const
     {
-        return (this->_baseColorPicker.isCapturing());
+        // An open name editor must keep keyboard focus, like the hierarchy rename.
+        if (this->_nameField.isCapturing())
+            return (true);
+        if (this->_baseColorPicker.isCapturing())
+            return (true);
+        // A slider whose inline value editor is open must keep keyboard focus.
+        for (const auto &slider : this->_materialSliders)
+            if (slider.isCapturing())
+                return (true);
+        return (false);
     }
 
     bool MaterialPanel::handleEvent(const sf::Event &event, const sf::Vector2i mouse)
@@ -166,19 +220,77 @@ namespace rc
         if (!this->_materialModelSelector.enabled)
             return (false);
 
+        // While renaming, the editor owns the interaction: typing, Enter (commit),
+        // Escape (cancel) and a left click outside the field (commit).
+        if (this->_nameField.active)
+            return (this->_nameField.handleEvent(event, mouse));
+
         std::vector<Component *> children = {&this->_baseColorPicker, &this->_materialModelSelector};
         for (auto &slider : this->_materialSliders)
             children.push_back(&slider);
 
         // The router serves the color-picker pop-up first while it is open,
         // so it consumes clicks that overlap the sliders underneath it.
-        return (EventRouter::route(children, event, mouse) != nullptr);
+        if (EventRouter::route(children, event, mouse) != nullptr)
+            return (true);
+
+        // Nothing else took the event: a double-click on the name label starts
+        // an inline rename, the same gesture used for slider values.
+        if (event.type == sf::Event::MouseButtonPressed
+            && event.mouseButton.button == sf::Mouse::Left
+            && this->_material
+            && this->_nameRect.contains(static_cast<float>(mouse.x), static_cast<float>(mouse.y)))
+        {
+            const bool is_double_click = this->_namePendingClick
+                && this->_nameClickClock.getElapsedTime().asMilliseconds() < NAME_DOUBLE_CLICK_MS;
+            if (is_double_click)
+            {
+                this->_namePendingClick = false;
+                this->beginNameEdit();
+            }
+            else
+            {
+                this->_namePendingClick = true;
+                this->_nameClickClock.restart();
+            }
+            return (true);
+        }
+        return (false);
+    }
+
+    void MaterialPanel::beginNameEdit()
+    {
+        if (!this->_material)
+            return;
+        this->_nameField.begin(this->_material->name,
+            this->_nameRect.left, this->_nameRect.top, this->_nameRect.width, this->_nameRect.height);
+    }
+
+    void MaterialPanel::commitName(const std::string &value)
+    {
+        if (!this->_material)
+            return;
+
+        const size_t first = value.find_first_not_of(" \t");
+        const size_t last = value.find_last_not_of(" \t");
+        const std::string trimmed = (first == std::string::npos) ? "" : value.substr(first, last - first + 1);
+
+        // A blank name is meaningless; keep the previous one.
+        if (trimmed.empty())
+            return;
+
+        this->_material->name = trimmed;
+        this->_materialName.setString(trimmed);
     }
 
     void MaterialPanel::draw(sf::RenderTarget &target, sf::RenderStates states) const
     {
-        target.draw(this->_title, states);
-        target.draw(this->_description, states);
+        // The label and its inline editor are mutually exclusive: while renaming
+        // the field stands in for the static text.
+        if (this->_nameField.active)
+            target.draw(this->_nameField, states);
+        else
+            target.draw(this->_materialName, states);
         if (!this->_materialModelSelector.enabled)
             return;
         target.draw(this->_materialModelSelector, states);

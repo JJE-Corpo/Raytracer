@@ -46,7 +46,7 @@ namespace rc
             bool consumeMaterialChanged();
 
         private:
-            sf::Text _title;
+            // sf::Text _title;
 
             IScene *scene = nullptr;
 
