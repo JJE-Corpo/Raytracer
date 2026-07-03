@@ -1,0 +1,112 @@
+{
+    "environment": {
+        "ambient": 0.3,
+        "diffuse": 0.7
+    },
+    "camera": {
+        "resolution": [
+            1920,
+            1080
+        ],
+        "position": [
+            15.939,
+            -2.4858,
+            4.9583
+        ],
+        "rotation": [
+            -10.559,
+            0.0,
+            82.692
+        ],
+        "fieldOfView": 45.0,
+        "samplesPerPixel": 1024
+    },
+    "objects": [
+        {
+            "name": "Cylinder A",
+            "type": "cylinder",
+            "position": [
+                -0.65,
+                3.93,
+                -2.3634
+            ],
+            "radius": 1,
+            "height": 5.848,
+            "color": [
+                231,
+                231,
+                231
+            ]
+        },
+        {
+            "name": "Cylinder B",
+            "type": "cylinder",
+            "position": [
+                4.6722,
+                0.6283,
+                -0.5623
+            ],
+            "radius": 1,
+            "height": 1.3,
+            "color": [
+                231,
+                231,
+                231
+            ]
+        },
+        {
+            "name": "Cylinder C",
+            "type": "cylinder",
+            "position": [
+                -2.4878,
+                -4.5069,
+                -2.1
+            ],
+            "radius": 1,
+            "height": 4.562,
+            "color": [
+                231,
+                231,
+                231
+            ]
+        },
+        {
+            "name": "Plane",
+            "type": "plane",
+            "normal": [
+                0.0,
+                0.0,
+                1.0
+            ],
+            "origin": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "color": [
+                231,
+                231,
+                231
+            ],
+            "material": "Metal"
+        },
+        {
+            "name": "Point light",
+            "type": "point_light",
+            "position": [
+                4.0762,
+                1.0055,
+                5.9039
+            ],
+            "intensity": 1000.0
+        }
+    ],
+    "materials": [
+        {
+            "name": "Metal",
+            "model": "pbr",
+            "metallic": 0.938,
+            "roughness": 0.1
+        }
+    ]
+}

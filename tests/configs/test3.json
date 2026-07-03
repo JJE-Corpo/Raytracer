@@ -1,0 +1,174 @@
+{
+    "environment": {
+        "ambient": 0.2,
+        "diffuse": 0.0
+    },
+    "camera": {
+        "resolution": [
+            800,
+            600
+        ],
+        "position": [
+            0.0,
+            1.2,
+            5.0
+        ],
+        "rotation": [
+            -8.0,
+            0.0,
+            0.0
+        ],
+        "fieldOfView": 45.0,
+        "samplesPerPixel": 5
+    },
+    "objects": [
+        {
+            "name": "Sphere A",
+            "type": "sphere",
+            "position": [
+                -1.2,
+                1.0,
+                0.0
+            ],
+            "radius": 1.0,
+            "color": [
+                220,
+                60,
+                40
+            ],
+            "material": {
+                "model": "pbr",
+                "metallic": 0.1,
+                "roughness": 0.35,
+                "specularLevel": 0.5,
+                "specularTint": 0.2,
+                "clearcoat": 0.2,
+                "clearcoatRoughness": 0.08,
+                "sheen": 0.1,
+                "sheenTint": 0.5,
+                "transmission": 0.0,
+                "alpha": 1.0
+            }
+        },
+        {
+            "name": "Sphere B",
+            "type": "sphere",
+            "position": [
+                1.6,
+                1.0,
+                -0.6
+            ],
+            "radius": 1.0,
+            "color": [
+                80,
+                120,
+                220
+            ],
+            "material": {
+                "model": "pbr",
+                "metallic": 0.85,
+                "roughness": 0.2,
+                "specularLevel": 0.5,
+                "specularTint": 0.0,
+                "clearcoat": 0.0,
+                "clearcoatRoughness": 0.03,
+                "sheen": 0.0,
+                "sheenTint": 0.5,
+                "transmission": 0.0,
+                "alpha": 1.0
+            }
+        },
+        {
+            "name": "Sphere C",
+            "type": "sphere",
+            "position": [
+                0.2,
+                0.9,
+                1.4
+            ],
+            "radius": 0.7,
+            "color": [
+                200,
+                240,
+                255
+            ],
+            "material": {
+                "model": "pbr",
+                "metallic": 0.0,
+                "roughness": 0.05,
+                "specularLevel": 0.5,
+                "specularTint": 0.0,
+                "clearcoat": 0.0,
+                "clearcoatRoughness": 0.03,
+                "sheen": 0.0,
+                "sheenTint": 0.5,
+                "transmission": 1.0,
+                "alpha": 1.0,
+                "ior": 1.45
+            }
+        },
+        {
+            "name": "Plane",
+            "type": "plane",
+            "normal": [
+                0.0,
+                1.0,
+                0.0
+            ],
+            "origin": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "color": [
+                180,
+                180,
+                180
+            ],
+            "material": {
+                "model": "pbr",
+                "metallic": 0.0,
+                "roughness": 0.85,
+                "specularLevel": 0.5,
+                "specularTint": 0.0,
+                "clearcoat": 0.0,
+                "clearcoatRoughness": 0.1,
+                "sheen": 0.0,
+                "sheenTint": 0.5,
+                "transmission": 0.0,
+                "alpha": 1.0
+            }
+        },
+        {
+            "name": "Directional Light",
+            "type": "directional_light",
+            "direction": [
+                -0.4,
+                -1.0,
+                -0.3
+            ],
+            "intensity": 0.8,
+            "color": [
+                255,
+                255,
+                255
+            ]
+        },
+        {
+            "name": "Point light",
+            "type": "point_light",
+            "position": [
+                2.5,
+                3.5,
+                3.0
+            ],
+            "intensity": 1200000.0,
+            "color": [
+                255,
+                235,
+                220
+            ]
+        }
+    ],
+    "materials": []
+}
