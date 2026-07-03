@@ -82,7 +82,7 @@ namespace rc
         this->_widthField.layout(layout.x + 80, layout.y, width - 80, 20);
         layout.next(20);
         this->_heightField.layout(layout.x + 80, layout.y, width - 80, 20);
-        layout.next(26);
+        layout.next(20);
 
         this->_positionField.layout(layout.x, layout.y, width);
         layout.next(32);
