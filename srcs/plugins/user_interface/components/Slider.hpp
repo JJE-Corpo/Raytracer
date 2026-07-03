@@ -13,6 +13,8 @@
 
 #include "../Component.hpp"
 #include "../Theme.hpp"
+#include "InlineEditField.hpp"
+#include "../../../common/Utils.hpp"
 
 namespace rc
 {
@@ -36,10 +38,17 @@ namespace rc
 
         std::function<void(float)> onChange;
 
+        // Inline editor revealed when the value text is double-clicked, letting
+        // the user type an exact value instead of dragging the thumb.
+        InlineEditField editor;
+
         static constexpr float TRACK_HEIGHT = 4.f;
         static constexpr float THUMB_RADIUS = 7.f;
 
         static constexpr float HITBOX_HEIGHT = 20.f;
+
+        static constexpr float VALUE_HITBOX_HEIGHT = 18.f;
+        static constexpr int VALUE_DOUBLE_CLICK_MS = 400;
 
         const sf::Color TRACK_COLOR = theme::TRACK;
         const sf::Color FILL_COLOR = theme::ACCENT;
@@ -55,6 +64,15 @@ namespace rc
             this->valueText.setFont(font);
             this->valueText.setCharacterSize(12);
             this->valueText.setFillColor(theme::TEXT_DIM);
+
+            this->editor.setFont(font);
+            this->editor.setCharacterSize(12);
+            // Allow the field to be cleared and only accept float-like input,
+            // matching how VectorField gates its numeric text entry.
+            this->editor.setValidator([](const std::string &text)
+            {
+                return (text.empty() || Utils::isFloat(text));
+            });
         }
 
         void setLabel(const std::string &text)
@@ -104,7 +122,8 @@ namespace rc
             this->updateVisuals();
         }
 
-        sf::FloatRect getBounds() const override
+        // Draggable region around the track (excludes the value text).
+        sf::FloatRect trackHitbox() const
         {
             return sf::FloatRect(
                 this->track.getPosition().x - THUMB_RADIUS,
@@ -114,15 +133,45 @@ namespace rc
             );
         }
 
-        // A slider being dragged keeps the pointer until the button is released.
+        // Double-clickable region around the value text (opens the editor).
+        sf::FloatRect valueBounds() const
+        {
+            const sf::Vector2f pos = this->valueText.getPosition();
+            return sf::FloatRect(pos.x, pos.y, this->valueWidth, VALUE_HITBOX_HEIGHT);
+        }
+
+        // The router hit-tests pointer events against this: it must span both
+        // the track (for dragging) and the value text (for double-click edit).
+        sf::FloatRect getBounds() const override
+        {
+            const sf::FloatRect track = this->trackHitbox();
+            const sf::FloatRect value = this->valueBounds();
+            const float left = std::min(track.left, value.left);
+            const float top = std::min(track.top, value.top);
+            const float right = std::max(track.left + track.width, value.left + value.width);
+            const float bottom = std::max(track.top + track.height, value.top + value.height);
+            return sf::FloatRect(left, top, right - left, bottom - top);
+        }
+
+        // A slider keeps the pointer while dragging or while its editor is open.
         bool isCapturing() const override
         {
-            return (this->dragging);
+            return (this->dragging || this->editor.isCapturing());
         }
 
         void update(sf::Vector2i mouse) override
         {
-            this->hovered = this->getBounds().contains(
+            if (this->editor.active)
+            {
+                this->editor.update(mouse);
+                return;
+            }
+
+            this->hovered = this->trackHitbox().contains(
+                static_cast<float>(mouse.x),
+                static_cast<float>(mouse.y)
+            );
+            this->valueHovered = this->valueBounds().contains(
                 static_cast<float>(mouse.x),
                 static_cast<float>(mouse.y)
             );
@@ -141,18 +190,42 @@ namespace rc
             if (!this->enabled)
                 return (false);
 
+            // While the editor is open it owns the interaction: typing, Enter,
+            // Escape, and click-outside-to-commit.
+            if (this->editor.active)
+                return (this->editor.handleEvent(event, mouse));
+
             if (
                 event.type == sf::Event::MouseButtonPressed &&
-                event.mouseButton.button == sf::Mouse::Left &&
-                this->getBounds().contains(
-                    static_cast<float>(mouse.x),
-                    static_cast<float>(mouse.y)
-                )
+                event.mouseButton.button == sf::Mouse::Left
             )
             {
-                this->dragging = true;
-                this->setValueFromMouse(mouse.x);
-                return (true);
+                // A click on the value text is part of a double-click that opens
+                // the editor - it must never start a drag.
+                if (this->valueBounds().contains(static_cast<float>(mouse.x), static_cast<float>(mouse.y)))
+                {
+                    const bool is_double_click = this->valuePendingClick
+                        && this->valueClickClock.getElapsedTime().asMilliseconds() < VALUE_DOUBLE_CLICK_MS;
+                    if (is_double_click)
+                    {
+                        this->valuePendingClick = false;
+                        this->beginEdit();
+                    }
+                    else
+                    {
+                        this->valuePendingClick = true;
+                        this->valueClickClock.restart();
+                    }
+                    return (true);
+                }
+
+                if (this->trackHitbox().contains(static_cast<float>(mouse.x), static_cast<float>(mouse.y)))
+                {
+                    this->dragging = true;
+                    this->setValueFromMouse(mouse.x);
+                    return (true);
+                }
+                return (false);
             }
 
             if (
@@ -176,19 +249,58 @@ namespace rc
             target.draw(this->thumb, states);
 
             target.draw(this->label, states);
-            target.draw(this->valueText, states);
+            if (this->editor.active)
+                target.draw(this->editor, states);
+            else
+                target.draw(this->valueText, states);
         }
 
         CursorType getCursor() override
         {
             if (!this->enabled)
                 return (CursorType::NOT_ALLOWED);
+            if (this->editor.active)
+                return (this->editor.getCursor());
             if (this->dragging || this->hovered)
                 return (CursorType::HAND);
+            if (this->valueHovered)
+                return (CursorType::TEXT);
             return (CursorType::ARROW);
         }
 
     private:
+
+        bool valueHovered = false;
+        bool valuePendingClick = false;
+        sf::Clock valueClickClock;
+
+        // Opens the inline editor over the value text, pre-filled with the
+        // current value formatted the same way the value label shows it.
+        void beginEdit()
+        {
+            char buffer[32];
+            std::snprintf(buffer, sizeof(buffer), "%.2f", this->value);
+
+            // Bind the commit here rather than in setFont: a Slider is copied
+            // into a std::vector (push_back) before it is ever interacted with,
+            // so a this-capturing callback set at construction would dangle.
+            this->editor.onCommit = [this](const std::string &text)
+            {
+                this->applyEditedValue(text);
+            };
+
+            const sf::FloatRect bounds = this->valueBounds();
+            this->editor.begin(buffer, bounds.left, bounds.top, bounds.width, bounds.height);
+        }
+
+        void applyEditedValue(const std::string &text)
+        {
+            if (!Utils::isFloat(text))
+                return;
+            this->setValue(std::stof(text));
+            if (this->onChange)
+                this->onChange(this->value);
+        }
 
         float normalizedValue() const
         {

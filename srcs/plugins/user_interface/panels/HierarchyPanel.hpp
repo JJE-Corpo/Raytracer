@@ -11,7 +11,7 @@
 #include <functional>
 
 #include "../Component.hpp"
-#include "../components/TextField.hpp"
+#include "../components/InlineEditField.hpp"
 #include "../../../common/scene/ISceneObject.hpp"
 
 namespace rc
@@ -87,7 +87,7 @@ namespace rc
             void selectCamera();
 
             void beginRename(const Item &item);
-            void commitRename();
+            void commitRename(const std::string &value);
             void cancelRename();
             void layoutRenameField(const sf::FloatRect &itemBounds, const sf::FloatRect &buttonBounds);
 
@@ -107,7 +107,7 @@ namespace rc
 
             // Inline rename: nullptr when no row is being renamed.
             const ISceneObject *_renamingObject = nullptr;
-            TextField _renameField;
+            InlineEditField _renameField;
             sf::Clock _clickClock;
             const void *_lastClickedPayload = nullptr;
     };
