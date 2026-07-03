@@ -60,12 +60,22 @@ namespace rc
             bool isDirectory = false;
         };
 
+        enum class SortColumn
+        {
+            NAME,
+            SIZE,
+            MODIFIED
+        };
+
         int currentEntryIndex = -1;
         std::vector<std::filesystem::path> pathHistory;
         TextField currentPathField;
         std::vector<ExplorerEntry> entries;
         std::vector<std::string> selectedEntries;
         std::size_t selectedEntry = static_cast<std::size_t>(-1);
+
+        SortColumn sortColumn = SortColumn::NAME;
+        bool sortAscending = true;
 
         float rowstartheight = 24.0f;
         float maxRowStartHeight = 24.0f;
@@ -130,8 +140,11 @@ namespace rc
                 for (const auto &entry : directories)
                 {
                     uintmax_t size = 0;
-                    
-                    for (const auto &_ : std::filesystem::recursive_directory_iterator(entry.path()))
+                    std::error_code ec;
+
+                    for (auto it = std::filesystem::directory_iterator(entry.path(), ec);
+                         !ec && it != std::filesystem::directory_iterator();
+                         it.increment(ec))
                         size++;
 
                     entries.push_back({entry.path(), entry.last_write_time(), size, true});
@@ -142,6 +155,77 @@ namespace rc
             catch (const std::filesystem::filesystem_error &)
             {
             }
+
+            applySort();
+        }
+
+        void drawTriangle(float cx, float cy, bool pointingUp, float halfWidth = 5.f, float halfHeight = 3.5f)
+        {
+            sf::ConvexShape triangle;
+            triangle.setPointCount(3);
+            triangle.setFillColor(theme::TEXT_WHITE);
+
+            if (pointingUp)
+            {
+                triangle.setPoint(0, {cx, cy - halfHeight});
+                triangle.setPoint(1, {cx - halfWidth, cy + halfHeight});
+                triangle.setPoint(2, {cx + halfWidth, cy + halfHeight});
+            }
+            else
+            {
+                triangle.setPoint(0, {cx - halfWidth, cy - halfHeight});
+                triangle.setPoint(1, {cx + halfWidth, cy - halfHeight});
+                triangle.setPoint(2, {cx, cy + halfHeight});
+            }
+
+            window.draw(triangle);
+        }
+
+        void drawSortArrow(float buttonX, float buttonWidth, float buttonY)
+        {
+            drawTriangle(buttonX + buttonWidth - 16.f, buttonY + 14.f, sortAscending);
+        }
+
+        void applySort()
+        {
+            switch (sortColumn)
+            {
+            case SortColumn::NAME:
+                std::sort(entries.begin(), entries.end(), [this](const auto &lhs, const auto &rhs)
+                {
+                    const std::string l = lhs.path.filename().string();
+                    const std::string r = rhs.path.filename().string();
+                    return sortAscending ? l < r : l > r;
+                });
+                break;
+            case SortColumn::SIZE:
+                std::sort(entries.begin(), entries.end(), [this](const auto &lhs, const auto &rhs)
+                {
+                    if (lhs.isDirectory != rhs.isDirectory)
+                        return lhs.isDirectory;
+                    return sortAscending ? lhs.size < rhs.size : lhs.size > rhs.size;
+                });
+                break;
+            case SortColumn::MODIFIED:
+                std::sort(entries.begin(), entries.end(), [this](const auto &lhs, const auto &rhs)
+                {
+                    return sortAscending ? lhs.lastModified < rhs.lastModified : lhs.lastModified > rhs.lastModified;
+                });
+                break;
+            }
+        }
+
+        void sortBy(SortColumn column)
+        {
+            if (sortColumn == column)
+                sortAscending = !sortAscending;
+            else
+            {
+                sortColumn = column;
+                sortAscending = true;
+            }
+
+            applySort();
         }
 
         void setSelectedEntry(std::vector<std::string> selected)
@@ -229,37 +313,15 @@ namespace rc
 
             nameSortButton.setFont(*font);
             nameSortButton.setLabel("Name");
-            nameSortButton.onClick = [&]
-            {
-                std::sort(entries.begin(), entries.end(), [](const auto &lhs, const auto &rhs)
-                {
-                    return lhs.path.filename().string() < rhs.path.filename().string();
-                });
-            };
+            nameSortButton.onClick = [&] { sortBy(SortColumn::NAME); };
 
             sizeSortButton.setFont(*font);
             sizeSortButton.setLabel("Size");
-            sizeSortButton.onClick = [&]
-            {
-                std::sort(entries.begin(), entries.end(), [](const auto &lhs, const auto &rhs)
-                {
-                    if (lhs.isDirectory && !rhs.isDirectory)
-                        return true;
-                    if (!lhs.isDirectory && rhs.isDirectory)
-                        return false;
-                    return lhs.size < rhs.size;
-                });
-            };
+            sizeSortButton.onClick = [&] { sortBy(SortColumn::SIZE); };
 
             modifiedSortButton.setFont(*font);
             modifiedSortButton.setLabel("Modified");
-            modifiedSortButton.onClick = [&]
-            {
-                std::sort(entries.begin(), entries.end(), [](const auto &lhs, const auto &rhs)
-                {
-                    return std::filesystem::last_write_time(lhs.path) < std::filesystem::last_write_time(rhs.path);
-                });
-            };
+            modifiedSortButton.onClick = [&] { sortBy(SortColumn::MODIFIED); };
 
             backButton.setFont(*font);
             backButton.setLabel("<");
@@ -270,7 +332,7 @@ namespace rc
             nextButton.onClick = [&] { goForward(); };
 
             upButton.setFont(*font);
-            upButton.setLabel("^");
+            upButton.setLabel("");
             upButton.onClick = [&] { goUp(); };
 
             filenameField.setFont(*font);
@@ -330,6 +392,7 @@ namespace rc
 
             upButton.layout(layout.x + 910.f, layout.y, 34.f, 28.f);
             window.draw(upButton);
+            drawTriangle(layout.x + 910.f + 17.f, layout.y + 14.f, true, 6.f, 4.f);
             layout.next(34.f);
 
             nameSortButton.layout(layout.x, layout.y, 683.f, 28.f);
@@ -340,6 +403,13 @@ namespace rc
 
             modifiedSortButton.layout(layout.x + 823.f, layout.y, 120.f, 28.f);
             window.draw(modifiedSortButton);
+
+            if (sortColumn == SortColumn::NAME)
+                drawSortArrow(layout.x, 683.f, layout.y);
+            else if (sortColumn == SortColumn::SIZE)
+                drawSortArrow(layout.x + 693.f, 120.f, layout.y);
+            else
+                drawSortArrow(layout.x + 823.f, 120.f, layout.y);
             layout.next(25.f);
 
             separator.layout(layout.x, layout.y, 943.f);
