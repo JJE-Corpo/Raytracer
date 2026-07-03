@@ -21,7 +21,7 @@ namespace rc
                 WRONG_FILE_CONTENT,
                 OTHER
             };
-            LoadingSceneException(ExceptionType type, const std::string& message = nullptr);
+            LoadingSceneException(ExceptionType type, const std::string& message = "");
 
             const char *what() const noexcept override;
         private:
