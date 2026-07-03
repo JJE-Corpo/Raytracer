@@ -67,6 +67,8 @@ namespace rc
             void startRendering();
             void stop() override;
 
+            void loadBlankScene();
+
             CoreState getState() const override;
 
             // ICoreAccess implementation
