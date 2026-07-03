@@ -1,0 +1,96 @@
+{
+    "environment": {
+        "ambient": 0.5,
+        "diffuse": 0.0
+    },
+    "camera": {
+        "resolution": [
+            1600,
+            900
+        ],
+        "position": [
+            0.0,
+            1.0,
+            3.0
+        ],
+        "rotation": [
+            -10.0,
+            0.0,
+            0.0
+        ],
+        "fieldOfView": 75.0
+    },
+    "objects": [
+        {
+            "name": "Sphere A",
+            "type": "sphere",
+            "position": [
+                -2.0,
+                0.5,
+                0.0
+            ],
+            "radius": 0.8,
+            "color": [
+                255,
+                100,
+                100
+            ]
+        },
+        {
+            "name": "Sphere B",
+            "type": "sphere",
+            "position": [
+                0.0,
+                0.5,
+                0.0
+            ],
+            "radius": 0.8,
+            "color": [
+                100,
+                255,
+                100
+            ]
+        },
+        {
+            "name": "Sphere C",
+            "type": "sphere",
+            "position": [
+                2.0,
+                0.5,
+                0.0
+            ],
+            "radius": 0.8,
+            "color": [
+                100,
+                100,
+                255
+            ]
+        },
+        {
+            "name": "Plane",
+            "type": "plane",
+            "normal": [
+                0.0,
+                1.0,
+                0.0
+            ],
+            "origin": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "size": 100.0
+        },
+        {
+            "name": "Directional Light",
+            "type": "directional_light",
+            "direction": [
+                0.0,
+                1.0,
+                -1.0
+            ],
+            "intensity": 0.7
+        }
+    ],
+    "materials": []
+}

@@ -1,0 +1,84 @@
+{
+    "environment": {
+        "ambient": 0.4,
+        "diffuse": 0.6
+    },
+    "camera": {
+        "resolution": [
+            1920,
+            1080
+        ],
+        "position": [
+            0.0,
+            -100.0,
+            20.0
+        ],
+        "rotation": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "fieldOfView": 72.0
+    },
+    "objects": [
+        {
+            "name": "Sphere A",
+            "type": "sphere",
+            "position": [
+                60.0,
+                5.0,
+                40.0
+            ],
+            "radius": 25,
+            "color": [
+                255,
+                64,
+                64
+            ]
+        },
+        {
+            "name": "Sphere B",
+            "type": "sphere",
+            "position": [
+                -40.0,
+                20.0,
+                -10.0
+            ],
+            "radius": 35,
+            "color": [
+                64,
+                255,
+                64
+            ]
+        },
+        {
+            "name": "Plane",
+            "type": "plane",
+            "normal": [
+                0.0,
+                0.0,
+                1.0
+            ],
+            "origin": [
+                0.0,
+                0.0,
+                -20.0
+            ],
+            "color": [
+                64,
+                64,
+                255
+            ]
+        },
+        {
+            "name": "Point light",
+            "type": "point_light",
+            "position": [
+                400.0,
+                100.0,
+                500.0
+            ]
+        }
+    ],
+    "materials": []
+}
