@@ -33,6 +33,15 @@ namespace rc
         bool caretVisible = true;
         size_t cursorPos = 0;
 
+        // Horizontal inset of the text inside the box, reserved on both sides so
+        // the caret never sits flush against an edge.
+        static constexpr float PADDING = 8.f;
+
+        // How far (px) the text is shifted left so the caret stays inside the
+        // box: the field scrolls to follow the cursor when the value is wider
+        // than the visible area. Recomputed each frame in draw().
+        mutable float scrollX = 0.f;
+
         // The selection is the range [selMin(), selMax()) of value. The anchor is
         // the fixed end (set where the drag/extend started); cursorPos is the
         // moving end. When they are equal there is no selection, only a caret.
@@ -46,8 +55,11 @@ namespace rc
             if (this->value.empty())
                 return 0;
 
+            // The text is drawn shifted left by scrollX, so a click at screen
+            // mouseX lands on the glyph at unscrolled coordinate mouseX + scrollX.
+            float adjustedX = mouseX + this->scrollX;
             float startX = this->text.getPosition().x;
-            if (mouseX <= startX)
+            if (adjustedX <= startX)
                 return 0;
 
             size_t maxIndex = this->value.size();
@@ -56,7 +68,7 @@ namespace rc
                 float leftX = this->text.findCharacterPos(i).x;
                 float rightX = this->text.findCharacterPos(i + 1).x;
                 float midX = (leftX + rightX) * 0.5f;
-                if (mouseX < midX)
+                if (adjustedX < midX)
                     return i;
             }
             return maxIndex;
@@ -81,9 +93,8 @@ namespace rc
         {
             this->box.setPosition(x, y);
             this->box.setSize({w, h});
-            float padding = 8.f;
             float textY = y + (h - this->text.getCharacterSize()) / 2.f - 2.f;
-            this->text.setPosition(x + padding, textY);
+            this->text.setPosition(x + PADDING, textY);
         }
 
         void setValue(const std::string &v)
@@ -429,6 +440,93 @@ namespace rc
             return (false);
         }
 
+        // Width available for text inside the box (both paddings removed).
+        float innerWidth() const
+        {
+            return (std::max(0.f, this->box.getSize().x - 2.f * PADDING));
+        }
+
+        // Recompute scrollX so the caret stays visible. An unfocused field, or one
+        // whose whole value already fits, is shown from the start (scrollX = 0);
+        // a focused, overflowing field slides just enough to keep the caret a few
+        // pixels inside either edge.
+        void updateScroll() const
+        {
+            const float inner = this->innerWidth();
+            const float textLeft = this->text.getPosition().x;
+            const float textWidth = this->value.empty() ? 0.f
+                : this->text.findCharacterPos(this->value.size()).x - textLeft;
+
+            if (!this->focused || textWidth <= inner)
+            {
+                this->scrollX = 0.f;
+                return;
+            }
+
+            const float margin = 2.f;
+            const float caret = this->text.findCharacterPos(this->cursorPos).x - textLeft;
+            if (caret < this->scrollX + margin)
+                this->scrollX = caret - margin;
+            else if (caret > this->scrollX + inner - margin)
+                this->scrollX = caret - inner + margin;
+
+            // Bound the scroll to the text (a small margin past the end keeps the
+            // caret visible when it sits at the very last character).
+            this->scrollX = std::clamp(this->scrollX, 0.f, textWidth - inner + margin);
+        }
+
+        // Restrict the following draws to `interior` (world coordinates) and apply
+        // the horizontal scroll, composed on top of whatever view is already active
+        // (e.g. a ScrollView's) so the text never bleeds past the box or outside the
+        // parent's own clip region. Returns false when there is nothing to draw
+        // (degenerate box or fully off-screen), in which case the caller skips.
+        bool beginClip(sf::RenderTarget &target, const sf::FloatRect &interior, const sf::View &saved) const
+        {
+            if (interior.width <= 0.f || interior.height <= 0.f)
+                return (false);
+
+            const sf::Vector2u ts = target.getSize();
+            if (ts.x == 0 || ts.y == 0)
+                return (false);
+            const float W = static_cast<float>(ts.x);
+            const float H = static_cast<float>(ts.y);
+
+            // Where the interior currently lands on screen through the active view.
+            const sf::Vector2i tl = target.mapCoordsToPixel({interior.left, interior.top}, saved);
+            const sf::Vector2i br = target.mapCoordsToPixel(
+                {interior.left + interior.width, interior.top + interior.height}, saved);
+            const float rx = static_cast<float>(tl.x);
+            const float ry = static_cast<float>(tl.y);
+            const float rw = static_cast<float>(br.x - tl.x);
+            const float rh = static_cast<float>(br.y - tl.y);
+            if (rw <= 0.f || rh <= 0.f)
+                return (false);
+
+            // Clip that screen rect against the parent view's own visible region.
+            const sf::FloatRect vp = saved.getViewport();
+            const float ix0 = std::max(rx, vp.left * W);
+            const float iy0 = std::max(ry, vp.top * H);
+            const float ix1 = std::min(rx + rw, (vp.left + vp.width) * W);
+            const float iy1 = std::min(ry + rh, (vp.top + vp.height) * H);
+            if (ix1 <= ix0 || iy1 <= iy0)
+                return (false);
+
+            // Map the clipped screen rect back to the sub-rectangle of world space
+            // it shows (the interior shifted left by scrollX), keeping scale 1:1.
+            const float worldLeft = interior.left + this->scrollX;
+            const float wl = worldLeft + (ix0 - rx) / rw * interior.width;
+            const float wt = interior.top + (iy0 - ry) / rh * interior.height;
+            const float ww = (ix1 - ix0) / rw * interior.width;
+            const float wh = (iy1 - iy0) / rh * interior.height;
+
+            sf::View clip;
+            clip.setSize(ww, wh);
+            clip.setCenter(wl + ww * 0.5f, wt + wh * 0.5f);
+            clip.setViewport(sf::FloatRect(ix0 / W, iy0 / H, (ix1 - ix0) / W, (iy1 - iy0) / H));
+            target.setView(clip);
+            return (true);
+        }
+
         void draw(sf::RenderTarget &target, sf::RenderStates states) const override
         {
             this->box.setFillColor(!this->enabled ? theme::BG_DISABLED
@@ -436,6 +534,18 @@ namespace rc
                                                : theme::BG_CONTROL);
 
             target.draw(this->box, states);
+
+            this->updateScroll();
+
+            const sf::Vector2f boxPos = this->box.getPosition();
+            const sf::Vector2f boxSize = this->box.getSize();
+            const sf::FloatRect interior(boxPos.x + PADDING, boxPos.y,
+                std::max(0.f, boxSize.x - 2.f * PADDING), boxSize.y);
+
+            const sf::View saved = target.getView();
+            const bool clipped = this->beginClip(target, interior, saved);
+            if (!clipped)
+                return;
 
             // Selection highlight sits behind the glyphs so the text stays legible.
             if (this->focused && this->enabled && this->hasSelection())
@@ -459,6 +569,8 @@ namespace rc
                 );
                 target.draw(this->caret, states);
             }
+
+            target.setView(saved);
         }
 
         CursorType getCursor() override

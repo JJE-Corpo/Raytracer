@@ -30,10 +30,13 @@ namespace rc
             bool isCapturing() const override;
             bool handleEvent(const sf::Event &event, sf::Vector2i mouse) override;
             void draw(sf::RenderTarget &target, sf::RenderStates states) const override;
+            CursorType getCursor() override;
 
         private:
-            sf::Text _title;
+            sf::Text _resolutionLabel;
 
+            TextField _widthField;
+            TextField _heightField;
             VectorField _positionField;
             VectorField _rotationField;
     };

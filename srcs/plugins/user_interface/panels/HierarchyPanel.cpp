@@ -292,6 +292,17 @@ namespace rc
             return (this->_renameField.handleEvent(event, mouse));
         }
 
+        // Arrow keys walk the selection up/down the row list. Ctrl held extends
+        // the current selection instead of replacing it, like Ctrl+click.
+        if (event.type == sf::Event::KeyPressed
+            && (event.key.code == sf::Keyboard::Up || event.key.code == sf::Keyboard::Down))
+        {
+            const bool ctrl_pressed = sf::Keyboard::isKeyPressed(sf::Keyboard::LControl)
+                || sf::Keyboard::isKeyPressed(sf::Keyboard::RControl);
+            this->moveSelection(event.key.code == sf::Keyboard::Down ? 1 : -1, ctrl_pressed);
+            return (true);
+        }
+
         if (event.type != sf::Event::MouseButtonPressed)
             return (false);
         if (event.mouseButton.button != sf::Mouse::Left)
@@ -395,6 +406,48 @@ namespace rc
     {
         this->_selection.clear();
         this->_cameraSelected = true;
+    }
+
+    void HierarchyPanel::moveSelection(int direction, bool ctrlPressed)
+    {
+        // Indices into _items of the rows the user can actually land on.
+        std::vector<std::size_t> selectable;
+        for (std::size_t i = 0; i < this->_items.size(); ++i)
+            if (this->_items[i].selectable)
+                selectable.push_back(i);
+        if (selectable.empty())
+            return;
+
+        // Anchor the move on the current selection: the bottom-most selected row
+        // when going down, the top-most when going up. -1 means nothing selected.
+        int current = -1;
+        for (std::size_t k = 0; k < selectable.size(); ++k)
+        {
+            if (!this->_items[selectable[k]].selected)
+                continue;
+            if (direction > 0 || current < 0)
+                current = static_cast<int>(k);
+        }
+
+        int next;
+        if (current < 0)
+            next = (direction > 0) ? 0 : static_cast<int>(selectable.size()) - 1;
+        else
+        {
+            next = current + direction;
+            if (next < 0 || next >= static_cast<int>(selectable.size()))
+                return; // Already at the edge of the list.
+        }
+
+        const Item &target = this->_items[selectable[next]];
+        // The camera row can't share a selection with objects, so Ctrl is ignored
+        // when landing on it (select()/selectCamera() enforce this either way).
+        if (target.type == ItemType::CAMERA)
+            this->selectCamera();
+        else
+            this->select(static_cast<const ISceneObject *>(target.payload), ctrlPressed);
+        this->_selectionChanged = true;
+        this->_lastClickedPayload = target.payload;
     }
 
     void HierarchyPanel::beginRename(const Item &item)
