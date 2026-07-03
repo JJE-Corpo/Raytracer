@@ -24,6 +24,16 @@ namespace
     // the next iteration and the measured gap between the two clicks is
     // inflated by the render time. The window must absorb that stall.
     constexpr int DOUBLE_CLICK_MS = 700;
+
+    // The inline rename field spans from the row's left edge to just before its
+    // visibility toggle button.
+    sf::FloatRect renameFieldRect(const sf::FloatRect &itemBounds, const sf::FloatRect &buttonBounds)
+    {
+        const float left = itemBounds.left + 2.f;
+        const float right = buttonBounds.left - 4.f;
+        const float width = std::max(20.f, right - left);
+        return sf::FloatRect(left, itemBounds.top + 1.f, width, itemBounds.height - 2.f);
+    }
 }
 
 namespace rc
@@ -33,10 +43,13 @@ namespace rc
         this->_font = &font;
         this->_renameField.setFont(font);
         this->_renameField.setCharacterSize(12);
-        this->_renameField.onValidate = [this](const std::string &)
+        this->_renameField.onCommit = [this](const std::string &value)
         {
-            this->commitRename();
-            return (true);
+            this->commitRename(value);
+        };
+        this->_renameField.onCancel = [this]()
+        {
+            this->_renamingObject = nullptr;
         };
     }
 
@@ -274,21 +287,9 @@ namespace rc
 
         if (this->_renamingObject)
         {
-            if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Escape)
-            {
-                this->cancelRename();
-                return (true);
-            }
-            if (this->_renameField.handleEvent(event, mouse))
-                return (true);
-            // A left click outside the field commits and closes the editor,
-            // mirroring ColorPicker's "click outside the popup" convention.
-            if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left)
-            {
-                this->commitRename();
-                return (true);
-            }
-            return (false);
+            // The editor handles Escape (cancel), typing, Enter (commit) and a
+            // left click outside the field (commit) on its own.
+            return (this->_renameField.handleEvent(event, mouse));
         }
 
         if (event.type != sf::Event::MouseButtonPressed)
@@ -406,9 +407,8 @@ namespace rc
         this->_selectionChanged = true;
 
         this->_renamingObject = object;
-        this->_renameField.setValue(item.label);
-        this->_renameField.focused = true;
-        this->layoutRenameField(item.bounds, item.buttonBounds);
+        const sf::FloatRect rect = renameFieldRect(item.bounds, item.buttonBounds);
+        this->_renameField.begin(item.label, rect.left, rect.top, rect.width, rect.height);
 
         // Start a fresh click count so that a single click on this same row
         // after the rename is committed/cancelled doesn't re-trigger rename.
@@ -417,18 +417,15 @@ namespace rc
 
     void HierarchyPanel::layoutRenameField(const sf::FloatRect &itemBounds, const sf::FloatRect &buttonBounds)
     {
-        const float left = itemBounds.left + 2.f;
-        const float right = buttonBounds.left - 4.f;
-        const float width = std::max(20.f, right - left);
-        this->_renameField.layout(left, itemBounds.top + 1.f, width, itemBounds.height - 2.f);
+        const sf::FloatRect rect = renameFieldRect(itemBounds, buttonBounds);
+        this->_renameField.relayout(rect.left, rect.top, rect.width, rect.height);
     }
 
-    void HierarchyPanel::commitRename()
+    void HierarchyPanel::commitRename(const std::string &value)
     {
         if (!this->_renamingObject)
             return;
 
-        const std::string &value = this->_renameField.value;
         const size_t first = value.find_first_not_of(" \t");
         const size_t last = value.find_last_not_of(" \t");
         const std::string trimmed = (first == std::string::npos) ? "" : value.substr(first, last - first + 1);
@@ -437,12 +434,11 @@ namespace rc
             const_cast<ISceneObject *>(this->_renamingObject)->setName(trimmed);
 
         this->_renamingObject = nullptr;
-        this->_renameField.focused = false;
     }
 
     void HierarchyPanel::cancelRename()
     {
         this->_renamingObject = nullptr;
-        this->_renameField.focused = false;
+        this->_renameField.cancel();
     }
 }
