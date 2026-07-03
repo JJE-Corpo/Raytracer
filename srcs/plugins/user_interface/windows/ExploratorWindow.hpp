@@ -24,6 +24,10 @@
 #include <algorithm>
 #include <filesystem>
 #include <vector>
+#include <map>
+#include <ctime>
+#include <iomanip>
+#include <chrono>
 
 #include "Window.hpp"
 
@@ -32,6 +36,8 @@
 #include "../components/Button.hpp"
 #include "../components/TextField.hpp"
 #include "../components/Separator.hpp"
+
+#include "../../../utils/TimestampUtils.h"
 
 namespace rc
 {
@@ -49,6 +55,8 @@ namespace rc
         struct ExplorerEntry
         {
             std::filesystem::path path;
+            std::filesystem::file_time_type lastModified;
+            uintmax_t size = 0;
             bool isDirectory = false;
         };
 
@@ -120,9 +128,16 @@ namespace rc
                 std::sort(files.begin(), files.end(), sorter);
 
                 for (const auto &entry : directories)
-                    entries.push_back({entry.path(), true});
+                {
+                    uintmax_t size = 0;
+                    
+                    for (const auto &_ : std::filesystem::recursive_directory_iterator(entry.path()))
+                        size++;
+
+                    entries.push_back({entry.path(), entry.last_write_time(), size, true});
+                }
                 for (const auto &entry : files)
-                    entries.push_back({entry.path(), false});
+                    entries.push_back({entry.path(), entry.last_write_time(), entry.file_size(), false});
             }
             catch (const std::filesystem::filesystem_error &)
             {
@@ -228,7 +243,11 @@ namespace rc
             {
                 std::sort(entries.begin(), entries.end(), [](const auto &lhs, const auto &rhs)
                 {
-                    return std::filesystem::file_size(lhs.path) < std::filesystem::file_size(rhs.path);
+                    if (lhs.isDirectory && !rhs.isDirectory)
+                        return true;
+                    if (!lhs.isDirectory && rhs.isDirectory)
+                        return false;
+                    return lhs.size < rhs.size;
                 });
             };
 
@@ -328,7 +347,7 @@ namespace rc
             layout.next(5.f);
 
             const float rowHeight = 26.f;
-            const float listWidth = 720.f;
+            const float listWidth = 943.f;
 
             for (std::size_t index = 0; index < entries.size(); ++index)
             {
@@ -366,6 +385,14 @@ namespace rc
                     displayName += "/";
 
                 label.setString(displayName);
+                window.draw(label);
+
+                label.setPosition({layout.x + 713.f, layout.y + 4.f});
+                label.setString(entry.isDirectory ? std::to_string(entry.size) + " items" : std::to_string(entry.size) + " bytes");
+                window.draw(label);
+
+                label.setPosition({layout.x + 843.f, layout.y + 4.f});
+                label.setString(TimestampUtils::toString(entry.lastModified, "%d %b %Y"));
                 window.draw(label);
 
                 layout.next(rowHeight);
