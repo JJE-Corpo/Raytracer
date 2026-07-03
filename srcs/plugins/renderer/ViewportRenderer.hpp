@@ -33,11 +33,15 @@ namespace rc
             std::vector<const ISceneObject *> _selection;
             size_t _selectionVersion = 0;
             size_t _lastSelectionVersion = 0;
+            const ISceneObject *_hover = nullptr;
+            size_t _hoverVersion = 0;
+            size_t _lastHoverVersion = 0;
             bool needsRefresh(const IScene &scene) const;
         public:
             void renderScene(const IScene &scene) override;
             void setPixel(int x, int y, Color color) override;
             void setSelection(const std::vector<const ISceneObject *> &selection) override;
+            void setHover(const ISceneObject *object) override;
 
             void stopRendering() override;
 

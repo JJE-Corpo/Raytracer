@@ -30,6 +30,16 @@ namespace rc
         virtual ~Component() = default;
 
         void draw(sf::RenderTarget &target, sf::RenderStates states) const override = 0;
+
+        // Second, unclipped drawing pass for content that must escape a parent's
+        // scroll/clip region (open dropdown and color-picker pop-ups). Default is
+        // a no-op; the sidebar runs this pass after drawing every clipped section.
+        virtual void drawOverlay(sf::RenderTarget &target, sf::RenderStates states) const
+        {
+            (void)target;
+            (void)states;
+        }
+
         virtual void update(sf::Vector2i mouse)
         {
             (void)mouse;

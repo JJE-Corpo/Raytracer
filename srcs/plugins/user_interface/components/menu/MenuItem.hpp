@@ -14,23 +14,12 @@ namespace rc
 {
     struct MenuItem : Component
     {
-        enum class Type
-        {
-            Action,
-            Checkable
-        };
         sf::RectangleShape background;
         sf::Text text;
 
-        Type type = Type::Action;
-
         std::function<void()> onClick;
-        std::function<void(bool)> onToggle;
 
-        bool checked = false;
         bool justClicked = false;
-
-        float _x = 0.f, _y = 0.f, _w = 0.f, _h = 24.f;
 
         void setFont(sf::Font &font) override
         {
@@ -46,10 +35,6 @@ namespace rc
 
         void layout(float x, float y, float w, float h)
         {
-            _x = x;
-            _y = y;
-            _w = w;
-            _h = h;
             background.setPosition(x, y);
             background.setSize({w, h});
             text.setPosition(x + 10, y + 4);
@@ -69,34 +54,6 @@ namespace rc
         {
             target.draw(background, states);
             target.draw(text, states);
-
-            if (type == Type::Checkable)
-            {
-                sf::RectangleShape box;
-                box.setSize({14.f, 14.f});
-                box.setPosition(_x + _w - 22.f, _y + (_h - 14.f) / 2.f);
-
-                box.setFillColor(checked ? theme::CHECKED
-                                         : theme::BG_CONTROL);
-
-                box.setOutlineThickness(1.f);
-                box.setOutlineColor(theme::OUTLINE);
-
-                target.draw(box, states);
-
-                if (checked)
-                {
-                    sf::Text mark;
-                    mark.setFont(*text.getFont());
-                    mark.setString("x");
-                    mark.setCharacterSize(14);
-                    mark.setFillColor(theme::TEXT_WHITE);
-                    mark.setPosition(box.getPosition().x + 3.f,
-                                     box.getPosition().y - 3.f);
-
-                    target.draw(mark, states);
-                }
-            }
         }
 
         sf::FloatRect getBounds() const override
@@ -111,12 +68,6 @@ namespace rc
                 return (false);
             if (event.type == sf::Event::MouseButtonPressed)
             {
-                if (type == Type::Checkable)
-                {
-                    checked = !checked;
-                    if (onToggle)
-                        onToggle(checked);
-                }
                 if (onClick)
                 {
                     onClick();

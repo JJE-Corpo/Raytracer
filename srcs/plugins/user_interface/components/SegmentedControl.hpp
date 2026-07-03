@@ -21,7 +21,6 @@ namespace rc
         mutable sf::RectangleShape rightButton;
         sf::Text leftText;
         sf::Text rightText;
-        // sf::RectangleShape divider;
 
         int selectedIndex = 0;
         bool leftHovered = false;
@@ -81,10 +80,6 @@ namespace rc
 
             this->rightButton.setPosition({control_x + half_width, y});
             this->rightButton.setSize({control_width - half_width, CONTROL_HEIGHT});
-
-            // this->divider.setPosition({control_x + half_width - 0.5f, y + 3.f});
-            // this->divider.setSize({1.f, CONTROL_HEIGHT - 6.f});
-            // this->divider.setFillColor(theme::OUTLINE);
 
             sf::FloatRect leftBounds = this->leftText.getLocalBounds();
             sf::FloatRect rightBounds = this->rightText.getLocalBounds();
@@ -162,7 +157,6 @@ namespace rc
             target.draw(this->background, states);
             target.draw(this->leftButton, states);
             target.draw(this->rightButton, states);
-            // target.draw(this->divider, states);
             target.draw(this->leftText, states);
             target.draw(this->rightText, states);
         }

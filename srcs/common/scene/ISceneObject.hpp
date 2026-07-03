@@ -33,6 +33,7 @@ namespace rc
             virtual void setRotation(const Vector3f &rotation) = 0;
             virtual void setScale(const Vector3f &scale) = 0;
             virtual void setHidden(bool hidden) = 0;
+            virtual void setName(const std::string &name) = 0;
     };
 }
 

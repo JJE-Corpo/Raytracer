@@ -24,6 +24,7 @@ namespace rc
             Cone(std::string name, const Vector3f &center, const Vector3f &rotation, const Vector3f &scale, float radius, float height, const Material *material);
 
             std::string getName() const override;
+            void setName(const std::string &name) override { this->_name = name; }
             std::string getTypeName() const override;
             bool intersect(const Ray &ray, float tMin, float tMax, Intersection &hit) const override;
             bool isFinite() const override;
