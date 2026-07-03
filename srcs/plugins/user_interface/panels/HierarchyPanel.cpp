@@ -24,6 +24,16 @@ namespace
     // the next iteration and the measured gap between the two clicks is
     // inflated by the render time. The window must absorb that stall.
     constexpr int DOUBLE_CLICK_MS = 700;
+
+    // The inline rename field spans from the row's left edge to just before its
+    // visibility toggle button.
+    sf::FloatRect renameFieldRect(const sf::FloatRect &itemBounds, const sf::FloatRect &buttonBounds)
+    {
+        const float left = itemBounds.left + 2.f;
+        const float right = buttonBounds.left - 4.f;
+        const float width = std::max(20.f, right - left);
+        return sf::FloatRect(left, itemBounds.top + 1.f, width, itemBounds.height - 2.f);
+    }
 }
 
 namespace rc
@@ -33,10 +43,13 @@ namespace rc
         this->_font = &font;
         this->_renameField.setFont(font);
         this->_renameField.setCharacterSize(12);
-        this->_renameField.onValidate = [this](const std::string &)
+        this->_renameField.onCommit = [this](const std::string &value)
         {
-            this->commitRename();
-            return (true);
+            this->commitRename(value);
+        };
+        this->_renameField.onCancel = [this]()
+        {
+            this->_renamingObject = nullptr;
         };
     }
 
@@ -274,21 +287,20 @@ namespace rc
 
         if (this->_renamingObject)
         {
-            if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Escape)
-            {
-                this->cancelRename();
-                return (true);
-            }
-            if (this->_renameField.handleEvent(event, mouse))
-                return (true);
-            // A left click outside the field commits and closes the editor,
-            // mirroring ColorPicker's "click outside the popup" convention.
-            if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left)
-            {
-                this->commitRename();
-                return (true);
-            }
-            return (false);
+            // The editor handles Escape (cancel), typing, Enter (commit) and a
+            // left click outside the field (commit) on its own.
+            return (this->_renameField.handleEvent(event, mouse));
+        }
+
+        // Arrow keys walk the selection up/down the row list. Ctrl held extends
+        // the current selection instead of replacing it, like Ctrl+click.
+        if (event.type == sf::Event::KeyPressed
+            && (event.key.code == sf::Keyboard::Up || event.key.code == sf::Keyboard::Down))
+        {
+            const bool ctrl_pressed = sf::Keyboard::isKeyPressed(sf::Keyboard::LControl)
+                || sf::Keyboard::isKeyPressed(sf::Keyboard::RControl);
+            this->moveSelection(event.key.code == sf::Keyboard::Down ? 1 : -1, ctrl_pressed);
+            return (true);
         }
 
         if (event.type != sf::Event::MouseButtonPressed)
@@ -396,6 +408,48 @@ namespace rc
         this->_cameraSelected = true;
     }
 
+    void HierarchyPanel::moveSelection(int direction, bool ctrlPressed)
+    {
+        // Indices into _items of the rows the user can actually land on.
+        std::vector<std::size_t> selectable;
+        for (std::size_t i = 0; i < this->_items.size(); ++i)
+            if (this->_items[i].selectable)
+                selectable.push_back(i);
+        if (selectable.empty())
+            return;
+
+        // Anchor the move on the current selection: the bottom-most selected row
+        // when going down, the top-most when going up. -1 means nothing selected.
+        int current = -1;
+        for (std::size_t k = 0; k < selectable.size(); ++k)
+        {
+            if (!this->_items[selectable[k]].selected)
+                continue;
+            if (direction > 0 || current < 0)
+                current = static_cast<int>(k);
+        }
+
+        int next;
+        if (current < 0)
+            next = (direction > 0) ? 0 : static_cast<int>(selectable.size()) - 1;
+        else
+        {
+            next = current + direction;
+            if (next < 0 || next >= static_cast<int>(selectable.size()))
+                return; // Already at the edge of the list.
+        }
+
+        const Item &target = this->_items[selectable[next]];
+        // The camera row can't share a selection with objects, so Ctrl is ignored
+        // when landing on it (select()/selectCamera() enforce this either way).
+        if (target.type == ItemType::CAMERA)
+            this->selectCamera();
+        else
+            this->select(static_cast<const ISceneObject *>(target.payload), ctrlPressed);
+        this->_selectionChanged = true;
+        this->_lastClickedPayload = target.payload;
+    }
+
     void HierarchyPanel::beginRename(const Item &item)
     {
         const auto *object = static_cast<const ISceneObject *>(item.payload);
@@ -406,9 +460,8 @@ namespace rc
         this->_selectionChanged = true;
 
         this->_renamingObject = object;
-        this->_renameField.setValue(item.label);
-        this->_renameField.focused = true;
-        this->layoutRenameField(item.bounds, item.buttonBounds);
+        const sf::FloatRect rect = renameFieldRect(item.bounds, item.buttonBounds);
+        this->_renameField.begin(item.label, rect.left, rect.top, rect.width, rect.height);
 
         // Start a fresh click count so that a single click on this same row
         // after the rename is committed/cancelled doesn't re-trigger rename.
@@ -417,18 +470,15 @@ namespace rc
 
     void HierarchyPanel::layoutRenameField(const sf::FloatRect &itemBounds, const sf::FloatRect &buttonBounds)
     {
-        const float left = itemBounds.left + 2.f;
-        const float right = buttonBounds.left - 4.f;
-        const float width = std::max(20.f, right - left);
-        this->_renameField.layout(left, itemBounds.top + 1.f, width, itemBounds.height - 2.f);
+        const sf::FloatRect rect = renameFieldRect(itemBounds, buttonBounds);
+        this->_renameField.relayout(rect.left, rect.top, rect.width, rect.height);
     }
 
-    void HierarchyPanel::commitRename()
+    void HierarchyPanel::commitRename(const std::string &value)
     {
         if (!this->_renamingObject)
             return;
 
-        const std::string &value = this->_renameField.value;
         const size_t first = value.find_first_not_of(" \t");
         const size_t last = value.find_last_not_of(" \t");
         const std::string trimmed = (first == std::string::npos) ? "" : value.substr(first, last - first + 1);
@@ -437,12 +487,11 @@ namespace rc
             const_cast<ISceneObject *>(this->_renamingObject)->setName(trimmed);
 
         this->_renamingObject = nullptr;
-        this->_renameField.focused = false;
     }
 
     void HierarchyPanel::cancelRename()
     {
         this->_renamingObject = nullptr;
-        this->_renameField.focused = false;
+        this->_renameField.cancel();
     }
 }
