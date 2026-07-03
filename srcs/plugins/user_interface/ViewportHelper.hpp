@@ -10,6 +10,7 @@
 
 #include "../../common/scene/ICamera.hpp"
 #include "../../common/scene/ILight.hpp"
+#include "../../common/scene/IScene.hpp"
 #include "../../common/Material.hpp"
 #include "../../common/Vector.hpp"
 

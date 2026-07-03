@@ -4,12 +4,7 @@
 
 int main(int argc, char **argv)
 {
-    if (argc != 2)
-    {
-        std::cerr << "Wrong arguments: " << argv[0] << " --help" << std::endl;
-        return (84);
-    }
-    if (std::string(argv[1]) == "--help")
+    if (argc == 2 && std::string(argv[1]) == "--help")
     {
         std::cout << "Usage: " << argv[0] << " <SCENE_FILE>" << std::endl;
         std::cout << "  SCENE_FILE: scene configuration" << std::endl;
@@ -37,7 +32,10 @@ int main(int argc, char **argv)
     }
     try
     {
-        core.loadScene(argv[1]);
+        if (argc >= 2)
+            core.loadScene(argv[1]);
+        else
+            core.loadBlankScene();
     }
     catch (std::exception &e)
     {

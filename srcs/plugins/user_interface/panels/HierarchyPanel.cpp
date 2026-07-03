@@ -16,12 +16,14 @@ namespace
 {
     constexpr float ITEM_HEIGHT = 18.f;
     constexpr float ITEM_INDENT = 12.f;
-    constexpr float HEADER_HEIGHT = 16.f;
-    constexpr float ITEM_SPACING = 6.f;
-    constexpr int MAX_VISIBLE_ITEMS = 8;
-    constexpr float SCROLLBAR_WIDTH = 8.f;
-    constexpr float SCROLLBAR_GAP = 6.f;
-    constexpr float SCROLLBAR_MIN_THUMB = 14.f;
+
+    // Double-click window for starting an inline rename. Deliberately larger
+    // than a typical OS double-click (~500ms): the first click changes the
+    // selection, which triggers a synchronous viewport re-render inside the UI
+    // loop, so a second click landing during that render is only processed on
+    // the next iteration and the measured gap between the two clicks is
+    // inflated by the render time. The window must absorb that stall.
+    constexpr int DOUBLE_CLICK_MS = 700;
 }
 
 namespace rc
@@ -29,6 +31,13 @@ namespace rc
     void HierarchyPanel::setFont(sf::Font &font)
     {
         this->_font = &font;
+        this->_renameField.setFont(font);
+        this->_renameField.setCharacterSize(12);
+        this->_renameField.onValidate = [this](const std::string &)
+        {
+            this->commitRename();
+            return (true);
+        };
     }
 
     void HierarchyPanel::setScene(IScene *scene)
@@ -81,62 +90,17 @@ namespace rc
     {
         this->_items.clear();
 
-        auto clampScrollOffset = [&]()
-        {
-            int maxOffset = std::max(0, this->_totalItems - this->_visibleItems);
-            this->_scrollOffset = std::clamp(this->_scrollOffset, 0, maxOffset);
-        };
+        float y = this->_originY;
 
-        auto updatePanelBounds = [&]()
+        auto finish = [&]()
         {
-            float height = HEADER_HEIGHT + ITEM_SPACING;
-            if (this->_visibleItems > 0)
-                height += static_cast<float>(this->_visibleItems) * (ITEM_HEIGHT + ITEM_SPACING);
-            this->_panelBounds = {this->_originX, this->_originY, this->_width, height};
+            const float height = std::max(0.f, y - this->_originY);
             this->_bottomY = this->_originY + height;
+            this->height = height;
         };
-
-        auto updateScrollbarGeometry = [&]()
-        {
-            if (!this->_scrollbarVisible)
-            {
-                this->_scrollbarTrack = {};
-                this->_scrollbarThumb = {};
-                return;
-            }
-
-            float listHeight = static_cast<float>(this->_visibleItems) * (ITEM_HEIGHT + ITEM_SPACING);
-            float trackHeight = std::max(0.f, listHeight - ITEM_SPACING);
-            float trackX = this->_originX + this->_contentWidth + SCROLLBAR_GAP;
-            float trackY = this->_originY + HEADER_HEIGHT + ITEM_SPACING;
-            this->_scrollbarTrack = {trackX, trackY, SCROLLBAR_WIDTH, trackHeight};
-
-            float thumbHeight = trackHeight;
-            if (this->_totalItems > 0)
-                thumbHeight = std::max(SCROLLBAR_MIN_THUMB, trackHeight * (static_cast<float>(this->_visibleItems) / static_cast<float>(this->_totalItems)));
-            thumbHeight = std::min(thumbHeight, trackHeight);
-
-            float thumbTop = trackY;
-            int maxOffset = std::max(0, this->_totalItems - this->_visibleItems);
-            if (maxOffset > 0 && trackHeight > thumbHeight)
-            {
-                float t = static_cast<float>(this->_scrollOffset) / static_cast<float>(maxOffset);
-                t = std::clamp(t, 0.f, 1.f);
-                thumbTop = trackY + (trackHeight - thumbHeight) * t;
-            }
-            this->_scrollbarThumb = {trackX, thumbTop, SCROLLBAR_WIDTH, thumbHeight};
-        };
-
-        float y = this->_originY + HEADER_HEIGHT + ITEM_SPACING;
 
         if (!this->_scene)
         {
-            this->_totalItems = 1;
-            this->_visibleItems = std::min(this->_totalItems, MAX_VISIBLE_ITEMS);
-            this->_scrollbarVisible = false;
-            this->_scrollbarDragging = false;
-            this->_contentWidth = this->_width;
-            clampScrollOffset();
             Item empty;
             empty.label = "No scene loaded";
             empty.depth = 0;
@@ -146,36 +110,16 @@ namespace rc
             empty.hovered = false;
             empty.bounds = {this->_originX, y, this->_width, ITEM_HEIGHT};
             this->_items.push_back(empty);
-            updatePanelBounds();
-            updateScrollbarGeometry();
+            y += ITEM_HEIGHT;
+            finish();
             return;
         }
 
-        this->_totalItems = 1 + static_cast<int>(this->_scene->getLights().size()) + static_cast<int>(this->_scene->getPrimitives().size());
-        this->_visibleItems = std::min(this->_totalItems, MAX_VISIBLE_ITEMS);
-        this->_scrollbarVisible = this->_totalItems > this->_visibleItems;
-        if (!this->_scrollbarVisible)
-            this->_scrollbarDragging = false;
-        this->_contentWidth = this->_width - (this->_scrollbarVisible ? (SCROLLBAR_WIDTH + SCROLLBAR_GAP) : 0.f);
-        this->_contentWidth = std::max(0.f, this->_contentWidth);
-        clampScrollOffset();
-
-        int itemIndex = 0;
-        int firstVisible = this->_scrollOffset;
-        int lastVisible = this->_scrollOffset + this->_visibleItems - 1;
-        auto shouldDrawIndex = [&](int index)
-        {
-            return index >= firstVisible && index <= lastVisible;
-        };
-
         auto push_item = [&](const std::string &label, int depth, ItemType type, const void *payload, bool selectable, bool selected)
         {
-            const int currentIndex = itemIndex++;
-            if (!shouldDrawIndex(currentIndex))
-                return;
             const float indent = ITEM_INDENT * static_cast<float>(depth);
             float itemX = this->_originX + indent;
-            float itemW = std::max(0.f, this->_contentWidth - indent);
+            float itemW = std::max(0.f, this->_width - indent);
 
             Item item;
             item.label = label;
@@ -186,7 +130,7 @@ namespace rc
             item.selected = selected;
             item.hovered = false;
             item.bounds = {itemX, y, itemW, ITEM_HEIGHT};
-            const float buttonSize = 14.f;
+            const float buttonSize = 10.f;
             item.buttonBounds = {item.bounds.left + item.bounds.width - buttonSize - 6.f, item.bounds.top + (item.bounds.height - buttonSize) / 2.f, buttonSize, buttonSize};
             item.hidden = false;
             if (payload)
@@ -198,7 +142,7 @@ namespace rc
             }
             this->_items.push_back(item);
 
-            y += ITEM_HEIGHT + ITEM_SPACING;
+            y += ITEM_HEIGHT;
         };
 
         push_item("Camera", 0, ItemType::CAMERA, &this->_scene->getCamera(), true, this->_cameraSelected);
@@ -220,22 +164,46 @@ namespace rc
             push_item(label, 0, ItemType::PRIMITIVE, primitive, true, selected);
         }
 
-        updatePanelBounds();
-        updateScrollbarGeometry();
+        this->refreshHoverState();
+
+        if (this->_renamingObject)
+        {
+            bool stillPresent = false;
+            for (const auto &item : this->_items)
+            {
+                if (item.payload == this->_renamingObject)
+                {
+                    this->layoutRenameField(item.bounds, item.buttonBounds);
+                    stillPresent = true;
+                    break;
+                }
+            }
+            if (!stillPresent)
+                this->cancelRename();
+        }
+
+        finish();
+    }
+
+    // Re-applies the last known mouse position to the freshly-built item list.
+    // buildItems() runs more than once per frame (update() then draw()), and
+    // each run replaces _items wholesale, so hover can't just be set once by
+    // update() - it has to be recomputed every time the list is rebuilt.
+    void HierarchyPanel::refreshHoverState()
+    {
+        this->hovered = false;
+        for (auto &item : this->_items)
+        {
+            item.hovered = item.selectable && item.bounds.contains(static_cast<sf::Vector2f>(this->_lastMouse));
+            if (item.hovered)
+                this->hovered = true;
+        }
     }
 
     void HierarchyPanel::draw(sf::RenderTarget &target, sf::RenderStates states) const
     {
         if (!this->_font)
             return;
-
-        sf::Text header;
-        header.setFont(*this->_font);
-        header.setString("Hierarchy");
-        header.setCharacterSize(12);
-        header.setFillColor(theme::TEXT_DIM);
-        header.setPosition({this->_originX, this->_originY});
-        target.draw(header, states);
 
         for (const auto &item : this->_items)
         {
@@ -261,13 +229,18 @@ namespace rc
                 target.draw(accent, states);
             }
 
-            sf::Text text;
-            text.setFont(*this->_font);
-            text.setCharacterSize(12);
-            text.setFillColor(item.hidden ? theme::TEXT_DIM : theme::TEXT_MAIN);
-            text.setString(item.label);
-            text.setPosition({item.bounds.left + 8.f, item.bounds.top + 2.f});
-            target.draw(text, states);
+            const bool isRenamingThis = item.payload && item.payload == this->_renamingObject;
+
+            if (!isRenamingThis)
+            {
+                sf::Text text;
+                text.setFont(*this->_font);
+                text.setCharacterSize(12);
+                text.setFillColor(item.hidden ? theme::TEXT_DIM : theme::TEXT_MAIN);
+                text.setString(item.label);
+                text.setPosition({item.bounds.left + 8.f, item.bounds.top + 2.f});
+                target.draw(text, states);
+            }
 
             if (item.type == ItemType::PRIMITIVE || item.type == ItemType::LIGHT)
             {
@@ -281,96 +254,47 @@ namespace rc
             }
         }
 
-        if (this->_scrollbarVisible)
-        {
-            sf::RectangleShape track;
-            track.setPosition({this->_scrollbarTrack.left, this->_scrollbarTrack.top});
-            track.setSize({this->_scrollbarTrack.width, this->_scrollbarTrack.height});
-            track.setFillColor(theme::BG_CONTROL);
-            target.draw(track, states);
-
-            sf::RectangleShape thumb;
-            thumb.setPosition({this->_scrollbarThumb.left, this->_scrollbarThumb.top});
-            thumb.setSize({this->_scrollbarThumb.width, this->_scrollbarThumb.height});
-            thumb.setFillColor(this->_scrollbarDragging || this->_scrollbarHovered ? theme::TEXT_WHITE : theme::TEXT_DIM);
-            target.draw(thumb, states);
-        }
+        if (this->_renamingObject)
+            target.draw(this->_renameField, states);
     }
 
     void HierarchyPanel::update(sf::Vector2i mouse)
     {
-        this->hovered = false;
-        this->_scrollbarHovered = false;
-        if (this->_scrollbarVisible)
-        {
-            this->_scrollbarHovered = this->_scrollbarThumb.contains(static_cast<sf::Vector2f>(mouse));
-            if (this->_scrollbarDragging && this->_scrollbarTrack.height > 0.f && this->_totalItems > this->_visibleItems)
-            {
-                float thumbTop = static_cast<float>(mouse.y) - this->_scrollbarDragOffset;
-                float minY = this->_scrollbarTrack.top;
-                float maxY = this->_scrollbarTrack.top + this->_scrollbarTrack.height - this->_scrollbarThumb.height;
-                thumbTop = std::clamp(thumbTop, minY, maxY);
-                float t = 0.f;
-                if (maxY > minY)
-                    t = (thumbTop - minY) / (maxY - minY);
-                int maxOffset = std::max(0, this->_totalItems - this->_visibleItems);
-                int newOffset = static_cast<int>(std::round(t * static_cast<float>(maxOffset)));
-                if (newOffset != this->_scrollOffset)
-                {
-                    this->_scrollOffset = newOffset;
-                    this->buildItems();
-                }
-            }
-        }
-        for (auto &item : this->_items)
-        {
-            item.hovered = item.selectable && item.bounds.contains(static_cast<sf::Vector2f>(mouse));
-            if (item.hovered)
-                this->hovered = true;
-        }
+        this->_lastMouse = mouse;
+        this->refreshHoverState();
+
+        if (this->_renamingObject)
+            this->_renameField.update(mouse);
     }
 
     bool HierarchyPanel::handleEvent(const sf::Event &event, const sf::Vector2i mouse)
     {
         if (!this->enabled)
             return (false);
-        if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left)
+
+        if (this->_renamingObject)
         {
-            const bool wasDragging = this->_scrollbarDragging;
-            this->_scrollbarDragging = false;
-            return (wasDragging);
-        }
-        if (event.type == sf::Event::MouseWheelScrolled)
-        {
-            if (!this->_panelBounds.contains(static_cast<sf::Vector2f>(mouse)))
-                return (false);
-            if (this->_totalItems <= this->_visibleItems)
-                return (false);
-            int step = 0;
-            if (event.mouseWheelScroll.delta > 0.f)
-                step = -1;
-            else if (event.mouseWheelScroll.delta < 0.f)
-                step = 1;
-            if (step != 0)
+            if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Escape)
             {
-                this->_scrollOffset += step;
-                int maxOffset = std::max(0, this->_totalItems - this->_visibleItems);
-                this->_scrollOffset = std::clamp(this->_scrollOffset, 0, maxOffset);
-                this->buildItems();
+                this->cancelRename();
+                return (true);
             }
-            return (true);
+            if (this->_renameField.handleEvent(event, mouse))
+                return (true);
+            // A left click outside the field commits and closes the editor,
+            // mirroring ColorPicker's "click outside the popup" convention.
+            if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left)
+            {
+                this->commitRename();
+                return (true);
+            }
+            return (false);
         }
+
         if (event.type != sf::Event::MouseButtonPressed)
             return (false);
         if (event.mouseButton.button != sf::Mouse::Left)
             return (false);
-
-        if (this->_scrollbarVisible && this->_scrollbarThumb.contains(static_cast<sf::Vector2f>(mouse)))
-        {
-            this->_scrollbarDragging = true;
-            this->_scrollbarDragOffset = static_cast<float>(mouse.y) - this->_scrollbarThumb.top;
-            return (true);
-        }
 
         bool ctrl_pressed = sf::Keyboard::isKeyPressed(sf::Keyboard::LControl) || sf::Keyboard::isKeyPressed(sf::Keyboard::RControl);
 
@@ -396,6 +320,18 @@ namespace rc
                 continue;
             if (!item.bounds.contains(static_cast<sf::Vector2f>(mouse)))
                 continue;
+
+            const bool is_double_click = item.payload == this->_lastClickedPayload
+                && this->_clickClock.getElapsedTime().asMilliseconds() < DOUBLE_CLICK_MS;
+            this->_lastClickedPayload = item.payload;
+            this->_clickClock.restart();
+
+            if (is_double_click && (item.type == ItemType::LIGHT || item.type == ItemType::PRIMITIVE))
+            {
+                this->beginRename(item);
+                return (true);
+            }
+
             switch (item.type)
             {
                 case ItemType::CAMERA:
@@ -408,18 +344,30 @@ namespace rc
             this->_selectionChanged = true;
             return (true);
         }
-        return (false);
+
+        // Clicked inside the panel but not on any row: clear the selection.
+        const bool had_selection = this->_cameraSelected || !this->_selection.empty();
+        this->_selection.clear();
+        this->_cameraSelected = false;
+        if (had_selection)
+            this->_selectionChanged = true;
+        return (true);
     }
 
     CursorType HierarchyPanel::getCursor()
     {
         if (!this->enabled)
             return (CursorType::ARROW);
-        if (this->_scrollbarDragging || this->_scrollbarHovered)
-            return (CursorType::HAND);
         if (this->hovered)
             return (CursorType::HAND);
         return (CursorType::ARROW);
+    }
+
+    // Keeps keyboard focus on the rename field regardless of cursor position,
+    // the same way an open ColorPicker popup captures events (see ColorPicker).
+    bool HierarchyPanel::isCapturing() const
+    {
+        return (this->_renameField.isCapturing());
     }
 
     void HierarchyPanel::select(const ISceneObject *object, bool ctrlPressed)
@@ -446,5 +394,55 @@ namespace rc
     {
         this->_selection.clear();
         this->_cameraSelected = true;
+    }
+
+    void HierarchyPanel::beginRename(const Item &item)
+    {
+        const auto *object = static_cast<const ISceneObject *>(item.payload);
+        if (!object)
+            return;
+
+        this->select(object, false);
+        this->_selectionChanged = true;
+
+        this->_renamingObject = object;
+        this->_renameField.setValue(item.label);
+        this->_renameField.focused = true;
+        this->layoutRenameField(item.bounds, item.buttonBounds);
+
+        // Start a fresh click count so that a single click on this same row
+        // after the rename is committed/cancelled doesn't re-trigger rename.
+        this->_lastClickedPayload = nullptr;
+    }
+
+    void HierarchyPanel::layoutRenameField(const sf::FloatRect &itemBounds, const sf::FloatRect &buttonBounds)
+    {
+        const float left = itemBounds.left + 2.f;
+        const float right = buttonBounds.left - 4.f;
+        const float width = std::max(20.f, right - left);
+        this->_renameField.layout(left, itemBounds.top + 1.f, width, itemBounds.height - 2.f);
+    }
+
+    void HierarchyPanel::commitRename()
+    {
+        if (!this->_renamingObject)
+            return;
+
+        const std::string &value = this->_renameField.value;
+        const size_t first = value.find_first_not_of(" \t");
+        const size_t last = value.find_last_not_of(" \t");
+        const std::string trimmed = (first == std::string::npos) ? "" : value.substr(first, last - first + 1);
+
+        if (!trimmed.empty())
+            const_cast<ISceneObject *>(this->_renamingObject)->setName(trimmed);
+
+        this->_renamingObject = nullptr;
+        this->_renameField.focused = false;
+    }
+
+    void HierarchyPanel::cancelRename()
+    {
+        this->_renamingObject = nullptr;
+        this->_renameField.focused = false;
     }
 }

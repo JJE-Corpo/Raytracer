@@ -17,6 +17,7 @@ namespace rc
         public:
             virtual ~ISelectionAwareRenderer() = default;
             virtual void setSelection(const std::vector<const ISceneObject *> &selection) = 0;
+            virtual void setHover(const ISceneObject *object) = 0;
     };
 }
 

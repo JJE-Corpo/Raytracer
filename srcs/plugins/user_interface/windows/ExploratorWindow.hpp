@@ -32,7 +32,7 @@
 #include "Window.hpp"
 
 #include "../Theme.hpp"
-#include "../VerticalLayout.hpp"
+#include "../LayoutPen.hpp"
 #include "../components/Button.hpp"
 #include "../components/TextField.hpp"
 #include "../components/Separator.hpp"

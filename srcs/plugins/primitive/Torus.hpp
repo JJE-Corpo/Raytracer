@@ -27,6 +27,7 @@ namespace rc
         Torus(std::string name, const Vector3f &center, const Vector3f &rotation, float radius, float height, const Material *material);
 
         std::string getName() const override;
+        void setName(const std::string &name) override { this->_name = name; }
         bool intersect(const Ray &ray, float tMin, float tMax, Intersection &hit) const override;
         bool isFinite() const override;
         AABB bounding_box() const override;

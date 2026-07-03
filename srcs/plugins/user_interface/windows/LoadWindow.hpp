@@ -23,7 +23,7 @@
 
 #include "../../../common/scene/IScene.hpp"
 #include "../Theme.hpp"
-#include "../VerticalLayout.hpp"
+#include "../LayoutPen.hpp"
 #include "../components/Button.hpp"
 #include "../components/Checkbox.hpp"
 #include "../components/Separator.hpp"
@@ -327,7 +327,7 @@ namespace rc
 
         void drawUi()
         {
-            VerticalLayout layout{20.f, 20.f, 16.f};
+            LayoutPen layout{20.f, 20.f, 16.f};
 
             // === HEADER SECTION ===
             sf::Text headerText;
