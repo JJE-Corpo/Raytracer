@@ -11,11 +11,11 @@ Scene construction is split into:
 
 This keeps config parsing independent from concrete constructor details.
 
-## Build Flow From `.cfg`
+## Build Flow From `.json`
 
 ```mermaid
 flowchart TD
-    Cfg[scene.cfg] --> Parser[SceneParser]
+    Json[scene.json] --> Parser[SceneParser]
     Parser --> Camera[parseCamera]
     Parser --> Mats[parseMaterials]
     Parser --> Objects[parseObjects]
@@ -89,7 +89,7 @@ They are useful for editor actions and dynamic creation where parsing is not inv
 
 ## Save Path (Reverse Direction)
 
-`SceneRegister` serializes runtime scene state back to `.cfg`:
+`SceneRegister` serializes runtime scene state back to `.json`:
 
 - camera
 - environment coefficients
