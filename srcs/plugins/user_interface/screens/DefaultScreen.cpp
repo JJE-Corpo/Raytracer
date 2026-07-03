@@ -37,6 +37,8 @@ namespace rc
         this->_viewportBvhDirty = true;
         this->_toastManager.setFont(*this->_font);
 
+        this->_exploratorWindow.setSelectedEntry({".cfg"});
+
         this->_rendererPanel.setFont(*this->_font);
         this->_rendererPanel.closeRenderCallback = [this]
         {
