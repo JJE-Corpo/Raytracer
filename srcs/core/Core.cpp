@@ -68,6 +68,11 @@ namespace rc
         this->_state = CoreState::READY;
     }
 
+    void Core::loadBlankScene()
+    {
+        this->_scene = new Scene(new Camera({1280, 720}, {0, 0, 5}, {0, 0, 0}, 80));
+    }
+
     void Core::loadRenderers()
     {
         for (auto &plugin : this->_pluginLoader.getPlugins(PluginType::RENDERER))
@@ -104,7 +109,6 @@ namespace rc
     void Core::unloadRenderers()
     {
         this->_defaultRenderer = nullptr;
-        // this->_fastRenderer = nullptr;
         this->_clusteredRenderer = this->_ownedClusterRenderer.get();
         this->_viewportRenderer = nullptr;
     }
