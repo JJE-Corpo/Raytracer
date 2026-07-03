@@ -158,7 +158,13 @@ namespace rc
 
     bool MaterialPanel::isCapturing() const
     {
-        return (this->_baseColorPicker.isCapturing());
+        if (this->_baseColorPicker.isCapturing())
+            return (true);
+        // A slider whose inline value editor is open must keep keyboard focus.
+        for (const auto &slider : this->_materialSliders)
+            if (slider.isCapturing())
+                return (true);
+        return (false);
     }
 
     bool MaterialPanel::handleEvent(const sf::Event &event, const sf::Vector2i mouse)

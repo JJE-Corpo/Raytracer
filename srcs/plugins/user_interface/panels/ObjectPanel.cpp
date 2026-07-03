@@ -272,12 +272,18 @@ namespace rc
 
     bool ObjectPanel::isCapturing() const
     {
-        return (this->_lightColorPicker.isCapturing()
+        if (this->_lightColorPicker.isCapturing()
             || this->_materialDropdown.isCapturing()
             || this->_lightIntensityField.isCapturing()
             || this->_positionField.isCapturing()
             || this->_rotationField.isCapturing()
-            || this->_scaleField.isCapturing());
+            || this->_scaleField.isCapturing())
+            return (true);
+        // A slider whose inline value editor is open must keep keyboard focus.
+        for (const auto &slider : this->_objectSliders)
+            if (slider.isCapturing())
+                return (true);
+        return (false);
     }
 
     bool ObjectPanel::handleEvent(const sf::Event &event, const sf::Vector2i mouse)
