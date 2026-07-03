@@ -19,9 +19,9 @@ namespace rc
 {
     void ObjectPanel::setFont(sf::Font &font)
     {
-        this->_title.setFont(font);
-        this->_title.setCharacterSize(14);
-        this->_title.setFillColor(theme::TEXT_DIM);
+        // this->_title.setFont(font);
+        // this->_title.setCharacterSize(14);
+        // this->_title.setFillColor(theme::TEXT_DIM);
 
         this->_lightColorPicker.setFont(font);
         this->_lightColorPicker.setLabel("Light color");
@@ -56,8 +56,8 @@ namespace rc
     {
         LayoutPen layout{x, y};
 
-        this->_title.setPosition({layout.x, layout.y});
-        layout.next(24);
+        // this->_title.setPosition({layout.x, layout.y});
+        // layout.next(24);
 
         if (this->isLight)
         {
@@ -114,7 +114,7 @@ namespace rc
 
     void ObjectPanel::rebuild(const ISceneObject *currentObject)
     {
-        this->_title.setString("Object : " + currentObject->getName());
+        // this->_title.setString("Object : " + currentObject->getName());
 
         this->isLight = false;
         this->isPrimitive = false;
@@ -279,7 +279,6 @@ namespace rc
             || this->_rotationField.isCapturing()
             || this->_scaleField.isCapturing())
             return (true);
-        // A slider whose inline value editor is open must keep keyboard focus.
         for (const auto &slider : this->_objectSliders)
             if (slider.isCapturing())
                 return (true);
@@ -311,7 +310,7 @@ namespace rc
 
     void ObjectPanel::draw(sf::RenderTarget &target, sf::RenderStates states) const
     {
-        target.draw(this->_title, states);
+        // target.draw(this->_title, states);
 
         for (auto &slider : this->_objectSliders)
         {
