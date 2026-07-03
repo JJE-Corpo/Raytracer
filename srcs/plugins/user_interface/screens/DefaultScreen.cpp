@@ -827,9 +827,11 @@ namespace rc
             return;
 
         // Right mouse drives the viewport camera rotation independently of the
-        // component routing below.
+        // component routing below, but only when the drag begins over the
+        // viewport itself - a right-press on a panel must not grab the camera.
         if (event.type == sf::Event::MouseButtonPressed &&
-            event.mouseButton.button == sf::Mouse::Right)
+            event.mouseButton.button == sf::Mouse::Right &&
+            this->isViewportCaptured(mouse))
         {
             this->_rightMouseHeld = true;
             this->_lastMouse = sf::Mouse::getPosition(window);
@@ -882,6 +884,27 @@ namespace rc
         }
     }
 
+    bool DefaultScreen::isViewportCaptured(const sf::Vector2i &mouse)
+    {
+        if (this->_viewMode != ViewMode::VIEWPORT)
+            return (false);
+        if (!this->_rendererPanel.viewportBounds.contains(mouse))
+            return (false);
+
+        // A menu, pop-up, in-progress drag or focused text field anywhere in the
+        // UI owns the input even when the cursor sits over the render, so the
+        // viewport must not steal keys/clicks while any of them is live.
+        if (this->_menuBar.isCapturing())
+            return (false);
+
+        std::vector<Component *> components;
+        this->_sidebar.collectComponents(components);
+        for (Component *component : components)
+            if (component && component->isCapturing())
+                return (false);
+        return (true);
+    }
+
     void DefaultScreen::updateViewportCamera(sf::RenderWindow &window)
     {
         IScene *scene = this->_coreAccess->getScene();
@@ -890,10 +913,10 @@ namespace rc
             return;
 
         ICamera &camera = scene->getCamera();
+        const sf::Vector2i mouse = sf::Mouse::getPosition(window);
 
         if (this->_rightMouseHeld)
         {
-            sf::Vector2i mouse = sf::Mouse::getPosition(window);
             sf::Vector2i delta = mouse - this->_lastMouse;
             this->_lastMouse = mouse;
 
@@ -905,6 +928,12 @@ namespace rc
 
             camera.setRotation(rot);
         }
+
+        // Fly keys only respond while the viewport owns the pointer, or while a
+        // right-drag look (which can only start over the viewport) is ongoing.
+        // Otherwise the keys belong to the focused panel / text field.
+        if (!this->_rightMouseHeld && !this->isViewportCaptured(mouse))
+            return;
 
         Vector3f pos = camera.getPosition();
         Vector3f forward = camera.getForward();

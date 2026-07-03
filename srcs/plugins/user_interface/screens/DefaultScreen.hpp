@@ -56,6 +56,11 @@ namespace rc
         void markViewportBvhDirty();
         void updateViewportCamera(sf::RenderWindow &window);
 
+        // True when the pointer currently "belongs to" the viewport, so the
+        // camera fly/look controls may act. See the definition for the exact
+        // rules (viewport mode, cursor over the render, nothing else capturing).
+        bool isViewportCaptured(const sf::Vector2i &mouse);
+
         ICoreAccess *_coreAccess = nullptr;
         sf::Font *_font = nullptr;
 
