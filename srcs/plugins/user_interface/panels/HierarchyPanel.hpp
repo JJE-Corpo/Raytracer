@@ -86,6 +86,12 @@ namespace rc
             void select(const ISceneObject *primitive, bool ctrlPressed);
             void selectCamera();
 
+            // Move the selection to the previous (-1) or next (+1) selectable
+            // row in response to an Up/Down arrow key. With ctrlPressed the newly
+            // reached row is added to the current selection instead of replacing
+            // it, matching Ctrl+click multi-select.
+            void moveSelection(int direction, bool ctrlPressed);
+
             void beginRename(const Item &item);
             void commitRename(const std::string &value);
             void cancelRename();
