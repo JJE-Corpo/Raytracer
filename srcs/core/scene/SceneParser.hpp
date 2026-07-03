@@ -5,8 +5,9 @@
 #ifndef SCENEPARSER_HPP
 #define SCENEPARSER_HPP
 
-#include <libconfig.h++>
+#include <nlohmann/json.hpp>
 #include <string>
+#include <vector>
 
 #include "builder/SceneBuilder.hpp"
 #include "../PluginLoader.hpp"
@@ -22,22 +23,22 @@ namespace rc
         private:
             std::vector<Material *> _materials;
 
-            static Vector3f parseVector3f(const libconfig::Setting &section);
-            static Vector3i parseVector3i(const libconfig::Setting &section);
-            static Color parseColor(const libconfig::Setting &section);
-            static Material parseMaterial(const libconfig::Setting &section);
+            static Vector3f parseVector3f(const nlohmann::json &value);
+            static Vector3i parseVector3i(const nlohmann::json &value);
+            static Color parseColor(const nlohmann::json &value);
+            static Material parseMaterial(const nlohmann::json &object);
 
-            static Camera *parseCamera(const libconfig::Setting &section);
-            std::vector<ISceneObject *> parseObjects(const libconfig::Setting &section);
-            std::vector<Material *> parseMaterials(const libconfig::Setting &section);
+            static Camera *parseCamera(const nlohmann::json &object);
+            std::vector<ISceneObject *> parseObjects(const nlohmann::json &array);
+            std::vector<Material *> parseMaterials(const nlohmann::json &array);
 
-            void openConfig(libconfig::Config &config, const std::string &file_path);
+            nlohmann::json openConfig(const std::string &file_path);
         public:
             SceneParser();
             ~SceneParser();
 
             IScene *parseScene(const std::string &scene_path);
-            IScene *parseScene(const libconfig::Config &config);
+            IScene *parseScene(const nlohmann::json &config);
     };
 }
 

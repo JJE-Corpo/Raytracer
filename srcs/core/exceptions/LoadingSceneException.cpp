@@ -19,7 +19,7 @@ const char *rc::LoadingSceneException::what() const noexcept
         case ExceptionType::CANNOT_OPEN_FILE:
             return "Cannot open file";
         case ExceptionType::INVALID_FILE_EXTENSION:
-            return "Invalid file extension: expected .cfg";
+            return "Invalid file extension: expected .json";
         case ExceptionType::WRONG_FILE_CONTENT:
             return this->_message.c_str();
         default:
