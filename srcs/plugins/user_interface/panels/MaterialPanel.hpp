@@ -9,12 +9,14 @@
 
 #include "../Component.hpp"
 #include "../components/ColorPicker.hpp"
+#include "../components/InlineEditField.hpp"
 #include "../components/SegmentedControl.hpp"
 #include "../components/Slider.hpp"
 
 namespace rc
 {
     class ISceneObject;
+    struct Material;
 
     class MaterialPanel : public Component
     {
@@ -36,10 +38,27 @@ namespace rc
             void drawOverlay(sf::RenderTarget &target, sf::RenderStates states) const override;
 
         private:
+            // Opens the inline editor over the name label and commits the typed
+            // text back to the material.
+            void beginNameEdit();
+            void commitName(const std::string &value);
+
             sf::Text _materialName;
             SegmentedControl _materialModelSelector;
             ColorPicker _baseColorPicker;
             std::vector<Slider> _materialSliders;
+
+            // The material behind _materialName, kept so an inline rename can
+            // write straight back to it. Null when no material is shown.
+            Material *_material = nullptr;
+
+            // Double-click the name label to rename it, mirroring the hierarchy
+            // panel's object rename and a slider value's inline edit.
+            InlineEditField _nameField;
+            sf::FloatRect _nameRect;
+            bool _nameHovered = false;
+            bool _namePendingClick = false;
+            sf::Clock _nameClickClock;
 
             sf::Font _font;
     };
