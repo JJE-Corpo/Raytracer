@@ -77,9 +77,19 @@ namespace rc
         SortColumn sortColumn = SortColumn::NAME;
         bool sortAscending = true;
 
-        float rowstartheight = 24.0f;
-        float maxRowStartHeight = 24.0f;
-        float minRowStartHeight = 24.0f;
+        static constexpr float LEFT_X = 28.f;
+        static constexpr float LIST_TOP = 118.f;
+        static constexpr float ROW_HEIGHT = 26.f;
+        static constexpr float ROW_PITCH = 36.f;
+        static constexpr float LIST_WIDTH = 943.f;
+
+        float scrollOffset = 0.f;
+        float maxScroll = 0.f;
+
+        float listBottom() const
+        {
+            return static_cast<float>(windowHeight) - 90.f;
+        }
 
         Button nameSortButton;
         Button sizeSortButton;
@@ -102,7 +112,7 @@ namespace rc
         void refreshEntries()
         {
             entries.clear();
-            maxRowStartHeight = 24.f;
+            scrollOffset = 0.f;
             selectedEntry = static_cast<std::size_t>(-1);
 
             try
@@ -377,55 +387,25 @@ namespace rc
             panel.setFillColor(theme::BG_PANEL);
             window.draw(panel);
 
-            VerticalLayout layout{28.f, rowstartheight, 10.f};
+            const float visibleBottom = listBottom();
+            const float visibleHeight = visibleBottom - LIST_TOP;
+            const float contentHeight = static_cast<float>(entries.size()) * ROW_PITCH;
 
-            backButton.layout(layout.x, layout.y, 34.f, 28.f);
-            window.draw(backButton);
-
-            nextButton.layout(layout.x + 40.f, layout.y, 34.f, 28.f);
-            window.draw(nextButton);
-
-            currentPathField.layout(layout.x + 80.f, layout.y, 825.f, 28.f);
-            if (!currentPathField.focused)
-                currentPathField.setValue(getCurrentPath().string());
-            window.draw(currentPathField);
-
-            upButton.layout(layout.x + 910.f, layout.y, 34.f, 28.f);
-            window.draw(upButton);
-            drawTriangle(layout.x + 910.f + 17.f, layout.y + 14.f, true, 6.f, 4.f);
-            layout.next(34.f);
-
-            nameSortButton.layout(layout.x, layout.y, 683.f, 28.f);
-            window.draw(nameSortButton);
-
-            sizeSortButton.layout(layout.x + 693.f, layout.y, 120.f, 28.f);
-            window.draw(sizeSortButton);
-
-            modifiedSortButton.layout(layout.x + 823.f, layout.y, 120.f, 28.f);
-            window.draw(modifiedSortButton);
-
-            if (sortColumn == SortColumn::NAME)
-                drawSortArrow(layout.x, 683.f, layout.y);
-            else if (sortColumn == SortColumn::SIZE)
-                drawSortArrow(layout.x + 693.f, 120.f, layout.y);
-            else
-                drawSortArrow(layout.x + 823.f, 120.f, layout.y);
-            layout.next(25.f);
-
-            separator.layout(layout.x, layout.y, 943.f);
-            window.draw(separator);
-            layout.next(5.f);
-
-            const float rowHeight = 26.f;
-            const float listWidth = 943.f;
+            maxScroll = std::max(0.f, contentHeight - visibleHeight);
+            scrollOffset = std::max(-maxScroll, std::min(0.f, scrollOffset));
 
             for (std::size_t index = 0; index < entries.size(); ++index)
             {
+                const float rowY = LIST_TOP + scrollOffset + static_cast<float>(index) * ROW_PITCH;
+
+                if (rowY + ROW_HEIGHT < LIST_TOP || rowY > visibleBottom)
+                    continue;
+
                 const auto &entry = entries[index];
 
                 sf::RectangleShape row;
-                row.setPosition({layout.x, layout.y});
-                row.setSize({listWidth, rowHeight});
+                row.setPosition({LEFT_X, rowY});
+                row.setSize({LIST_WIDTH, ROW_HEIGHT});
                 row.setFillColor(index % 2 == 0 ? theme::BG_ITEM : theme::BG_ITEM_ALT);
 
                 if (selectedEntry == index)
@@ -436,8 +416,8 @@ namespace rc
                 if (entry.isDirectory)
                 {
                     sf::RectangleShape accent;
-                    accent.setPosition({layout.x, layout.y});
-                    accent.setSize({3.f, rowHeight});
+                    accent.setPosition({LEFT_X, rowY});
+                    accent.setSize({3.f, ROW_HEIGHT});
                     accent.setFillColor(theme::ACCENT);
                     window.draw(accent);
                 }
@@ -446,7 +426,6 @@ namespace rc
                 label.setFont(*font);
                 label.setCharacterSize(13);
                 label.setFillColor(theme::TEXT_MAIN);
-                label.setPosition({layout.x + 10.f, layout.y + 4.f});
 
                 std::string displayName = entry.path.filename().string();
                 if (entry.path == getCurrentPath().parent_path() && getCurrentPath().has_parent_path())
@@ -454,48 +433,89 @@ namespace rc
                 else if (entry.isDirectory)
                     displayName += "/";
 
+                label.setPosition({LEFT_X + 10.f, rowY + 4.f});
                 label.setString(displayName);
                 window.draw(label);
 
-                label.setPosition({layout.x + 713.f, layout.y + 4.f});
+                label.setPosition({LEFT_X + 713.f, rowY + 4.f});
                 label.setString(entry.isDirectory ? std::to_string(entry.size) + " items" : std::to_string(entry.size) + " bytes");
                 window.draw(label);
 
-                label.setPosition({layout.x + 843.f, layout.y + 4.f});
+                label.setPosition({LEFT_X + 843.f, rowY + 4.f});
                 label.setString(TimestampUtils::toString(entry.lastModified, "%d %b %Y"));
                 window.draw(label);
-
-                layout.next(rowHeight);
             }
 
-            layout.next(8.f);
-            separator.layout(layout.x, layout.y, 720.f);
-            window.draw(separator);
-            layout.next(14.f);
+            sf::RectangleShape headerMask;
+            headerMask.setPosition({16.f, 16.f});
+            headerMask.setSize({static_cast<float>(windowWidth) - 32.f, LIST_TOP - 16.f});
+            headerMask.setFillColor(theme::BG_PANEL);
+            window.draw(headerMask);
 
-            if (mode == ExploratorMode::SAVE)
-            {
-                drawText("Filename", layout);
-                layout.next(18.f);
+            backButton.layout(LEFT_X, 24.f, 34.f, 28.f);
+            window.draw(backButton);
 
-                filenameField.layout(layout.x, layout.y, 320.f, 28.f);
-                window.draw(filenameField);
-                layout.next(38.f);
+            nextButton.layout(LEFT_X + 40.f, 24.f, 34.f, 28.f);
+            window.draw(nextButton);
 
-                saveButton.layout(layout.x, layout.y, 160.f, 34.f);
-                window.draw(saveButton);
-            }
+            currentPathField.layout(LEFT_X + 80.f, 24.f, 825.f, 28.f);
+            if (!currentPathField.focused)
+                currentPathField.setValue(getCurrentPath().string());
+            window.draw(currentPathField);
+
+            upButton.layout(LEFT_X + 910.f, 24.f, 34.f, 28.f);
+            window.draw(upButton);
+            drawTriangle(LEFT_X + 910.f + 17.f, 24.f + 14.f, true, 6.f, 4.f);
+
+            nameSortButton.layout(LEFT_X, 68.f, 683.f, 28.f);
+            window.draw(nameSortButton);
+
+            sizeSortButton.layout(LEFT_X + 693.f, 68.f, 120.f, 28.f);
+            window.draw(sizeSortButton);
+
+            modifiedSortButton.layout(LEFT_X + 823.f, 68.f, 120.f, 28.f);
+            window.draw(modifiedSortButton);
+
+            if (sortColumn == SortColumn::NAME)
+                drawSortArrow(LEFT_X, 683.f, 68.f);
+            else if (sortColumn == SortColumn::SIZE)
+                drawSortArrow(LEFT_X + 693.f, 120.f, 68.f);
             else
-            {
-                drawText("Select a folder or file", layout);
-                layout.next(24.f);
+                drawSortArrow(LEFT_X + 823.f, 120.f, 68.f);
 
-                saveButton.layout(layout.x, layout.y, 160.f, 34.f);
-                window.draw(saveButton);
-            }
+            separator.layout(LEFT_X, 103.f, LIST_WIDTH);
+            window.draw(separator);
 
-            if (maxRowStartHeight == minRowStartHeight)
-                maxRowStartHeight = layout.y - rowstartheight;
+            const float buttonWidth = 120.f;
+            const float buttonHeight = 34.f;
+            const float fieldHeight = 28.f;
+            const float rowGap = 10.f;
+
+            const float rowY = static_cast<float>(windowHeight) - 32.f - buttonHeight;
+            const float sepY = rowY - 16.f;
+            const float contentRight = LEFT_X + LIST_WIDTH;
+
+            sf::RectangleShape footer;
+            footer.setPosition({16.f, sepY - 8.f});
+            footer.setSize({static_cast<float>(windowWidth) - 32.f, static_cast<float>(windowHeight) - 16.f - (sepY - 8.f)});
+            footer.setFillColor(theme::BG_PANEL);
+            window.draw(footer);
+
+            separator.layout(LEFT_X, sepY, LIST_WIDTH);
+            window.draw(separator);
+
+            const float buttonX = contentRight - buttonWidth;
+            const float fieldWidth = buttonX - rowGap - LEFT_X;
+
+            if (mode == ExploratorMode::OPEN && selectedEntry != static_cast<std::size_t>(-1)
+                && !entries[selectedEntry].isDirectory)
+                filenameField.setValue(entries[selectedEntry].path.filename().string());
+
+            filenameField.layout(LEFT_X, rowY + (buttonHeight - fieldHeight) / 2.f, fieldWidth, fieldHeight);
+            window.draw(filenameField);
+
+            saveButton.layout(buttonX, rowY, buttonWidth, buttonHeight);
+            window.draw(saveButton);
         }
 
         void updateUi() override
@@ -528,35 +548,35 @@ namespace rc
 
             if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left)
             {
-                VerticalLayout layout{28.f, rowstartheight, 10.f};
-                layout.next(34.f);
-                layout.next(5.f);
-                layout.next(25.f);
+                const float visibleBottom = listBottom();
 
-                const float rowHeight = 26.f;
-                const float listWidth = 720.f;
-
-                for (std::size_t index = 0; index < entries.size(); ++index)
+                if (mouse.y >= LIST_TOP && mouse.y <= visibleBottom)
                 {
-                    const sf::FloatRect rowBounds{layout.x, layout.y, listWidth, rowHeight};
-
-                    if (isInsideRow(rowBounds, mouse))
+                    for (std::size_t index = 0; index < entries.size(); ++index)
                     {
-                        selectedEntry = index;
+                        const float rowY = LIST_TOP + scrollOffset + static_cast<float>(index) * ROW_PITCH;
 
-                        if (entries[index].isDirectory)
-                        {
-                            openDirectory(entries[index].path);
-                        }
-                        else if (mode == ExploratorMode::SAVE)
-                        {
-                            filenameField.setValue(entries[index].path.filename().string());
-                        }
+                        if (rowY + ROW_HEIGHT < LIST_TOP || rowY > visibleBottom)
+                            continue;
 
-                        return;
+                        const sf::FloatRect rowBounds{LEFT_X, rowY, LIST_WIDTH, ROW_HEIGHT};
+
+                        if (isInsideRow(rowBounds, mouse))
+                        {
+                            selectedEntry = index;
+
+                            if (entries[index].isDirectory)
+                            {
+                                openDirectory(entries[index].path);
+                            }
+                            else if (mode == ExploratorMode::SAVE)
+                            {
+                                filenameField.setValue(entries[index].path.filename().string());
+                            }
+
+                            return;
+                        }
                     }
-
-                    layout.next(rowHeight);
                 }
             }
 
@@ -564,18 +584,9 @@ namespace rc
             {
                 if (event.mouseWheelScroll.wheel == sf::Mouse::VerticalWheel)
                 {
-                    const float availableHeight = windowHeight - 100.f;
-                    
-                    if (maxRowStartHeight >= availableHeight)
-                    {
-                        rowstartheight += event.mouseWheelScroll.delta * 10.f;
-                        rowstartheight = std::min(rowstartheight, minRowStartHeight);
-                        rowstartheight = std::max(rowstartheight, minRowStartHeight - maxRowStartHeight + availableHeight);
-                    }
-                    else
-                    {
-                        rowstartheight = minRowStartHeight;
-                    }
+                    scrollOffset += event.mouseWheelScroll.delta * 30.f;
+                    scrollOffset = std::min(0.f, scrollOffset);
+                    scrollOffset = std::max(-maxScroll, scrollOffset);
                 }
             }
 
