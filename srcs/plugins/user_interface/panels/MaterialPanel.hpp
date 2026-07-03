@@ -36,8 +36,7 @@ namespace rc
             void drawOverlay(sf::RenderTarget &target, sf::RenderStates states) const override;
 
         private:
-            sf::Text _title;
-            sf::Text _description;
+            sf::Text _materialName;
             SegmentedControl _materialModelSelector;
             ColorPicker _baseColorPicker;
             std::vector<Slider> _materialSliders;

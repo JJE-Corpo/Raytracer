@@ -22,6 +22,10 @@ namespace rc
 
             static constexpr float LABEL_WIDTH = 60.0f;
             static constexpr float FIELD_HEIGHT = 20.0f;
+            // Gap left between the three sub-fields. Their boxes share a fill
+            // colour and carry no outline, so without a gap the panel background
+            // shows nothing between them and they read as one continuous box.
+            static constexpr float FIELD_GAP = 6.0f;
             const std::function<bool(const std::string&)> genericOnType = [&](const std::string &str)
             {
                 return (Utils::isFloat(str));
@@ -84,10 +88,13 @@ namespace rc
                 this->_title.setPosition(layout.x, layout.y);
                 layout.next(8);
 
-                float singleWidth = width / 3;
+                // Two gaps split the width between the three fields, so the row
+                // still spans exactly `width` while leaving clear space between them.
+                float singleWidth = (width - FIELD_GAP * 2.f) / 3.f;
+                float step = singleWidth + FIELD_GAP;
                 this->x.layout(layout.x, layout.y, singleWidth, FIELD_HEIGHT);
-                this->y.layout(layout.x + singleWidth, layout.y, singleWidth, FIELD_HEIGHT);
-                this->z.layout(layout.x + singleWidth * 2, layout.y, singleWidth, FIELD_HEIGHT);
+                this->y.layout(layout.x + step, layout.y, singleWidth, FIELD_HEIGHT);
+                this->z.layout(layout.x + step * 2.f, layout.y, singleWidth, FIELD_HEIGHT);
                 this->x.enabled = true;
                 this->y.enabled = true;
                 this->z.enabled = true;

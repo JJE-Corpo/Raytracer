@@ -16,15 +16,12 @@ namespace rc
 {
     void MaterialPanel::setFont(sf::Font &font)
     {
-        this->_title.setFont(font);
-        this->_title.setCharacterSize(14);
-        this->_title.setFillColor(theme::TEXT_DIM);
         this->_baseColorPicker.setFont(font);
         this->_baseColorPicker.setLabel("Base color");
-        this->_description.setFont(font);
-        this->_description.setCharacterSize(12);
-        this->_description.setFillColor(theme::TEXT_DIM);
-        this->_description.setString("(none)");
+        this->_materialName.setFont(font);
+        this->_materialName.setCharacterSize(12);
+        this->_materialName.setFillColor(theme::TEXT_DIM);
+        this->_materialName.setString("(none)");
         this->_font = font;
     }
 
@@ -49,11 +46,7 @@ namespace rc
         layout.x = x;
         layout.y = y;
 
-        this->_title.setString("Material");
-        this->_title.setPosition({layout.x, layout.y});
-        layout.next(24);
-
-        this->_description.setPosition({layout.x, layout.y});
+        this->_materialName.setPosition({layout.x, layout.y});
         layout.next(12);
 
         if (!this->_materialModelSelector.enabled)
@@ -82,7 +75,7 @@ namespace rc
 
         const auto *primitive = dynamic_cast<const IPrimitive *>(currentObject);
 
-        this->_description.setString("(none)");
+        this->_materialName.setString("(none)");
 
         if (!primitive)
             return;
@@ -92,7 +85,7 @@ namespace rc
         if (!material)
             return;
 
-        this->_description.setString(material->name);
+        this->_materialName.setString(material->name);
 
         this->_materialModelSelector.setFont(this->_font);
         this->_materialModelSelector.setLabel("Model");
@@ -183,8 +176,7 @@ namespace rc
 
     void MaterialPanel::draw(sf::RenderTarget &target, sf::RenderStates states) const
     {
-        target.draw(this->_title, states);
-        target.draw(this->_description, states);
+        target.draw(this->_materialName, states);
         if (!this->_materialModelSelector.enabled)
             return;
         target.draw(this->_materialModelSelector, states);
