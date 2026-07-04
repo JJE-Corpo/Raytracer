@@ -50,6 +50,9 @@ namespace rc
                 case ObjectType::LIGHT:
                     result->addLight(dynamic_cast<ILight *>(object));
                     break;
+                case ObjectType::GROUP:
+                    result->adoptGroup(dynamic_cast<Group *>(object));
+                    break;
                 default:
                     std::cerr << "Unknown scene object type: " << static_cast<int>(object->getObjectType()) << std::endl;
             }

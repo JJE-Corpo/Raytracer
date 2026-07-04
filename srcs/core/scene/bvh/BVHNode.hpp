@@ -46,6 +46,25 @@ namespace rc
             void setMaterial(const Material *material) override;
             bool isHidden() const override;
             void setHidden(bool hidden) override;
+
+            // Internal acceleration node: never part of the scene graph, so the
+            // hierarchy accessors are inert stubs.
+            ISceneObject *getParent() const override { return nullptr; }
+            void setParent(ISceneObject *parent) override { (void)parent; }
+            const std::vector<ISceneObject *> &getChildren() const override
+            {
+                static const std::vector<ISceneObject *> empty;
+                return empty;
+            }
+            void addChild(ISceneObject *child) override { (void)child; }
+            void insertChild(ISceneObject *child, std::size_t index) override { (void)child; (void)index; }
+            void removeChild(ISceneObject *child) override { (void)child; }
+            Vector3f getLocalPosition() const override { return {0.0f, 0.0f, 0.0f}; }
+            Vector3f getLocalRotation() const override { return {0.0f, 0.0f, 0.0f}; }
+            Vector3f getLocalScale() const override { return {1.0f, 1.0f, 1.0f}; }
+            void setLocalPosition(const Vector3f &position) override { (void)position; }
+            void setLocalRotation(const Vector3f &rotation) override { (void)rotation; }
+            void setLocalScale(const Vector3f &scale) override { (void)scale; }
     };
 }
 

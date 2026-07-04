@@ -92,6 +92,16 @@ namespace rc
 
         for (const auto &property : primitive->getProperties())
             writeProperty(object, property.first, property.second.first, property.second.second);
+
+        // Nested objects serialize their LOCAL transform so the hierarchy round-
+        // trips. Roots keep the world values getProperties() wrote above (local ==
+        // world for them), preserving byte-for-byte flat-scene output.
+        if (primitive->getParent() != nullptr)
+        {
+            object["position"] = vector3fJson(primitive->getLocalPosition());
+            object["rotation"] = vector3fJson(primitive->getLocalRotation());
+            object["scale"] = vector3fJson(primitive->getLocalScale());
+        }
         return object;
     }
 
@@ -118,7 +128,56 @@ namespace rc
             default:
                 std::cerr << "Unknown light type, cannot register" << std::endl;
         }
+        // Nested lights serialize their local transform (see primitiveJson).
+        if (light->getParent() != nullptr)
+        {
+            if (light->getKind() == LightKind::DIRECTIONAL)
+                object["direction"] = vector3fJson(light->getLocalRotation());
+            else if (light->getKind() == LightKind::POINT)
+                object["position"] = vector3fJson(light->getLocalPosition());
+        }
         return object;
+    }
+
+    json SceneRegister::groupJson(ISceneObject *group)
+    {
+        json object;
+
+        object["name"] = group->getName();
+        object["type"] = "group";
+        object["position"] = vector3fJson(group->getLocalPosition());
+        object["rotation"] = vector3fJson(group->getLocalRotation());
+        object["scale"] = vector3fJson(group->getLocalScale());
+        object["children"] = json::array();
+        for (ISceneObject *child : group->getChildren())
+        {
+            json serialized = serializeObject(child);
+            if (!serialized.empty())
+                object["children"].push_back(serialized);
+        }
+        return object;
+    }
+
+    json SceneRegister::serializeObject(ISceneObject *object)
+    {
+        if (!object)
+            return json();
+        switch (object->getObjectType())
+        {
+            case ObjectType::PRIMITIVE:
+            {
+                IPrimitive *primitive = dynamic_cast<IPrimitive *>(object);
+                return primitive ? primitiveJson(primitive) : json();
+            }
+            case ObjectType::LIGHT:
+            {
+                ILight *light = dynamic_cast<ILight *>(object);
+                return light ? lightJson(light) : json();
+            }
+            case ObjectType::GROUP:
+                return groupJson(object);
+        }
+        return json();
     }
 
     json SceneRegister::materialJson(const Material *material)
@@ -146,15 +205,15 @@ namespace rc
         };
         root["camera"] = cameraJson(&scene->getCamera());
 
+        // Walk the top-level nodes; serializeObject recurses into group children.
+        // Top-level order matches load order, so flat scenes round-trip cleanly.
         root["objects"] = json::array();
-        for (const auto &primitive : scene->getPrimitives())
-            root["objects"].push_back(primitiveJson(primitive));
-        for (const auto &light : scene->getLights())
+        for (ISceneObject *object : scene->getRoots())
         {
-            json serializedLight = lightJson(light);
+            json serialized = serializeObject(object);
 
-            if (!serializedLight.empty())
-                root["objects"].push_back(serializedLight);
+            if (!serialized.empty())
+                root["objects"].push_back(serialized);
         }
 
         root["materials"] = json::array();

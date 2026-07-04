@@ -30,7 +30,7 @@ namespace rc
         STRING
     };
 
-    class IPrimitive : public ISceneObject
+    class IPrimitive : public virtual ISceneObject
     {
         public:
             virtual ~IPrimitive() = default;
