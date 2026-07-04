@@ -22,7 +22,7 @@ namespace rc
             IClusterServer *getClusterServer() const override;
             IClusterClient *getClusterClient() const override;
 
-            void startServer(IScene *scene) override;
+            void startServer(IScene *scene, size_t port = 0) override;
             void joinCluster(const std::string &address, size_t port) override;
             void leaveCluster() override;
     };
