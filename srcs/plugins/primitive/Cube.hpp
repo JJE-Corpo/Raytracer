@@ -15,6 +15,7 @@
 #define CUBE_HPP
 #include "../../common/Color.hpp"
 #include "../../common/scene/IPrimitive.hpp"
+#include "../../common/scene/ASceneObject.hpp"
 #include "../../common/Material.hpp"
 #include "../../common/Vector.hpp"
 #include "../../common/Matrix.hpp"
@@ -106,7 +107,7 @@ namespace rc
         }
     };
 
-    class Cube : public IPrimitive
+    class Cube : public ASceneObject, public IPrimitive
     {
         private:
             std::string _name = "Cube";

@@ -29,6 +29,9 @@ namespace rc
             static nlohmann::json cameraJson(ICamera *camera);
             static nlohmann::json primitiveJson(IPrimitive *primitive);
             static nlohmann::json lightJson(ILight *light);
+            static nlohmann::json groupJson(ISceneObject *group);
+            // Dispatch one node to the right serializer (recurses into groups).
+            static nlohmann::json serializeObject(ISceneObject *object);
             static nlohmann::json materialJson(const Material *material);
 
             static nlohmann::json serializeScene(IScene *scene);

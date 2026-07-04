@@ -6,12 +6,13 @@
 #define CYLINDER_HPP
 #include "../../common/Color.hpp"
 #include "../../common/scene/IPrimitive.hpp"
+#include "../../common/scene/ASceneObject.hpp"
 #include "../../common/Material.hpp"
 #include "../../common/Vector.hpp"
 
 namespace rc
 {
-    class Cylinder : public IPrimitive
+    class Cylinder : public ASceneObject, public IPrimitive
     {
         private:
             Vector3f _center = {0.0f, 0.0f, 0.0f};
