@@ -30,6 +30,7 @@ namespace rc
 
             std::atomic<bool> _running = false;
             std::atomic<uint16_t> _serverPort = 0;
+            uint16_t _configuredPort = 0;
 
             std::vector<std::unique_ptr<Connection>> _connections;
 
@@ -47,7 +48,7 @@ namespace rc
 
             void threadEndpoint();
         public:
-            ClusterServer(IScene *scene);
+            ClusterServer(IScene *scene, uint16_t port = 0);
             ~ClusterServer() override;
 
             void start() override;

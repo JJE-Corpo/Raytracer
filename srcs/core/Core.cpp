@@ -73,6 +73,12 @@ namespace rc
         this->_scene = new Scene(new Camera({1280, 720}, {0, 0, 5}, {0, 0, 0}, 80));
     }
 
+    void Core::setRenderOutput(const std::string &path)
+    {
+        if (!path.empty())
+            this->_renderOutputPath = path;
+    }
+
     void Core::loadRenderers()
     {
         for (auto &plugin : this->_pluginLoader.getPlugins(PluginType::RENDERER))
@@ -163,8 +169,8 @@ namespace rc
         }
         this->getRenderer()->renderScene(*this->_scene);
         std::cout << "Finished rendering scene! Saving to file.." << std::endl;
-        RenderExporter::saveToFile(this->getRenderer()->getRender(), "render.ppm");
-        std::cout << "Render has been saved to file '" << "render.ppm" << "'" << std::endl;
+        RenderExporter::saveToFile(this->getRenderer()->getRender(), this->_renderOutputPath);
+        std::cout << "Render has been saved to file '" << this->_renderOutputPath << "'" << std::endl;
         this->_state = CoreState::READY;
     }
 

@@ -26,7 +26,7 @@ namespace rc
             virtual IClusterServer *getClusterServer() const = 0;
             virtual IClusterClient *getClusterClient() const = 0;
 
-            virtual void startServer(IScene *scene) = 0;
+            virtual void startServer(IScene *scene, size_t port = 0) = 0;
             virtual void joinCluster(const std::string &addres, size_t port) = 0;
             virtual void leaveCluster() = 0;
     };
