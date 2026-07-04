@@ -4,6 +4,7 @@
 
 #include "Core.hpp"
 
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -77,6 +78,19 @@ namespace rc
     {
         if (!path.empty())
             this->_renderOutputPath = path;
+    }
+
+    std::string Core::resolveOutputPath(const std::string &path) const
+    {
+        std::filesystem::path output(path);
+
+        if (output.is_relative())
+        {
+            const char *originalCwd = std::getenv("RAYTRACER_CWD");
+            if (originalCwd != nullptr && originalCwd[0] != '\0')
+                output = std::filesystem::path(originalCwd) / output;
+        }
+        return (output.string());
     }
 
     void Core::loadRenderers()
@@ -169,8 +183,9 @@ namespace rc
         }
         this->getRenderer()->renderScene(*this->_scene);
         std::cout << "Finished rendering scene! Saving to file.." << std::endl;
-        RenderExporter::saveToFile(this->getRenderer()->getRender(), this->_renderOutputPath);
-        std::cout << "Render has been saved to file '" << this->_renderOutputPath << "'" << std::endl;
+        std::string outputPath = this->resolveOutputPath(this->_renderOutputPath);
+        RenderExporter::saveToFile(this->getRenderer()->getRender(), outputPath);
+        std::cout << "Render has been saved to file '" << outputPath << "'" << std::endl;
         this->_state = CoreState::READY;
     }
 
