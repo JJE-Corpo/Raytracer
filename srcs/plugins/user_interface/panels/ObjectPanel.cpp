@@ -231,39 +231,43 @@ namespace rc
                 this->_objectSliders.push_back(slider);
             }
         }
+        // The editor works on the LOCAL (parent-relative) transform. For a
+        // top-level object local == world, so un-grouped editing is unchanged;
+        // for a child this edits its offset within the group and the flatten
+        // pass (triggered by onSceneMutated) recomputes its world transform.
         auto *obj = const_cast<ISceneObject *>(currentObject);
-        this->_positionField.setValue(currentObject->getPosition());
+        this->_positionField.setValue(currentObject->getLocalPosition());
         this->_positionField.onValidate = [this, obj](Axis axis, float value)
         {
-            Vector3f result = obj->getPosition();
+            Vector3f result = obj->getLocalPosition();
             if (axis == Axis::X) result.x = value;
             if (axis == Axis::Y) result.y = value;
             if (axis == Axis::Z) result.z = value;
-            obj->setPosition(result);
+            obj->setLocalPosition(result);
             if (this->onSceneMutated)
                 this->onSceneMutated();
             return (true);
         };
-        this->_rotationField.setValue(currentObject->getRotation());
+        this->_rotationField.setValue(currentObject->getLocalRotation());
         this->_rotationField.onValidate = [this, obj](Axis axis, float value)
         {
-            Vector3f result = obj->getRotation();
+            Vector3f result = obj->getLocalRotation();
             if (axis == Axis::X) result.x = value;
             if (axis == Axis::Y) result.y = value;
             if (axis == Axis::Z) result.z = value;
-            obj->setRotation(result);
+            obj->setLocalRotation(result);
             if (this->onSceneMutated)
                 this->onSceneMutated();
             return (true);
         };
-        this->_scaleField.setValue(currentObject->getScale());
+        this->_scaleField.setValue(currentObject->getLocalScale());
         this->_scaleField.onValidate = [this, obj](Axis axis, float value)
         {
-            Vector3f result = obj->getScale();
+            Vector3f result = obj->getLocalScale();
             if (axis == Axis::X) result.x = value;
             if (axis == Axis::Y) result.y = value;
             if (axis == Axis::Z) result.z = value;
-            obj->setScale(result);
+            obj->setLocalScale(result);
             if (this->onSceneMutated)
                 this->onSceneMutated();
             return (true);

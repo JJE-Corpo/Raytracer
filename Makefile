@@ -3,6 +3,7 @@ NAME = raytracer
 SOURCES = main.cpp \
 		srcs/core/Core.cpp \
 		srcs/core/PluginLoader.cpp \
+		srcs/common/scene/ASceneObject.cpp \
 		srcs/core/scene/Scene.cpp \
 		srcs/core/scene/SceneParser.cpp \
 		srcs/core/scene/SceneRegister.cpp \

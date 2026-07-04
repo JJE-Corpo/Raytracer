@@ -17,7 +17,7 @@ namespace rc
         UNKNOWN
     };
 
-    class ILight : public ISceneObject
+    class ILight : public virtual ISceneObject
     {
         public:
             virtual ~ILight() = default;

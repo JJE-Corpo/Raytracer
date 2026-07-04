@@ -6,12 +6,13 @@
 #define PLANE_HPP
 #include "../../common/Color.hpp"
 #include "../../common/scene/IPrimitive.hpp"
+#include "../../common/scene/ASceneObject.hpp"
 #include "../../common/Material.hpp"
 #include "../../common/Vector.hpp"
 
 namespace rc
 {
-    class Plane : public IPrimitive
+    class Plane : public ASceneObject, public IPrimitive
     {
         private:
             Vector3f _origin = {0.0f, 0.0f, 0.0f};

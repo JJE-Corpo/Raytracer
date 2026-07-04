@@ -10,6 +10,7 @@
 
     #include "../../common/Color.hpp"
     #include "../../common/scene/IPrimitive.hpp"
+    #include "../../common/scene/ASceneObject.hpp"
     #include "../../common/Material.hpp"
     #include "../../common/Vector.hpp"
     #include "../../common/AABB.hpp"
@@ -26,7 +27,7 @@ namespace rc
         SIERPINSKI
     };
 
-    class Fractal : public IPrimitive
+    class Fractal : public ASceneObject, public IPrimitive
     {
         private:
             std::string _name = "Fractal";

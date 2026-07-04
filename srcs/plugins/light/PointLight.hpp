@@ -2,12 +2,13 @@
 #define POINTLIGHT_HPP
 
 #include "../../common/scene/ILight.hpp"
+#include "../../common/scene/ASceneObject.hpp"
 #include "../../common/Vector.hpp"
 #include "../../common/Color.hpp"
 
 namespace rc
 {
-    class PointLight : public ILight
+    class PointLight : public ASceneObject, public ILight
     {
         private:
             Vector3f _position = {0.0f, 0.0f, 0.0f};
