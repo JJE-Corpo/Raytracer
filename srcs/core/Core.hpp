@@ -42,6 +42,8 @@ namespace rc
             std::atomic<bool> _running;
 
             std::atomic<CoreState> _state;
+
+            std::string _renderOutputPath = "render.ppm";
         public:
             Core();
             ~Core() override;
@@ -68,6 +70,8 @@ namespace rc
             void stop() override;
 
             void loadBlankScene();
+
+            void setRenderOutput(const std::string &path);
 
             CoreState getState() const override;
 

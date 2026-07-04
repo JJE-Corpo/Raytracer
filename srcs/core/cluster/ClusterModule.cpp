@@ -41,11 +41,11 @@ namespace rc
         return (this->_clusterClient);
     }
 
-    void ClusterModule::startServer(IScene *scene)
+    void ClusterModule::startServer(IScene *scene, size_t port)
     {
         if (this->_clusterMode != ClusterMode::NONE)
             throw std::runtime_error("Already hosting / connected to a cluster !");
-        this->_clusterServer = new ClusterServer(scene);
+        this->_clusterServer = new ClusterServer(scene, static_cast<uint16_t>(port));
         try
         {
             this->_clusterServer->start();
