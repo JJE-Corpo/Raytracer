@@ -31,14 +31,14 @@ namespace rc
     void PacketServerSceneData::handle(IPacketHandler &handler)
     {
         SceneParser parser = SceneParser();
-        libconfig::Config config = libconfig::Config();
         auto &asClient = dynamic_cast<IClusterClient &>(handler);
 
         handler.log("Server sent scene informations!");
         asClient.setClientState(IClusterClient::ClientState::RECEIVING_DATA);
-        config.readString(this->sceneData);
         try
         {
+            nlohmann::json config = nlohmann::json::parse(this->sceneData);
+
             asClient.useScene(parser.parseScene(config));
             asClient.setClientState(IClusterClient::ClientState::IDLING);
         }

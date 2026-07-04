@@ -8,8 +8,8 @@
 #include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iostream>
-#include <libconfig.h++>
 
 #include "Scene.hpp"
 #include "../../common/Color.hpp"
@@ -25,6 +25,8 @@
 
 namespace rc
 {
+    using json = nlohmann::json;
+
     namespace
     {
         std::string to_lower(std::string value)
@@ -33,6 +35,40 @@ namespace rc
                 return static_cast<char>(std::tolower(c));
             });
             return value;
+        }
+
+        float asFloat(const json &value, const std::string &field)
+        {
+            if (!value.is_number())
+                throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, field + " must be a number");
+            return value.get<float>();
+        }
+
+        int asInt(const json &value, const std::string &field)
+        {
+            if (!value.is_number())
+                throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, field + " must be a number");
+            return value.get<int>();
+        }
+
+        std::string asString(const json &value, const std::string &field)
+        {
+            if (!value.is_string())
+                throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, field + " must be a string");
+            return value.get<std::string>();
+        }
+
+        Axis parseAxis(const json &value)
+        {
+            std::string axisStr = asString(value, "axis");
+
+            if (axisStr == "x")
+                return Axis::X;
+            if (axisStr == "y")
+                return Axis::Y;
+            if (axisStr == "z")
+                return Axis::Z;
+            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Unknown axis \"" + axisStr + "\"");
         }
     }
 
@@ -45,148 +81,126 @@ namespace rc
 
     }
 
-    void SceneParser::openConfig(libconfig::Config &config, const std::string &file_path)
+    json SceneParser::openConfig(const std::string &file_path)
     {
         std::ifstream file(file_path);
 
         if (!file)
             throw LoadingSceneException(LoadingSceneException::ExceptionType::CANNOT_OPEN_FILE);
-        file.close();
-        if (std::filesystem::path(file_path).extension() != ".cfg")
+        if (std::filesystem::path(file_path).extension() != ".json")
             throw LoadingSceneException(LoadingSceneException::ExceptionType::INVALID_FILE_EXTENSION);
         try
         {
-            config.readFile(file_path.c_str());
+            return json::parse(file);
         }
-        catch (const libconfig::FileIOException &e)
+        catch (const json::parse_error &e)
         {
-            throw LoadingSceneException(LoadingSceneException::ExceptionType::CANNOT_OPEN_FILE);
-        }
-        catch (const libconfig::ParseException &e)
-        {
-            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "[Line " + std::to_string(e.getLine()) + "] " + e.getError());
+            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, e.what());
         }
     }
 
-    Vector3f SceneParser::parseVector3f(const libconfig::Setting &section)
+    Vector3f SceneParser::parseVector3f(const json &value)
     {
         Vector3f result;
 
-        if (!section.lookupValue("x", result.x))
-            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Missing position x");
-        if (!section.lookupValue("y", result.y))
-            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Missing position y");
-        if (!section.lookupValue("z", result.z))
-            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Missing position z");
-        if (section.getLength() != 3)
-            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Vector should have exactly 3 values (x,y,z)");
+        if (!value.is_array() || value.size() != 3)
+            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "expected an array of 3 numbers [x, y, z]");
+        for (const auto &component : value)
+            if (!component.is_number())
+                throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "vector components must be numbers");
+        result.x = value[0].get<float>();
+        result.y = value[1].get<float>();
+        result.z = value[2].get<float>();
         return (result);
     }
 
-    Vector3i SceneParser::parseVector3i(const libconfig::Setting &section)
+    Vector3i SceneParser::parseVector3i(const json &value)
     {
         Vector3i result;
 
-        if (!section.lookupValue("x", result.x))
-            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Missing position x");
-        if (!section.lookupValue("y", result.y))
-            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Missing position y");
-        if (!section.lookupValue("z", result.z))
-            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Missing position z");
-        if (section.getLength() != 3)
-            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Vector should have exactly 3 values (x,y,z)");
+        if (!value.is_array() || value.size() != 3)
+            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "expected an array of 3 numbers [x, y, z]");
+        for (const auto &component : value)
+            if (!component.is_number())
+                throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "vector components must be numbers");
+        result.x = value[0].get<int>();
+        result.y = value[1].get<int>();
+        result.z = value[2].get<int>();
         return (result);
     }
 
-    Color SceneParser::parseColor(const libconfig::Setting &section)
+    Color SceneParser::parseColor(const json &value)
     {
         Color result;
-        int r, g, b;
 
-        if (!section.lookupValue("r", r))
-            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Missing colr r");
-        if (!section.lookupValue("g", g))
-            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Missing color g");
-        if (!section.lookupValue("b", b))
-            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Missing color b");
-        result.r = static_cast<uint8_t>(r);
-        result.g = static_cast<uint8_t>(g);
-        result.b = static_cast<uint8_t>(b);
+        if (!value.is_array() || value.size() != 3)
+            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "expected an array of 3 numbers [r, g, b]");
+        for (const auto &component : value)
+            if (!component.is_number())
+                throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "color components must be numbers");
+        result.r = static_cast<uint8_t>(value[0].get<int>());
+        result.g = static_cast<uint8_t>(value[1].get<int>());
+        result.b = static_cast<uint8_t>(value[2].get<int>());
         result.a = 255;
-        if (section.getLength() != 3)
-            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Vector should have exactly 3 values (x,y,z)");
         return (result);
     }
 
-    Material SceneParser::parseMaterial(const libconfig::Setting &section)
+    Material SceneParser::parseMaterial(const json &object)
     {
         Material material;
+        auto assignFloat = [&object](const char *key, float &field) {
+            if (object.contains(key))
+                field = asFloat(object[key], key);
+        };
 
-        if (section.exists("model"))
+        if (object.contains("model"))
         {
-            std::string model;
-            if (section.lookupValue("model", model))
-            {
-                std::string lowered = to_lower(model);
-                if (lowered == "phong")
-                    material.model = MaterialModel::PHONG;
-                else if (lowered == "pbr")
-                    material.model = MaterialModel::PBR;
-                else
-                    throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Unknown material model: " + model);
-            }
+            std::string lowered = to_lower(asString(object["model"], "model"));
+            if (lowered == "phong")
+                material.model = MaterialModel::PHONG;
+            else if (lowered == "pbr")
+                material.model = MaterialModel::PBR;
+            else
+                throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Unknown material model: " + lowered);
         }
-        if (section.exists("base_color"))
-            material.baseColor = ColorF::fromColor(parseColor(section.lookup("base_color")));
-        if (section.exists("specular"))
-            material.specular = ColorF::fromColor(parseColor(section.lookup("specular")));
-        if (section.exists("shininess"))
-            section.lookupValue("shininess", material.shininess);
-        if (section.exists("reflectivity"))
-            section.lookupValue("reflectivity", material.reflectivity);
-        if (section.exists("transparency"))
-            section.lookupValue("transparency", material.transparency);
-        if (section.exists("ior"))
-            section.lookupValue("ior", material.ior);
-        if (section.exists("metallic"))
-            section.lookupValue("metallic", material.metallic);
-        if (section.exists("roughness"))
-            section.lookupValue("roughness", material.roughness);
-        if (section.exists("ao"))
-            section.lookupValue("ao", material.ao);
-        if (section.exists("specularLevel"))
-            section.lookupValue("specularLevel", material.specular_level);
-        if (section.exists("specularTint"))
-            section.lookupValue("specularTint", material.specular_tint);
-        if (section.exists("clearcoat"))
-            section.lookupValue("clearcoat", material.clearcoat);
-        if (section.exists("clearcoatRoughness"))
-            section.lookupValue("clearcoatRoughness", material.clearcoat_roughness);
-        if (section.exists("sheen"))
-            section.lookupValue("sheen", material.sheen);
-        if (section.exists("sheenTint"))
-            section.lookupValue("sheenTint", material.sheen_tint);
-        if (section.exists("transmission"))
-            section.lookupValue("transmission", material.transmission);
-        if (section.exists("alpha"))
-            section.lookupValue("alpha", material.alpha);
+        if (object.contains("base_color"))
+            material.baseColor = ColorF::fromColor(parseColor(object["base_color"]));
+        if (object.contains("specular"))
+            material.specular = ColorF::fromColor(parseColor(object["specular"]));
 
-        if (section.exists("normal_map"))
-            material.normal_map = section.lookup("normal_map").c_str();
-        if (section.exists("normal_map_enabled"))
+        assignFloat("shininess", material.shininess);
+        assignFloat("reflectivity", material.reflectivity);
+        assignFloat("transparency", material.transparency);
+        assignFloat("ior", material.ior);
+        assignFloat("metallic", material.metallic);
+        assignFloat("roughness", material.roughness);
+        assignFloat("ao", material.ao);
+        assignFloat("specularLevel", material.specular_level);
+        assignFloat("specularTint", material.specular_tint);
+        assignFloat("clearcoat", material.clearcoat);
+        assignFloat("clearcoatRoughness", material.clearcoat_roughness);
+        assignFloat("sheen", material.sheen);
+        assignFloat("sheenTint", material.sheen_tint);
+        assignFloat("transmission", material.transmission);
+        assignFloat("alpha", material.alpha);
+        assignFloat("normal_scale", material.normal_scale);
+        assignFloat("normal_noise_frequency", material.normal_noise_frequency);
+
+        if (object.contains("normal_map"))
+            material.normal_map = asString(object["normal_map"], "normal_map");
+        if (object.contains("normal_map_enabled"))
         {
-            try { float v = 0.0f; section.lookupValue("normal_map_enabled", v); material.normal_map_enabled = (v != 0.0f); }
-            catch (...) { bool b = false; section.lookupValue("normal_map_enabled", b); material.normal_map_enabled = b; }
+            const json &enabled = object["normal_map_enabled"];
+            if (enabled.is_boolean())
+                material.normal_map_enabled = enabled.get<bool>();
+            else if (enabled.is_number())
+                material.normal_map_enabled = (enabled.get<float>() != 0.0f);
         }
-        if (section.exists("normal_scale"))
-            section.lookupValue("normal_scale", material.normal_scale);
-        if (section.exists("normal_noise_frequency"))
-            section.lookupValue("normal_noise_frequency", material.normal_noise_frequency);
 
         return material;
     }
 
-    Camera *SceneParser::parseCamera(const libconfig::Setting &section)
+    Camera *SceneParser::parseCamera(const json &object)
     {
         Vector2i resolution;
         Vector3f position;
@@ -194,48 +208,45 @@ namespace rc
         float fov;
         int samplesPerPixel = 5;
 
-        const libconfig::Setting &resolutionSection = section.lookup("resolution");
-        const libconfig::Setting &positionSection = section.lookup("position");
-        const libconfig::Setting &rotationSection = section.lookup("rotation");
+        if (!object.contains("resolution"))
+            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Missing camera resolution");
+        const json &resolutionSection = object["resolution"];
+        if (!resolutionSection.is_array() || resolutionSection.size() != 2
+            || !resolutionSection[0].is_number() || !resolutionSection[1].is_number())
+            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Camera resolution must be [width, height]");
+        resolution.x = resolutionSection[0].get<int>();
+        resolution.y = resolutionSection[1].get<int>();
 
-        if (!resolutionSection.lookupValue("width", resolution.x))
-            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Missing camera resolution width");
-        if (!resolutionSection.lookupValue("height", resolution.y))
-            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Missing camera resolution height");
-        if (resolutionSection.getLength() != 2)
-            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Camera resolution must have exactly 2 values");
-
+        if (!object.contains("position"))
+            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Missing camera position");
         try
         {
-            position = parseVector3f(positionSection);
+            position = parseVector3f(object["position"]);
         }
         catch (std::exception &e)
         {
             throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "camera position: " + std::string(e.what()));
         }
 
+        if (!object.contains("rotation"))
+            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Missing camera rotation");
         try
         {
-            rotation = parseVector3f(rotationSection);
+            rotation = parseVector3f(object["rotation"]);
         }
         catch (std::exception &e)
         {
             throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "camera rotation: " + std::string(e.what()));
         }
 
-        if (!section.lookupValue("fieldOfView", fov))
+        if (!object.contains("fieldOfView"))
             throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Missing camera fov");
+        fov = asFloat(object["fieldOfView"], "fieldOfView");
 
-        if (section.exists("samplesPerPixel"))
-        {
-            if (!section.lookupValue("samplesPerPixel", samplesPerPixel))
-                throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Missing camera samplesPerPixel");
-        }
-        else if (section.exists("samples_per_pixel"))
-        {
-            if (!section.lookupValue("samples_per_pixel", samplesPerPixel))
-                throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Missing camera samples_per_pixel");
-        }
+        if (object.contains("samplesPerPixel"))
+            samplesPerPixel = asInt(object["samplesPerPixel"], "samplesPerPixel");
+        else if (object.contains("samples_per_pixel"))
+            samplesPerPixel = asInt(object["samples_per_pixel"], "samples_per_pixel");
 
         if (samplesPerPixel <= 0)
             throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "camera samplesPerPixel must be greater than 0");
@@ -243,17 +254,18 @@ namespace rc
         return (new Camera(resolution, position, rotation, fov, samplesPerPixel));
     }
 
-    std::vector<Material *> SceneParser::parseMaterials(const libconfig::Setting &section)
+    std::vector<Material *> SceneParser::parseMaterials(const json &array)
     {
         std::vector<Material *> result;
 
-        for (int i = 0; i < section.getLength(); i++)
-        {
-            const libconfig::Setting &materialSection = section[i];
+        if (!array.is_array())
+            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "materials must be a list");
 
-            if (!materialSection.exists("name"))
+        for (const auto &materialSection : array)
+        {
+            if (!materialSection.contains("name"))
                 throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Missing material name");
-            std::string name = materialSection.lookup("name").c_str();
+            std::string name = asString(materialSection["name"], "material name");
 
             try
             {
@@ -274,21 +286,42 @@ namespace rc
         return result;
     }
 
-    std::vector <ISceneObject *> SceneParser::parseObjects(const libconfig::Setting &section)
+    std::vector<ISceneObject *> SceneParser::parseObjects(const json &array)
     {
+        using FieldHandler = std::function<void(SceneObjectBuilder &, const json &)>;
+        static const std::vector<std::pair<std::string, FieldHandler>> handlers = {
+            {"position",   [](SceneObjectBuilder &b, const json &v) { b.withPosition(parseVector3f(v)); }},
+            {"rotation",   [](SceneObjectBuilder &b, const json &v) { b.withRotation(parseVector3f(v)); }},
+            {"scale",      [](SceneObjectBuilder &b, const json &v) { b.withScale(parseVector3f(v)); }},
+            {"direction",  [](SceneObjectBuilder &b, const json &v) { b.withDirection(parseVector3f(v)); }},
+            {"vertex0",    [](SceneObjectBuilder &b, const json &v) { b.withVertex0(parseVector3f(v)); }},
+            {"vertex1",    [](SceneObjectBuilder &b, const json &v) { b.withVertex1(parseVector3f(v)); }},
+            {"vertex2",    [](SceneObjectBuilder &b, const json &v) { b.withVertex2(parseVector3f(v)); }},
+            {"color",      [](SceneObjectBuilder &b, const json &v) { b.withColor(parseColor(v)); }},
+            {"axis",       [](SceneObjectBuilder &b, const json &v) { b.withAxis(parseAxis(v)); }},
+            {"radius",     [](SceneObjectBuilder &b, const json &v) { b.withRadius(asFloat(v, "radius")); }},
+            {"height",     [](SceneObjectBuilder &b, const json &v) { b.withHeight(asFloat(v, "height")); }},
+            {"size",       [](SceneObjectBuilder &b, const json &v) { b.withSize(asFloat(v, "size")); }},
+            {"power",      [](SceneObjectBuilder &b, const json &v) { b.withPower(asFloat(v, "power")); }},
+            {"threshold",  [](SceneObjectBuilder &b, const json &v) { b.withThreshold(asFloat(v, "threshold")); }},
+            {"intensity",  [](SceneObjectBuilder &b, const json &v) { b.withIntensity(asFloat(v, "intensity")); }},
+            {"iterations", [](SceneObjectBuilder &b, const json &v) { b.withIterations(asInt(v, "iterations")); }},
+        };
         std::vector<ISceneObject *> result;
 
-        for (int i = 0; i < section.getLength(); i++)
+        if (!array.is_array())
+            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "objects must be a list");
+
+        for (const auto &object : array)
         {
             SceneObjectBuilder builder;
-            const libconfig::Setting &objectSection = section[i];
 
-            if (!objectSection.exists("type"))
+            if (!object.contains("type") || !object["type"].is_string())
             {
                 std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Missing object type").what() << std::endl;
                 continue;
             }
-            std::string type = objectSection.lookup("type").c_str();
+            std::string type = object["type"].get<std::string>();
 
             try
             {
@@ -298,53 +331,20 @@ namespace rc
                     builder.withType(LightType::DIRECTIONAL);
                 else if (type == "obj")
                 {
-                    if (!objectSection.exists("path"))
+                    if (!object.contains("path"))
                         throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Missing object path");
-                    
-                    std::string path = objectSection.lookup("path").c_str();
+
+                    std::string path = asString(object["path"], "path");
                     ObjParser objParser(result);
 
-                    if (objectSection.exists("position"))
-                    {
-                        try
-                        {
-                            objParser.withPosition(parseVector3f(objectSection.lookup("position")));
-                        }
-                        catch (std::exception &e)
-                        {
-                            std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" position: " + std::string(e.what())).what() << std::endl;
-                            continue;
-                        }
-                    }
-
-                    if (objectSection.exists("rotation"))
-                    {
-                        try
-                        {
-                            objParser.withRotation(parseVector3f(objectSection.lookup("rotation")));
-                        }
-                        catch (std::exception &e)
-                        {
-                            std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" rotation: " + std::string(e.what())).what() << std::endl;
-                            continue;
-                        }
-                    }
-
-                    if (objectSection.exists("size"))
-                    {
-                        try
-                        {
-                            objParser.withSize(objectSection.lookup("size"));
-                        }
-                        catch (std::exception &e)
-                        {
-                            std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" size: " + std::string(e.what())).what() << std::endl;
-                            continue;
-                        }
-                    }
+                    if (object.contains("position"))
+                        objParser.withPosition(parseVector3f(object["position"]));
+                    if (object.contains("rotation"))
+                        objParser.withRotation(parseVector3f(object["rotation"]));
+                    if (object.contains("size"))
+                        objParser.withSize(asFloat(object["size"], "size"));
 
                     objParser.parse(path);
-
                     continue;
                 }
                 else
@@ -356,11 +356,11 @@ namespace rc
                 continue;
             }
 
-            if (objectSection.exists("name"))
+            if (object.contains("name"))
             {
                 try
                 {
-                    builder.withName(objectSection.lookup("name").c_str());
+                    builder.withName(asString(object["name"], "name"));
                 }
                 catch (std::exception &e)
                 {
@@ -369,56 +369,38 @@ namespace rc
                 }
             }
 
-            if (objectSection.exists("position"))
+            bool failed = false;
+            for (const auto &handler : handlers)
             {
+                const std::string &key = handler.first;
+
+                if (!object.contains(key))
+                    continue;
                 try
                 {
-                    builder.withPosition(parseVector3f(objectSection.lookup("position")));
+                    handler.second(builder, object[key]);
                 }
                 catch (std::exception &e)
                 {
-                    std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" position: " + std::string(e.what())).what() << std::endl;
-                    continue;
+                    std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" " + key + ": " + std::string(e.what())).what() << std::endl;
+                    failed = true;
+                    break;
                 }
             }
+            if (failed)
+                continue;
 
-            if (objectSection.exists("rotation"))
+            if (object.contains("material"))
             {
                 try
                 {
-                    builder.withRotation(parseVector3f(objectSection.lookup("rotation")));
-                }
-                catch (std::exception &e)
-                {
-                    std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" rotation: " + std::string(e.what())).what() << std::endl;
-                    continue;
-                }
-            }
-
-            if (objectSection.exists("scale"))
-            {
-                try
-                {
-                    builder.withScale(parseVector3f(objectSection.lookup("scale")));
-                }
-                catch (std::exception &e)
-                {
-                    std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" scale: " + std::string(e.what())).what() << std::endl;
-                    continue;
-                }
-            }
-
-            if (objectSection.exists("material"))
-            {
-                try
-                {
-                    std::string materialName = objectSection.lookup("material").c_str();
+                    std::string materialName = asString(object["material"], "material");
                     auto it = std::find_if(this->_materials.begin(), this->_materials.end(), [&materialName](const Material *material)
                     {
                         return material != nullptr && material->getName() == materialName;
                     });
                     if (it == this->_materials.end())
-                        throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" material: Unknown material \"" + materialName + "\"");
+                        throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Unknown material \"" + materialName + "\"");
                     builder.withMaterial(*it);
                 }
                 catch (std::exception &e)
@@ -428,200 +410,12 @@ namespace rc
                 }
             }
 
-            if (objectSection.exists("power"))
-            {
-                try
-                {
-                    builder.withPower(objectSection.lookup("power"));
-                }
-                catch (std::exception &e)
-                {
-                    std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" power: " + std::string(e.what())).what() << std::endl;
-                    continue;
-                }
-            }
-
-            if (objectSection.exists("iterations"))
-            {
-                try
-                {
-                    builder.withIterations(objectSection.lookup("iterations"));
-                }
-                catch (std::exception &e)
-                {
-                    std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" iterations: " + std::string(e.what())).what() << std::endl;
-                    continue;
-                }
-            }
-
-            if (objectSection.exists("threshold"))
-            {
-                try
-                {
-                    builder.withThreshold(objectSection.lookup("threshold"));
-                }
-                catch (std::exception &e)
-                {
-                    std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" threshold: " + std::string(e.what())).what() << std::endl;
-                    continue;
-                }
-            }
-
-            if (objectSection.exists("direction"))
-            {
-                try
-                {
-                    builder.withDirection(parseVector3f(objectSection.lookup("direction")));
-                }
-                catch (std::exception &e)
-                {
-                    std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" direction: " + std::string(e.what())).what() << std::endl;
-                    continue;
-                }
-            }
-
-            if (objectSection.exists("intensity"))
-            {
-                try
-                {
-                    builder.withIntensity(objectSection.lookup("intensity"));
-                }
-                catch (std::exception &e)
-                {
-                    std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" intensity: " + std::string(e.what())).what() << std::endl;
-                    continue;
-                }
-            }
-
-            if (objectSection.exists("size"))
-            {
-                try
-                {
-                    builder.withSize(objectSection.lookup("size"));
-                }
-                catch (std::exception &e)
-                {
-                    std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" size: " + std::string(e.what())).what() << std::endl;
-                    continue;
-                }
-            }
-
-            if (objectSection.exists("height"))
-            {
-                try
-                {
-                    builder.withHeight(objectSection.lookup("height"));
-                }
-                catch (std::exception &e)
-                {
-                    std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" height: " + std::string(e.what())).what() << std::endl;
-                    continue;
-                }
-            }
-
-            if (objectSection.exists("radius"))
-            {
-                try
-                {
-                    builder.withRadius(objectSection.lookup("radius"));
-                }
-                catch (std::exception &e)
-                {
-                    try
-                    {
-                        int radiusInt = objectSection.lookup("radius");
-                        
-                        builder.withRadius(static_cast<float>(radiusInt));
-                    }
-                    catch (std::exception &e)
-                    {
-                        std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" radius: " + std::string(e.what())).what() << std::endl;
-                        continue;
-                    }
-                }
-            }
-
-            if (objectSection.exists("vertex0"))
-            {
-                try
-                {
-                    builder.withVertex0(parseVector3f(objectSection.lookup("vertex0")));
-                }
-                catch (std::exception &e)
-                {
-                    std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" vertex0: " + std::string(e.what())).what() << std::endl;
-                    continue;
-                }
-            }
-
-            if (objectSection.exists("vertex1"))
-            {
-                try
-                {
-                    builder.withVertex1(parseVector3f(objectSection.lookup("vertex1")));
-                }
-                catch (std::exception &e)
-                {
-                    std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" vertex1: " + std::string(e.what())).what() << std::endl;
-                    continue;
-                }
-            }
-
-            if (objectSection.exists("vertex2"))
-            {
-                try
-                {
-                    builder.withVertex2(parseVector3f(objectSection.lookup("vertex2")));
-                }
-                catch (std::exception &e)
-                {
-                    std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" vertex2: " + std::string(e.what())).what() << std::endl;
-                    continue;
-                }
-            }
-
-            if (objectSection.exists("axis"))
-            {
-                try
-                {
-                    std::string axisStr = objectSection.lookup("axis").c_str();
-                    Axis axis;
-                    if (axisStr == "x")
-                        axis = Axis::X;
-                    else if (axisStr == "y")
-                        axis = Axis::Y;
-                    else if (axisStr == "z")
-                        axis = Axis::Z;
-                    else
-                        throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" axis: Unknown axis \"" + axisStr + "\"");
-                    builder.withAxis(axis);
-                }
-                catch (std::exception &e)
-                {
-                    std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" axis: " + std::string(e.what())).what() << std::endl;
-                    continue;
-                }
-            }
-
-            if (objectSection.exists("color"))
-            {
-                try
-                {
-                    builder.withColor(parseColor(objectSection.lookup("color")));
-                }
-                catch (std::exception &e)
-                {
-                    std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" color: " + std::string(e.what())).what() << std::endl;
-                    continue;
-                }
-            }
-
             try
             {
-                ISceneObject *object = builder.build();
-                if (object == nullptr)
+                ISceneObject *sceneObject = builder.build();
+                if (sceneObject == nullptr)
                     throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\": Unknown or incomplete object definition");
-                result.push_back(object);
+                result.push_back(sceneObject);
             }
             catch (std::exception &e)
             {
@@ -634,25 +428,33 @@ namespace rc
 
     IScene *SceneParser::parseScene(const std::string &scene_path)
     {
-        libconfig::Config config;
-
-        this->openConfig(config, scene_path);
-        return (this->parseScene(config));
+        return (this->parseScene(this->openConfig(scene_path)));
     }
 
-    IScene *SceneParser::parseScene(const libconfig::Config &config)
+    IScene *SceneParser::parseScene(const json &config)
     {
         SceneBuilder scene_builder;
         float ambientCoefficient = 0.4f;
         float diffuseCoefficient = 0.6f;
 
-        const libconfig::Setting &environmentSection = config.lookup("environment");
-        environmentSection.lookupValue("ambient", ambientCoefficient);
-        environmentSection.lookupValue("diffuse", diffuseCoefficient);
+        if (!config.contains("camera"))
+            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Missing camera section");
+        if (!config.contains("objects"))
+            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Missing objects section");
+
+        if (config.contains("environment"))
+        {
+            const json &environmentSection = config["environment"];
+            if (environmentSection.contains("ambient") && environmentSection["ambient"].is_number())
+                ambientCoefficient = environmentSection["ambient"].get<float>();
+            if (environmentSection.contains("diffuse") && environmentSection["diffuse"].is_number())
+                diffuseCoefficient = environmentSection["diffuse"].get<float>();
+        }
+
         scene_builder
-            .withCamera(parseCamera(config.lookup("camera")))
-            .withMaterials(parseMaterials(config.lookup("materials")))
-            .withObjects(parseObjects(config.lookup("objects")))
+            .withCamera(parseCamera(config["camera"]))
+            .withMaterials(config.contains("materials") ? parseMaterials(config["materials"]) : std::vector<Material *>{})
+            .withObjects(parseObjects(config["objects"]))
             .withAmbientCoefficient(ambientCoefficient)
             .withDiffuseCoefficient(diffuseCoefficient);
         return (scene_builder.build());

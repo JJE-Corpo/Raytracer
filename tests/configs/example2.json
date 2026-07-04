@@ -1,0 +1,81 @@
+{
+    "environment": {
+        "ambient": 0.4,
+        "diffuse": 0.0
+    },
+    "camera": {
+        "resolution": [
+            1024,
+            768
+        ],
+        "position": [
+            5.0,
+            8.0,
+            10.0
+        ],
+        "rotation": [
+            30.0,
+            -45.0,
+            0.0
+        ],
+        "fieldOfView": 50.0
+    },
+    "objects": [
+        {
+            "name": "Sphere - red",
+            "type": "sphere",
+            "position": [
+                -3.0,
+                1.0,
+                0.0
+            ],
+            "radius": 1.5,
+            "color": [
+                255,
+                0,
+                0
+            ]
+        },
+        {
+            "name": "Sphere - green",
+            "type": "sphere",
+            "position": [
+                0.0,
+                2.0,
+                -5.0
+            ],
+            "radius": 1.0,
+            "color": [
+                0,
+                255,
+                0
+            ]
+        },
+        {
+            "name": "Sphere - blue",
+            "type": "sphere",
+            "position": [
+                3.0,
+                1.0,
+                0.0
+            ],
+            "radius": 1.5,
+            "color": [
+                0,
+                0,
+                255
+            ]
+        },
+        {
+            "name": "Directional Light",
+            "type": "directional_light",
+            "direction": [
+                1.0,
+                1.0,
+                -1.0
+            ],
+            "intensity": 0.8
+        }
+    ],
+    "materials": []
+}

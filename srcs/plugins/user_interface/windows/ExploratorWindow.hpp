@@ -348,7 +348,7 @@ namespace rc
             filenameField.setFont(*font);
             filenameField.setCharacterSize(14);
             filenameField.box.setSize({240.f, 28.f});
-            filenameField.setValue((mode == ExploratorMode::SAVE) ? "scene_save.cfg" : "");
+            filenameField.setValue((mode == ExploratorMode::SAVE) ? "scene_save.json" : "");
             filenameField.enabled = (mode == ExploratorMode::SAVE);
 
             saveButton.setFont(*font);
@@ -359,7 +359,7 @@ namespace rc
                 {
                     if (filenameField.value.empty())
                     {
-                        *this->resultPath = getCurrentPath().string() + "/scene_save.cfg";
+                        *this->resultPath = getCurrentPath().string() + "/scene_save.json";
                     }
                     else
                     {

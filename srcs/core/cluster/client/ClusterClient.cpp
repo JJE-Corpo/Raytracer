@@ -5,7 +5,6 @@
 #include "ClusterClient.hpp"
 
 #include <iostream>
-#include <libconfig.h++>
 #include <stdexcept>
 #include <thread>
 #include <unistd.h>

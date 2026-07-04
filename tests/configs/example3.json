@@ -1,0 +1,66 @@
+{
+    "environment": {
+        "ambient": 0.3,
+        "diffuse": 0.0
+    },
+    "camera": {
+        "resolution": [
+            1024,
+            768
+        ],
+        "position": [
+            0.0,
+            2.0,
+            5.0
+        ],
+        "rotation": [
+            -20.0,
+            0.0,
+            0.0
+        ],
+        "fieldOfView": 45.0
+    },
+    "objects": [
+        {
+            "name": "Sphere",
+            "type": "sphere",
+            "position": [
+                0.0,
+                1.5,
+                0.0
+            ],
+            "radius": 1.0,
+            "color": [
+                100,
+                150,
+                200
+            ]
+        },
+        {
+            "name": "Plane",
+            "type": "plane",
+            "normal": [
+                0.0,
+                1.0,
+                0.0
+            ],
+            "origin": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "size": 100.0
+        },
+        {
+            "name": "Directional Light",
+            "type": "directional_light",
+            "direction": [
+                1.0,
+                2.0,
+                1.0
+            ],
+            "intensity": 0.9
+        }
+    ],
+    "materials": []
+}

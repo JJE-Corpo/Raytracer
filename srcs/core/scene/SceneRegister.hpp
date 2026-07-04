@@ -3,11 +3,13 @@
 #ifndef SCENEREGISTER_HPP
 #define SCENEREGISTER_HPP
 
-#include <libconfig.h++>
+#include <nlohmann/json.hpp>
 #include <iostream>
+#include <string>
 
 #include "../../common/Vector.hpp"
 #include "../../common/Color.hpp"
+#include "../../common/Material.hpp"
 
 #include "../../common/scene/IPrimitive.hpp"
 #include "../../common/scene/ILight.hpp"
@@ -19,30 +21,17 @@ namespace rc
     class SceneRegister
     {
         private:
-            libconfig::Config _cfg;
+            static nlohmann::json vector3fJson(const Vector3f &vector);
+            static nlohmann::json vector3iJson(const Vector3i &vector);
+            static nlohmann::json colorJson(const Color &color);
+            static void writeProperty(nlohmann::json &object, const std::string &name, const std::string &value, PropertyType type);
 
-            static void registerVector3f(std::string name, Vector3f vector, libconfig::Setting &setting);
-            static void registerVector3i(std::string name, Vector3i vector, libconfig::Setting &setting);
-            
-            static void registerVector2i(std::string name, Vector2i vector, libconfig::Setting &setting);
-            static void registerVector2f(std::string name, Vector2f vector, libconfig::Setting &setting);
-            
-            static void registerColor(std::string name, Color color, libconfig::Setting &setting);
+            static nlohmann::json cameraJson(ICamera *camera);
+            static nlohmann::json primitiveJson(IPrimitive *primitive);
+            static nlohmann::json lightJson(ILight *light);
+            static nlohmann::json materialJson(const Material *material);
 
-            static void registerInt(std::string name, int value, libconfig::Setting &setting);
-            static void registerFloat(std::string name, float value, libconfig::Setting &setting);
-            static void registerString(const std::string& name, const std::string& value, libconfig::Setting &setting);
-
-            void registerCamera(ICamera *camera);
-            void registerPrimitive(IPrimitive *primitive);
-            void registerLight(ILight *light);
-            void registerMaterial(const Material *material);
-
-            void saveToFile(const std::string &file_path);
-
-            libconfig::Setting &getRoot();
-
-            void serializeScene(IScene *scene);
+            static nlohmann::json serializeScene(IScene *scene);
         public:
             SceneRegister();
             ~SceneRegister();
@@ -50,9 +39,9 @@ namespace rc
             void saveScene(const std::string &scene_path, IScene *scene);
 
             /**
-             * fonction de con permettant de transformer une scene en string parsable par notre lib
-             * @param scene Scene a recuperer
-             * @return La scene au format lisible par la config++
+             * Serialize a scene into a JSON string parsable by SceneParser.
+             * @param scene Scene to serialize
+             * @return The scene as a JSON document
              */
             std::string toString(IScene *scene);
     };
