@@ -72,6 +72,7 @@ namespace rc
             void loadBlankScene();
 
             void setRenderOutput(const std::string &path);
+            std::string resolveOutputPath(const std::string &path) const;
 
             CoreState getState() const override;
 
