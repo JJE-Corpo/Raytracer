@@ -5,9 +5,6 @@
 #include "srcs/core/Core.hpp"
 #include "srcs/config/Options.hpp"
 
-#define RAYTRACER_VERSION "1.0.0"
-
-
 
 int main(int argc, char **argv)
 {
@@ -15,7 +12,7 @@ int main(int argc, char **argv)
     bool exitEarly = false;
     std::vector<std::string> args(argv + 1, argv + argc);
 
-    opts.setProgramName(argv[0]);
+    opts.setProgramName("raytracer");
 
     if (!opts.parseArgs(args, exitEarly))
         return (84);
