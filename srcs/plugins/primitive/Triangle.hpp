@@ -10,13 +10,14 @@
 
     #include "../../common/Color.hpp"
     #include "../../common/scene/IPrimitive.hpp"
+    #include "../../common/scene/ASceneObject.hpp"
     #include "../../common/Material.hpp"
     #include "../../common/Vector.hpp"
     #include <string>
 
 namespace rc
 {
-    class Triangle : public IPrimitive
+    class Triangle : public ASceneObject, public IPrimitive
     {
         private:
             Vector3f _vertex0 = {0.0f, 0.0f, 0.0f};

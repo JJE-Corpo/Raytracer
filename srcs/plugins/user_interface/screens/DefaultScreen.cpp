@@ -460,7 +460,23 @@ namespace rc
             }
         };
 
-        addMenu.items = { newPlane, newSphere, newCylinder, newCone, newTriangle, newCube, newFractal, newTanglecube, newTorus, newPointLight, newDirectionalLight };
+        MenuItem newGroup;
+        newGroup.setLabel("Group");
+        newGroup.onClick = [&]
+        {
+            try
+            {
+                this->_coreAccess->getScene()->addGroup();
+                this->markViewportBvhDirty();
+                this->_toastManager.push("Group added", "Drag objects onto it in the hierarchy to nest them.", ToastType::SUCCESS);
+            }
+            catch (const std::exception &e)
+            {
+                this->_toastManager.push("Error creating group", e.what(), ToastType::ERROR);
+            }
+        };
+
+        addMenu.items = { newGroup, newPlane, newSphere, newCylinder, newCone, newTriangle, newCube, newFractal, newTanglecube, newTorus, newPointLight, newDirectionalLight };
 
         Menu renderMenu;
         renderMenu.setLabel("Render");
@@ -546,6 +562,15 @@ namespace rc
                 if (selection_renderer)
                     selection_renderer->setSelection(this->_hierarchyPanel.getSelection());
             }
+        });
+        this->_hierarchyPanel.setOnReparentRequest([this](const ISceneObject *child, const ISceneObject *newParent, int index)
+        {
+            IScene *scene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+
+            if (!scene || !child)
+                return;
+            scene->reparent(const_cast<ISceneObject *>(child), const_cast<ISceneObject *>(newParent), index);
+            this->markViewportBvhDirty();
         });
 
         this->_cameraPanel.setFont(*this->_font);

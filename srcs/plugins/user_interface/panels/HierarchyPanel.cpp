@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 
 #include "../../../common/scene/IScene.hpp"
 #include "../../../common/scene/IPrimitive.hpp"
@@ -24,6 +25,10 @@ namespace
     // the next iteration and the measured gap between the two clicks is
     // inflated by the render time. The window must absorb that stall.
     constexpr int DOUBLE_CLICK_MS = 700;
+
+    // Pixels the cursor must travel with the button held before a press turns
+    // into a drag (below this, it stays a plain click/double-click).
+    constexpr float DRAG_THRESHOLD = 4.f;
 
     // The inline rename field spans from the row's left edge to just before its
     // visibility toggle button.
@@ -85,6 +90,9 @@ namespace rc
     {
         this->_selection = selection;
         this->_cameraSelected = false;
+        // Pivot a subsequent Shift range on the last object the viewport selected.
+        this->_selectionAnchor = selection.empty() ? nullptr : selection.back();
+        this->_selectionLead = this->_selectionAnchor;
     }
 
     bool HierarchyPanel::consumeSelectionChanged()
@@ -97,6 +105,19 @@ namespace rc
     bool HierarchyPanel::isSelected(const ISceneObject *object) const
     {
         return (std::find(this->_selection.begin(), this->_selection.end(), object) != this->_selection.end());
+    }
+
+    bool HierarchyPanel::isExpanded(const ISceneObject *group) const
+    {
+        return (this->_collapsed.find(group) == this->_collapsed.end());
+    }
+
+    bool HierarchyPanel::isAncestorOf(const ISceneObject *ancestor, const ISceneObject *node) const
+    {
+        for (const ISceneObject *p = node; p != nullptr; p = p->getParent())
+            if (p == ancestor)
+                return (true);
+        return (false);
     }
 
     void HierarchyPanel::buildItems()
@@ -119,8 +140,6 @@ namespace rc
             empty.depth = 0;
             empty.type = ItemType::GROUP;
             empty.selectable = false;
-            empty.selected = false;
-            empty.hovered = false;
             empty.bounds = {this->_originX, y, this->_width, ITEM_HEIGHT};
             this->_items.push_back(empty);
             y += ITEM_HEIGHT;
@@ -128,7 +147,7 @@ namespace rc
             return;
         }
 
-        auto push_item = [&](const std::string &label, int depth, ItemType type, const void *payload, bool selectable, bool selected)
+        auto push_item = [&](const std::string &label, int depth, ItemType type, const ISceneObject *object, bool selectable)
         {
             const float indent = ITEM_INDENT * static_cast<float>(depth);
             float itemX = this->_originX + indent;
@@ -138,44 +157,48 @@ namespace rc
             item.label = label;
             item.depth = depth;
             item.type = type;
-            item.payload = payload;
+            item.object = object;
             item.selectable = selectable;
-            item.selected = selected;
+            item.selected = (type == ItemType::CAMERA) ? this->_cameraSelected : (object && this->isSelected(object));
             item.hovered = false;
             item.bounds = {itemX, y, itemW, ITEM_HEIGHT};
             const float buttonSize = 10.f;
             item.buttonBounds = {item.bounds.left + item.bounds.width - buttonSize - 6.f, item.bounds.top + (item.bounds.height - buttonSize) / 2.f, buttonSize, buttonSize};
-            item.hidden = false;
-            if (payload)
+            item.hidden = (object != nullptr) && object->isHidden();
+            item.expandable = (type == ItemType::GROUP);
+            if (item.expandable)
             {
-                if (type == ItemType::PRIMITIVE)
-                    item.hidden = static_cast<const IPrimitive *>(payload)->isHidden();
-                else if (type == ItemType::LIGHT)
-                    item.hidden = static_cast<const ILight *>(payload)->isHidden();
+                item.expanded = this->isExpanded(object);
+                const float ts = 10.f;
+                item.toggleBounds = {item.bounds.left + 2.f, item.bounds.top + (item.bounds.height - ts) / 2.f, ts, ts};
             }
             this->_items.push_back(item);
 
             y += ITEM_HEIGHT;
         };
 
-        push_item("Camera", 0, ItemType::CAMERA, &this->_scene->getCamera(), true, this->_cameraSelected);
+        push_item("Camera", 0, ItemType::CAMERA, nullptr, true);
 
-        // push_item("Lights", 0, ItemType::GROUP, nullptr, false, false);
-        const auto &lights = this->_scene->getLights();
-        for (auto light : lights)
+        // Depth-first walk of the scene graph so children appear indented under
+        // their group; collapsed groups hide their subtree.
+        std::function<void(const ISceneObject *, int)> addRows = [&](const ISceneObject *object, int depth)
         {
-            bool selected = (light && this->isSelected(light));
-            push_item(light->getName(), 0, ItemType::LIGHT, light, true, selected);
-        }
-
-        // push_item("Primitives", 0, ItemType::GROUP, nullptr, false, false);
-        const auto &primitives = this->_scene->getPrimitives();
-        for (auto primitive : primitives)
-        {
-            std::string label = primitive->getName();
-            bool selected = (isSelected(primitive));
-            push_item(label, 0, ItemType::PRIMITIVE, primitive, true, selected);
-        }
+            if (!object)
+                return;
+            ItemType type = ItemType::PRIMITIVE;
+            switch (object->getObjectType())
+            {
+                case ObjectType::LIGHT: type = ItemType::LIGHT; break;
+                case ObjectType::GROUP: type = ItemType::GROUP; break;
+                default: type = ItemType::PRIMITIVE; break;
+            }
+            push_item(object->getName(), depth, type, object, true);
+            if (object->getObjectType() == ObjectType::GROUP && this->isExpanded(object))
+                for (const ISceneObject *child : object->getChildren())
+                    addRows(child, depth + 1);
+        };
+        for (const ISceneObject *root : this->_scene->getRoots())
+            addRows(root, 0);
 
         this->refreshHoverState();
 
@@ -184,7 +207,7 @@ namespace rc
             bool stillPresent = false;
             for (const auto &item : this->_items)
             {
-                if (item.payload == this->_renamingObject)
+                if (item.object == this->_renamingObject)
                 {
                     this->layoutRenameField(item.bounds, item.buttonBounds);
                     stillPresent = true;
@@ -242,7 +265,29 @@ namespace rc
                 target.draw(accent, states);
             }
 
-            const bool isRenamingThis = item.payload && item.payload == this->_renamingObject;
+            // Expand/collapse triangle for group rows.
+            if (item.expandable)
+            {
+                const sf::FloatRect &t = item.toggleBounds;
+                sf::ConvexShape tri;
+                tri.setPointCount(3);
+                if (item.expanded)
+                {
+                    tri.setPoint(0, {t.left, t.top + 1.f});
+                    tri.setPoint(1, {t.left + t.width, t.top + 1.f});
+                    tri.setPoint(2, {t.left + t.width / 2.f, t.top + t.height - 1.f});
+                }
+                else
+                {
+                    tri.setPoint(0, {t.left + 1.f, t.top});
+                    tri.setPoint(1, {t.left + 1.f, t.top + t.height});
+                    tri.setPoint(2, {t.left + t.width - 1.f, t.top + t.height / 2.f});
+                }
+                tri.setFillColor(theme::TEXT_DIM);
+                target.draw(tri, states);
+            }
+
+            const bool isRenamingThis = item.object && item.object == this->_renamingObject;
 
             if (!isRenamingThis)
             {
@@ -251,7 +296,8 @@ namespace rc
                 text.setCharacterSize(12);
                 text.setFillColor(item.hidden ? theme::TEXT_DIM : theme::TEXT_MAIN);
                 text.setString(item.label);
-                text.setPosition({item.bounds.left + 8.f, item.bounds.top + 2.f});
+                const float labelX = item.expandable ? item.bounds.left + 16.f : item.bounds.left + 8.f;
+                text.setPosition({labelX, item.bounds.top + 2.f});
                 target.draw(text, states);
             }
 
@@ -267,6 +313,31 @@ namespace rc
             }
         }
 
+        // Drop indicator while dragging.
+        if (this->_dragActive && this->_dropMode != DropMode::NONE)
+        {
+            if (this->_dropMode == DropMode::INTO && this->_dropRow >= 0
+                && this->_dropRow < static_cast<int>(this->_items.size()))
+            {
+                const sf::FloatRect &b = this->_items[this->_dropRow].bounds;
+                sf::RectangleShape outline;
+                outline.setPosition({b.left, b.top});
+                outline.setSize({b.width, b.height});
+                outline.setFillColor(sf::Color::Transparent);
+                outline.setOutlineColor(theme::ACCENT);
+                outline.setOutlineThickness(-2.f);
+                target.draw(outline, states);
+            }
+            else if (this->_dropMode == DropMode::SIBLING)
+            {
+                sf::RectangleShape line;
+                line.setPosition({this->_dropLineX, this->_dropLineY - 1.f});
+                line.setSize({this->_dropLineW, 2.f});
+                line.setFillColor(theme::ACCENT);
+                target.draw(line, states);
+            }
+        }
+
         if (this->_renamingObject)
             target.draw(this->_renameField, states);
     }
@@ -276,8 +347,142 @@ namespace rc
         this->_lastMouse = mouse;
         this->refreshHoverState();
 
+        if (this->_dragActive)
+            this->updateDropTarget(mouse);
+
         if (this->_renamingObject)
             this->_renameField.update(mouse);
+    }
+
+    void HierarchyPanel::setSiblingDrop(const ISceneObject *parent, int index, float lineX, float lineY, float lineW)
+    {
+        this->_dropMode = DropMode::SIBLING;
+        this->_dropParent = parent;
+        this->_dropIndex = index;
+        this->_dropRow = -1;
+        this->_dropLineX = lineX;
+        this->_dropLineY = lineY;
+        this->_dropLineW = lineW;
+    }
+
+    int HierarchyPanel::siblingIndexOf(const ISceneObject *parent, const ISceneObject *ref) const
+    {
+        static const std::vector<ISceneObject *> none;
+        const std::vector<ISceneObject *> &siblings =
+            parent ? parent->getChildren() : (this->_scene ? this->_scene->getRoots() : none);
+        int index = 0;
+        for (ISceneObject *s : siblings)
+        {
+            if (s == ref)
+                break;
+            if (s == this->_dragObject)
+                continue; // detached before the insert, so it doesn't count.
+            ++index;
+        }
+        return index;
+    }
+
+    void HierarchyPanel::updateDropTarget(sf::Vector2i mouse)
+    {
+        this->_dropMode = DropMode::NONE;
+        this->_dropRow = -1;
+        this->_dropParent = nullptr;
+        this->_dropIndex = -1;
+        if (!this->_dragObject || !this->_scene)
+            return;
+
+        const sf::Vector2f m(static_cast<float>(mouse.x), static_cast<float>(mouse.y));
+        int hoveredRow = -1;
+        for (std::size_t i = 0; i < this->_items.size(); ++i)
+        {
+            const Item &it = this->_items[i];
+            if (m.y >= it.bounds.top && m.y < it.bounds.top + it.bounds.height)
+            {
+                hoveredRow = static_cast<int>(i);
+                break;
+            }
+        }
+
+        // Past the last row: append at the end of the top level.
+        if (hoveredRow < 0)
+        {
+            this->setSiblingDrop(nullptr, static_cast<int>(this->_scene->getRoots().size()),
+                this->_originX, this->_bottomY, this->_width);
+            return;
+        }
+
+        const Item &target = this->_items[hoveredRow];
+
+        // The camera row is not a graph node; dropping on it means "very top".
+        if (target.type == ItemType::CAMERA)
+        {
+            this->setSiblingDrop(nullptr, 0, this->_originX,
+                target.bounds.top + target.bounds.height, this->_width);
+            return;
+        }
+
+        const ISceneObject *targetObj = target.object;
+
+        // Can't land on the dragged node itself or anywhere in its own subtree.
+        if (!targetObj || targetObj == this->_dragObject || this->isAncestorOf(this->_dragObject, targetObj))
+        {
+            this->_dropMode = DropMode::NONE;
+            return;
+        }
+
+        const float f = (m.y - target.bounds.top) / target.bounds.height;
+        const bool isGroup = (target.type == ItemType::GROUP);
+
+        // A group's centre band nests the node inside it (appended); the thin top
+        // and bottom bands are reorder gaps. A leaf splits 50/50 into a
+        // before-gap and an after-gap.
+        if (isGroup && f > 0.30f && f < 0.70f)
+        {
+            this->_dropMode = DropMode::INTO;
+            this->_dropParent = targetObj;
+            this->_dropRow = hoveredRow;
+            this->_dropIndex = -1; // append inside the group
+            return;
+        }
+
+        const ISceneObject *parent = targetObj->getParent();
+        if (f < 0.5f)
+        {
+            // Gap above the target: land right before it, at its level.
+            this->setSiblingDrop(parent, this->siblingIndexOf(parent, targetObj),
+                target.bounds.left, target.bounds.top, target.bounds.width);
+        }
+        else if (isGroup && target.expanded && !targetObj->getChildren().empty()
+                 && hoveredRow + 1 < static_cast<int>(this->_items.size()))
+        {
+            // Just under an expanded group header the honest gap is its
+            // first-child slot; draw the line at the child indent so it reads
+            // as "inside the group".
+            const sf::FloatRect &childBounds = this->_items[hoveredRow + 1].bounds;
+            this->setSiblingDrop(targetObj, 0, childBounds.left,
+                target.bounds.top + target.bounds.height, childBounds.width);
+        }
+        else
+        {
+            // Gap below the target: land right after it, at its level.
+            this->setSiblingDrop(parent, this->siblingIndexOf(parent, targetObj) + 1,
+                target.bounds.left, target.bounds.top + target.bounds.height, target.bounds.width);
+        }
+    }
+
+    void HierarchyPanel::commitDrop()
+    {
+        if (this->_dropMode == DropMode::NONE || !this->_dragObject || !this->_onReparentRequest)
+            return;
+
+        const ISceneObject *child = this->_dragObject;
+        const ISceneObject *newParent = this->_dropParent;
+
+        if (newParent && (newParent == child || this->isAncestorOf(child, newParent)))
+            return;
+
+        this->_onReparentRequest(child, newParent, this->_dropIndex);
+        this->_selectionChanged = true;
     }
 
     bool HierarchyPanel::handleEvent(const sf::Event &event, const sf::Vector2i mouse)
@@ -293,14 +498,64 @@ namespace rc
         }
 
         // Arrow keys walk the selection up/down the row list. Ctrl held extends
-        // the current selection instead of replacing it, like Ctrl+click.
+        // the current selection instead of replacing it, like Ctrl+click; Shift
+        // grows a contiguous range from the anchor, like Shift+click.
         if (event.type == sf::Event::KeyPressed
             && (event.key.code == sf::Keyboard::Up || event.key.code == sf::Keyboard::Down))
         {
             const bool ctrl_pressed = sf::Keyboard::isKeyPressed(sf::Keyboard::LControl)
                 || sf::Keyboard::isKeyPressed(sf::Keyboard::RControl);
-            this->moveSelection(event.key.code == sf::Keyboard::Down ? 1 : -1, ctrl_pressed);
+            const bool shift_pressed = sf::Keyboard::isKeyPressed(sf::Keyboard::LShift)
+                || sf::Keyboard::isKeyPressed(sf::Keyboard::RShift);
+            this->moveSelection(event.key.code == sf::Keyboard::Down ? 1 : -1, ctrl_pressed, shift_pressed);
             return (true);
+        }
+
+        // Drag tracking: promote a held press into a drag past the threshold,
+        // then follow the cursor to update the drop target.
+        if (event.type == sf::Event::MouseMoved)
+        {
+            // If the button was released without us seeing the release event
+            // (it landed on the rename field, or the cursor left the window),
+            // abandon the pending/active drag rather than leaving it armed - an
+            // armed drag whose button is up would otherwise phantom-reparent on
+            // the next move/click, and a stuck _dragActive soft-locks the panel
+            // via isCapturing(). Self-heals on the next in-window mouse move.
+            if (this->_dragObject && !sf::Mouse::isButtonPressed(sf::Mouse::Left))
+            {
+                this->_dragObject = nullptr;
+                this->_dragActive = false;
+                this->_dropMode = DropMode::NONE;
+                this->_dropRow = -1;
+                this->_dropParent = nullptr;
+                return (false);
+            }
+            if (this->_dragObject && !this->_dragActive)
+            {
+                const float dx = static_cast<float>(mouse.x - this->_dragStartMouse.x);
+                const float dy = static_cast<float>(mouse.y - this->_dragStartMouse.y);
+                if (dx * dx + dy * dy > DRAG_THRESHOLD * DRAG_THRESHOLD)
+                    this->_dragActive = true;
+            }
+            if (this->_dragActive)
+            {
+                this->updateDropTarget(mouse);
+                return (true);
+            }
+            return (false);
+        }
+
+        if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left)
+        {
+            const bool wasDragging = this->_dragActive;
+            if (wasDragging)
+                this->commitDrop();
+            this->_dragObject = nullptr;
+            this->_dragActive = false;
+            this->_dropMode = DropMode::NONE;
+            this->_dropRow = -1;
+            this->_dropParent = nullptr;
+            return (wasDragging);
         }
 
         if (event.type != sf::Event::MouseButtonPressed)
@@ -309,23 +564,30 @@ namespace rc
             return (false);
 
         bool ctrl_pressed = sf::Keyboard::isKeyPressed(sf::Keyboard::LControl) || sf::Keyboard::isKeyPressed(sf::Keyboard::RControl);
+        bool shift_pressed = sf::Keyboard::isKeyPressed(sf::Keyboard::LShift) || sf::Keyboard::isKeyPressed(sf::Keyboard::RShift);
 
         for (const auto &item : this->_items)
         {
+            // Expand/collapse toggle takes precedence over selection.
+            if (item.expandable && item.object && item.toggleBounds.contains(static_cast<sf::Vector2f>(mouse)))
+            {
+                if (this->isExpanded(item.object))
+                    this->_collapsed.insert(item.object);
+                else
+                    this->_collapsed.erase(item.object);
+                return (true);
+            }
             if ((item.type == ItemType::PRIMITIVE || item.type == ItemType::LIGHT) && item.buttonBounds.contains(static_cast<sf::Vector2f>(mouse)))
             {
-                if (!this->_onItemHideRequest)
+                if (!this->_onItemHideRequest || !item.object)
                     return (true);
-                const ISceneObject *asObject = static_cast<const ISceneObject *>(item.payload);
-                if (this->isSelected(asObject))
+                if (this->isSelected(item.object))
                 {
                     for (auto *object : this->_selection)
-                    {
                         this->_onItemHideRequest(object);
-                    }
                     return (true);
                 }
-                this->_onItemHideRequest(asObject);
+                this->_onItemHideRequest(item.object);
                 return (true);
             }
             if (!item.selectable)
@@ -333,26 +595,34 @@ namespace rc
             if (!item.bounds.contains(static_cast<sf::Vector2f>(mouse)))
                 continue;
 
-            const bool is_double_click = item.payload == this->_lastClickedPayload
+            // Arm a possible drag (objects only; the camera row isn't draggable).
+            if (item.object)
+            {
+                this->_dragObject = item.object;
+                this->_dragStartMouse = mouse;
+                this->_dragActive = false;
+            }
+
+            const bool is_double_click = item.object && item.object == this->_lastClickedObject
                 && this->_clickClock.getElapsedTime().asMilliseconds() < DOUBLE_CLICK_MS;
-            this->_lastClickedPayload = item.payload;
+            this->_lastClickedObject = item.object;
             this->_clickClock.restart();
 
-            if (is_double_click && (item.type == ItemType::LIGHT || item.type == ItemType::PRIMITIVE))
+            // A Shift double-click is a range extension, not a rename request.
+            if (is_double_click && !shift_pressed
+                && (item.type == ItemType::LIGHT || item.type == ItemType::PRIMITIVE || item.type == ItemType::GROUP))
             {
                 this->beginRename(item);
                 return (true);
             }
 
-            switch (item.type)
-            {
-                case ItemType::CAMERA:
-                    this->selectCamera();
-                    break;
-                default:
-                    this->select(static_cast<const ISceneObject *>(item.payload), ctrl_pressed);
-                    break;
-            }
+            if (item.type == ItemType::CAMERA)
+                this->selectCamera();
+            else if (shift_pressed)
+                // Ctrl+Shift merges the new range into the current selection.
+                this->selectRange(item.object, ctrl_pressed);
+            else
+                this->select(item.object, ctrl_pressed);
             this->_selectionChanged = true;
             return (true);
         }
@@ -361,6 +631,9 @@ namespace rc
         const bool had_selection = this->_cameraSelected || !this->_selection.empty();
         this->_selection.clear();
         this->_cameraSelected = false;
+        this->_selectionAnchor = nullptr;
+        this->_selectionLead = nullptr;
+        this->_dragObject = nullptr;
         if (had_selection)
             this->_selectionChanged = true;
         return (true);
@@ -370,16 +643,17 @@ namespace rc
     {
         if (!this->enabled)
             return (CursorType::ARROW);
-        if (this->hovered)
+        if (this->_dragActive || this->hovered)
             return (CursorType::HAND);
         return (CursorType::ARROW);
     }
 
     // Keeps keyboard focus on the rename field regardless of cursor position,
     // the same way an open ColorPicker popup captures events (see ColorPicker).
+    // Also captures while a drag is in progress so the drop is not stolen.
     bool HierarchyPanel::isCapturing() const
     {
-        return (this->_renameField.isCapturing());
+        return (this->_renameField.isCapturing() || this->_dragActive);
     }
 
     void HierarchyPanel::select(const ISceneObject *object, bool ctrlPressed)
@@ -388,6 +662,9 @@ namespace rc
             return;
 
         this->_cameraSelected = false;
+        // A plain or Ctrl click (re)pivots a future Shift range on this row.
+        this->_selectionAnchor = object;
+        this->_selectionLead = object;
 
         if (ctrlPressed)
         {
@@ -406,9 +683,62 @@ namespace rc
     {
         this->_selection.clear();
         this->_cameraSelected = true;
+        // The camera can't take part in an object range, so it clears the pivot.
+        this->_selectionAnchor = nullptr;
+        this->_selectionLead = nullptr;
     }
 
-    void HierarchyPanel::moveSelection(int direction, bool ctrlPressed)
+    // Selects every selectable object row between the anchor and `target`
+    // (inclusive) in displayed order. Without an anchor it degrades to a plain
+    // single selection. When additive, the range is merged into the current
+    // selection (Ctrl+Shift); otherwise it replaces it.
+    void HierarchyPanel::selectRange(const ISceneObject *target, bool additive)
+    {
+        if (!target)
+            return;
+
+        int anchorIdx = -1;
+        int targetIdx = -1;
+        for (std::size_t i = 0; i < this->_items.size(); ++i)
+        {
+            const Item &it = this->_items[i];
+            if (!it.selectable || !it.object)
+                continue; // skips the camera row (no object).
+            if (it.object == this->_selectionAnchor)
+                anchorIdx = static_cast<int>(i);
+            if (it.object == target)
+                targetIdx = static_cast<int>(i);
+        }
+
+        if (targetIdx < 0)
+            return;
+        // Anchor scrolled out of view (e.g. inside a collapsed group): start a
+        // fresh single selection anchored on the clicked row.
+        if (anchorIdx < 0)
+        {
+            this->select(target, false);
+            return;
+        }
+
+        if (!additive)
+            this->_selection.clear();
+        this->_cameraSelected = false;
+
+        const int lo = std::min(anchorIdx, targetIdx);
+        const int hi = std::max(anchorIdx, targetIdx);
+        for (int i = lo; i <= hi; ++i)
+        {
+            const Item &it = this->_items[i];
+            if (!it.selectable || !it.object)
+                continue;
+            if (std::find(this->_selection.begin(), this->_selection.end(), it.object) == this->_selection.end())
+                this->_selection.push_back(it.object);
+        }
+        // The anchor stays put; only the moving end follows the click/arrow.
+        this->_selectionLead = target;
+    }
+
+    void HierarchyPanel::moveSelection(int direction, bool ctrlPressed, bool shiftPressed)
     {
         // Indices into _items of the rows the user can actually land on.
         std::vector<std::size_t> selectable;
@@ -417,6 +747,40 @@ namespace rc
                 selectable.push_back(i);
         if (selectable.empty())
             return;
+
+        if (shiftPressed)
+        {
+            // Shift extends a contiguous range: the anchor stays fixed while the
+            // moving end (the lead) steps one selectable row in `direction`.
+            int lead = -1;
+            for (std::size_t k = 0; k < selectable.size(); ++k)
+                if (this->_selectionLead && this->_items[selectable[k]].object == this->_selectionLead)
+                {
+                    lead = static_cast<int>(k);
+                    break;
+                }
+
+            int next;
+            if (lead < 0)
+                next = (direction > 0) ? 0 : static_cast<int>(selectable.size()) - 1;
+            else
+            {
+                next = lead + direction;
+                if (next < 0 || next >= static_cast<int>(selectable.size()))
+                    return; // Already at the edge of the list.
+            }
+
+            const Item &target = this->_items[selectable[next]];
+            if (target.type == ItemType::CAMERA)
+                return; // The camera row can't be part of an object range.
+            // Seed the pivot on the first Shift step if nothing anchored it yet.
+            if (!this->_selectionAnchor)
+                this->_selectionAnchor = (lead >= 0) ? this->_items[selectable[lead]].object : target.object;
+            this->selectRange(target.object, ctrlPressed);
+            this->_selectionChanged = true;
+            this->_lastClickedObject = target.object;
+            return;
+        }
 
         // Anchor the move on the current selection: the bottom-most selected row
         // when going down, the top-most when going up. -1 means nothing selected.
@@ -445,14 +809,14 @@ namespace rc
         if (target.type == ItemType::CAMERA)
             this->selectCamera();
         else
-            this->select(static_cast<const ISceneObject *>(target.payload), ctrlPressed);
+            this->select(target.object, ctrlPressed);
         this->_selectionChanged = true;
-        this->_lastClickedPayload = target.payload;
+        this->_lastClickedObject = target.object;
     }
 
     void HierarchyPanel::beginRename(const Item &item)
     {
-        const auto *object = static_cast<const ISceneObject *>(item.payload);
+        const ISceneObject *object = item.object;
         if (!object)
             return;
 
@@ -465,7 +829,7 @@ namespace rc
 
         // Start a fresh click count so that a single click on this same row
         // after the rename is committed/cancelled doesn't re-trigger rename.
-        this->_lastClickedPayload = nullptr;
+        this->_lastClickedObject = nullptr;
     }
 
     void HierarchyPanel::layoutRenameField(const sf::FloatRect &itemBounds, const sf::FloatRect &buttonBounds)

@@ -70,6 +70,19 @@ namespace rc
                 return Axis::Z;
             throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Unknown axis \"" + axisStr + "\"");
         }
+
+        // Link a freshly built leaf under a parent. The builder set its transform
+        // as world; for a nested child that value is its LOCAL transform, so copy
+        // it into the local fields (flatten recomputes world from the ancestors).
+        void linkChild(ISceneObject *child, ISceneObject *parent)
+        {
+            if (!parent || !child)
+                return;
+            parent->addChild(child);
+            child->setLocalPosition(child->getPosition());
+            child->setLocalRotation(child->getRotation());
+            child->setLocalScale(child->getScale());
+        }
     }
 
     SceneParser::SceneParser()
@@ -288,6 +301,18 @@ namespace rc
 
     std::vector<ISceneObject *> SceneParser::parseObjects(const json &array)
     {
+        std::vector<ISceneObject *> result;
+
+        if (!array.is_array())
+            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "objects must be a list");
+
+        for (const auto &object : array)
+            this->parseObjectInto(object, result, nullptr);
+        return result;
+    }
+
+    void SceneParser::parseObjectInto(const json &object, std::vector<ISceneObject *> &result, ISceneObject *parent)
+    {
         using FieldHandler = std::function<void(SceneObjectBuilder &, const json &)>;
         static const std::vector<std::pair<std::string, FieldHandler>> handlers = {
             {"position",   [](SceneObjectBuilder &b, const json &v) { b.withPosition(parseVector3f(v)); }},
@@ -307,123 +332,153 @@ namespace rc
             {"intensity",  [](SceneObjectBuilder &b, const json &v) { b.withIntensity(asFloat(v, "intensity")); }},
             {"iterations", [](SceneObjectBuilder &b, const json &v) { b.withIterations(asInt(v, "iterations")); }},
         };
-        std::vector<ISceneObject *> result;
 
-        if (!array.is_array())
-            throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "objects must be a list");
-
-        for (const auto &object : array)
+        if (!object.contains("type") || !object["type"].is_string())
         {
-            SceneObjectBuilder builder;
+            std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Missing object type").what() << std::endl;
+            return;
+        }
+        std::string type = object["type"].get<std::string>();
 
-            if (!object.contains("type") || !object["type"].is_string())
-            {
-                std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Missing object type").what() << std::endl;
-                continue;
-            }
-            std::string type = object["type"].get<std::string>();
-
-            try
-            {
-                if (type == LIGHT_POINT)
-                    builder.withType(LightType::POINT);
-                else if (type == LIGHT_DIRECTIONAL)
-                    builder.withType(LightType::DIRECTIONAL);
-                else if (type == "obj")
-                {
-                    if (!object.contains("path"))
-                        throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Missing object path");
-
-                    std::string path = asString(object["path"], "path");
-                    ObjParser objParser(result);
-
-                    if (object.contains("position"))
-                        objParser.withPosition(parseVector3f(object["position"]));
-                    if (object.contains("rotation"))
-                        objParser.withRotation(parseVector3f(object["rotation"]));
-                    if (object.contains("size"))
-                        objParser.withSize(asFloat(object["size"], "size"));
-
-                    objParser.parse(path);
-                    continue;
-                }
-                else
-                    builder.withType(type);
-            }
-            catch (std::exception &e)
-            {
-                std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\": " + std::string(e.what())).what() << std::endl;
-                continue;
-            }
+        // Group node: owns a local transform and builds its children recursively.
+        if (type == "group")
+        {
+            Group *group = new Group();
 
             if (object.contains("name"))
             {
-                try
-                {
-                    builder.withName(asString(object["name"], "name"));
-                }
-                catch (std::exception &e)
-                {
-                    std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" name: " + std::string(e.what())).what() << std::endl;
-                    continue;
-                }
+                try { group->setName(asString(object["name"], "name")); }
+                catch (std::exception &e) { std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, std::string("group name: ") + e.what()).what() << std::endl; }
             }
-
-            bool failed = false;
-            for (const auto &handler : handlers)
-            {
-                const std::string &key = handler.first;
-
-                if (!object.contains(key))
-                    continue;
-                try
-                {
-                    handler.second(builder, object[key]);
-                }
-                catch (std::exception &e)
-                {
-                    std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" " + key + ": " + std::string(e.what())).what() << std::endl;
-                    failed = true;
-                    break;
-                }
-            }
-            if (failed)
-                continue;
-
-            if (object.contains("material"))
-            {
-                try
-                {
-                    std::string materialName = asString(object["material"], "material");
-                    auto it = std::find_if(this->_materials.begin(), this->_materials.end(), [&materialName](const Material *material)
-                    {
-                        return material != nullptr && material->getName() == materialName;
-                    });
-                    if (it == this->_materials.end())
-                        throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Unknown material \"" + materialName + "\"");
-                    builder.withMaterial(*it);
-                }
-                catch (std::exception &e)
-                {
-                    std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" material: " + std::string(e.what())).what() << std::endl;
-                    continue;
-                }
-            }
-
+            // Parent must be set before the local setters so they store LOCAL
+            // (for a root group parent is null and they store world instead).
+            if (parent)
+                parent->addChild(group);
             try
             {
-                ISceneObject *sceneObject = builder.build();
-                if (sceneObject == nullptr)
-                    throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\": Unknown or incomplete object definition");
-                result.push_back(sceneObject);
+                if (object.contains("position"))
+                    group->setLocalPosition(parseVector3f(object["position"]));
+                if (object.contains("rotation"))
+                    group->setLocalRotation(parseVector3f(object["rotation"]));
+                if (object.contains("scale"))
+                    group->setLocalScale(parseVector3f(object["scale"]));
             }
             catch (std::exception &e)
             {
-                std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\": " + std::string(e.what())).what() << std::endl;
-                continue;
+                std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, std::string("group transform: ") + e.what()).what() << std::endl;
+            }
+            result.push_back(group);
+
+            if (object.contains("children") && object["children"].is_array())
+                for (const auto &child : object["children"])
+                    this->parseObjectInto(child, result, group);
+            return;
+        }
+
+        SceneObjectBuilder builder;
+
+        try
+        {
+            if (type == LIGHT_POINT)
+                builder.withType(LightType::POINT);
+            else if (type == LIGHT_DIRECTIONAL)
+                builder.withType(LightType::DIRECTIONAL);
+            else if (type == "obj")
+            {
+                if (!object.contains("path"))
+                    throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Missing object path");
+
+                std::string path = asString(object["path"], "path");
+                std::vector<ISceneObject *> objResult;
+                ObjParser objParser(objResult);
+
+                if (object.contains("position"))
+                    objParser.withPosition(parseVector3f(object["position"]));
+                if (object.contains("rotation"))
+                    objParser.withRotation(parseVector3f(object["rotation"]));
+                if (object.contains("size"))
+                    objParser.withSize(asFloat(object["size"], "size"));
+
+                objParser.parse(path);
+                for (ISceneObject *triangle : objResult)
+                {
+                    linkChild(triangle, parent);
+                    result.push_back(triangle);
+                }
+                return;
+            }
+            else
+                builder.withType(type);
+        }
+        catch (std::exception &e)
+        {
+            std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\": " + std::string(e.what())).what() << std::endl;
+            return;
+        }
+
+        if (object.contains("name"))
+        {
+            try
+            {
+                builder.withName(asString(object["name"], "name"));
+            }
+            catch (std::exception &e)
+            {
+                std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" name: " + std::string(e.what())).what() << std::endl;
+                return;
             }
         }
-        return result;
+
+        for (const auto &handler : handlers)
+        {
+            const std::string &key = handler.first;
+
+            if (!object.contains(key))
+                continue;
+            try
+            {
+                handler.second(builder, object[key]);
+            }
+            catch (std::exception &e)
+            {
+                std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" " + key + ": " + std::string(e.what())).what() << std::endl;
+                return;
+            }
+        }
+
+        if (object.contains("material"))
+        {
+            try
+            {
+                std::string materialName = asString(object["material"], "material");
+                auto it = std::find_if(this->_materials.begin(), this->_materials.end(), [&materialName](const Material *material)
+                {
+                    return material != nullptr && material->getName() == materialName;
+                });
+                if (it == this->_materials.end())
+                    throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Unknown material \"" + materialName + "\"");
+                builder.withMaterial(*it);
+            }
+            catch (std::exception &e)
+            {
+                std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\" material: " + std::string(e.what())).what() << std::endl;
+                return;
+            }
+        }
+
+        try
+        {
+            ISceneObject *sceneObject = builder.build();
+            if (sceneObject == nullptr)
+                throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\": Unknown or incomplete object definition");
+            linkChild(sceneObject, parent);
+            result.push_back(sceneObject);
+        }
+        catch (std::exception &e)
+        {
+            std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "object \"" + type + "\": " + std::string(e.what())).what() << std::endl;
+            return;
+        }
     }
 
     IScene *SceneParser::parseScene(const std::string &scene_path)

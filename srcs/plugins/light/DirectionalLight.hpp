@@ -2,11 +2,12 @@
 #define DIRECTIONALLIGHT_HPP
 
 #include "../../common/scene/ILight.hpp"
+#include "../../common/scene/ASceneObject.hpp"
 #include "../../common/Vector.hpp"
 
 namespace rc
 {
-    class DirectionalLight : public ILight
+    class DirectionalLight : public ASceneObject, public ILight
     {
         private:
             Vector3f _position = {0.0, 0.0, 0.0};
