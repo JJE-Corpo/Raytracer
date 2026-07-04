@@ -66,7 +66,7 @@ Build and run commands depend on your local setup. Typical workflow:
 
 ```bash
 make
-./raytracer path/to/scene.cfg
+./raytracer path/to/scene.json
 ```
 
 Optional test invocation placeholder:

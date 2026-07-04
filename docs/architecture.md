@@ -54,7 +54,7 @@ flowchart TD
     Core --> Exporter[RenderExporter]
 
     Core --> SceneRegister[SceneRegister]
-    SceneRegister --> Cfg[.cfg export]
+    SceneRegister --> Json[.json export]
 
     Core --> Cluster[ClusterModule]
 ```
@@ -66,7 +66,7 @@ flowchart TD
 Coordinates the full lifecycle:
 
 1. Load configuration/plugins.
-2. Parse `.cfg` and construct scene through builders.
+2. Parse `.json` and construct scene through builders.
 3. Select renderer plugin.
 4. Build BVH and render.
 5. Export image.

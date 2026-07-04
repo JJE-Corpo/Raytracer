@@ -1,0 +1,123 @@
+{
+    "environment": {
+        "ambient": 0.35,
+        "diffuse": 0.0
+    },
+    "camera": {
+        "resolution": [
+            1024,
+            768
+        ],
+        "position": [
+            3.0,
+            2.0,
+            3.0
+        ],
+        "rotation": [
+            -25.0,
+            -45.0,
+            0.0
+        ],
+        "fieldOfView": 50.0
+    },
+    "objects": [
+        {
+            "name": "Sphere A",
+            "type": "sphere",
+            "position": [
+                0.0,
+                1.0,
+                0.0
+            ],
+            "radius": 0.8,
+            "color": [
+                255,
+                200,
+                100
+            ]
+        },
+        {
+            "name": "Sphere B",
+            "type": "sphere",
+            "position": [
+                0.0,
+                2.5,
+                2.0
+            ],
+            "radius": 0.6,
+            "color": [
+                100,
+                200,
+                255
+            ]
+        },
+        {
+            "name": "Plane Y",
+            "type": "plane",
+            "normal": [
+                0.0,
+                1.0,
+                0.0
+            ],
+            "origin": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "color": [
+                100,
+                120,
+                80
+            ]
+        },
+        {
+            "name": "Plane Z",
+            "type": "plane",
+            "normal": [
+                0.0,
+                0.0,
+                1.0
+            ],
+            "origin": [
+                0.0,
+                0.0,
+                -5.0
+            ],
+            "color": [
+                180,
+                180,
+                180
+            ]
+        },
+        {
+            "name": "Plane X",
+            "type": "plane",
+            "normal": [
+                1.0,
+                0.0,
+                0.0
+            ],
+            "origin": [
+                5.0,
+                0.0,
+                0.0
+            ],
+            "color": [
+                150,
+                150,
+                200
+            ]
+        },
+        {
+            "name": "Directional Light",
+            "type": "directional_light",
+            "direction": [
+                1.0,
+                2.0,
+                1.0
+            ],
+            "intensity": 0.85
+        }
+    ],
+    "materials": []
+}
