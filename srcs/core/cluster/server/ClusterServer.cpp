@@ -22,7 +22,7 @@
 
 namespace rc
 {
-    ClusterServer::ClusterServer(IScene *scene): _serverFd(-1), _scene(scene)
+    ClusterServer::ClusterServer(IScene *scene, uint16_t port): _serverFd(-1), _configuredPort(port), _scene(scene)
     {
     }
 
@@ -41,7 +41,7 @@ namespace rc
         }
         sockaddr_in serverAddr{};
         serverAddr.sin_addr.s_addr = INADDR_ANY;
-        serverAddr.sin_port = htons(0);
+        serverAddr.sin_port = htons(this->_configuredPort);
         serverAddr.sin_family = AF_INET;
         if (::bind(this->_serverFd, (sockaddr *)&serverAddr, sizeof(serverAddr)) == -1)
         {
