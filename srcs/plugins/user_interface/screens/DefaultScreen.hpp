@@ -18,6 +18,7 @@
 
 #include "AScreen.hpp"
 #include "../components/menu/MenuBar.hpp"
+#include "../components/menu/ContextMenu.hpp"
 #include "../components/ResizeHandle.hpp"
 #include "../panels/CameraPanel.hpp"
 #include "../panels/HierarchyPanel.hpp"
@@ -59,6 +60,19 @@ namespace rc
         void markViewportBvhDirty();
         void updateViewportCamera(sf::RenderWindow &window);
 
+        // Object under the cursor in the viewport (light gizmo first, then a ray
+        // cast), or nullptr. Shared by the right-click context menu.
+        const ISceneObject *pickViewportObject(const sf::Vector2i &mouse);
+        // Fill and open the object context menu at the (window-space) cursor for
+        // the given object. Both the hierarchy right-click and the viewport
+        // right-click funnel through here.
+        void openContextMenu(const ISceneObject *object, const sf::Vector2i &mouse);
+        // Toggle the hidden flag of the current selection (context-menu action).
+        void hideSelection();
+        // Create a new top-level group and move the current (multi-)selection
+        // into it, then select the group (context-menu action).
+        void groupSelection();
+
         // Latch the fly-camera key state from window key events. Done at event
         // time (before the frame's render) so a slow render frame can never make
         // the once-per-frame poll miss a press or release.
@@ -79,6 +93,9 @@ namespace rc
         ISceneRenderer *_activeRenderer = nullptr;
 
         MenuBar _menuBar;
+
+        // Right-click object context menu (hierarchy rows and viewport objects).
+        ContextMenu _contextMenu;
 
         // Resizable left sidebar.
         float _sidebarWidth = 260.0f;
@@ -109,6 +126,11 @@ namespace rc
         // viewport
         sf::Vector2i _lastMouse;
         bool _rightMouseHeld = false;
+        // Right-button click-vs-drag tracking: a drag rotates the camera, a
+        // click (no drag past the threshold) opens the object context menu.
+        sf::Vector2i _rightPressMouse;
+        bool _rightPressInViewport = false;
+        bool _rightDragged = false;
         // Fly-camera speed in world units per second (integrated with real frame
         // time so motion is smooth and independent of frame rate / render cost).
         float _cameraSpeed = 6.0f;

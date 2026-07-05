@@ -21,6 +21,9 @@ namespace rc
     constexpr float MENU_HEIGHT = 28.0f;
     constexpr float SIDEBAR_MIN = 220.0f;   // narrowest the sidebar may be dragged
     constexpr float VIEWPORT_MIN = 360.0f;  // space always kept for the viewport
+    // Pixels a right-press may travel before it counts as a camera-rotate drag
+    // rather than a click that opens the context menu.
+    constexpr float RIGHT_CLICK_DRAG = 5.0f;
 
     void DefaultScreen::setCoreAccess(ICoreAccess *coreAccess)
     {
@@ -543,6 +546,8 @@ namespace rc
         this->_menuBar.menus.push_back(clusterMenu);
         this->_menuBar.setFont(*this->_font);
 
+        this->_contextMenu.setFont(*this->_font);
+
         this->_hierarchyPanel.setFont(*this->_font);
         this->_hierarchyPanel.setOnItemHideRequest([this](const ISceneObject *payload)
         {
@@ -647,6 +652,10 @@ namespace rc
         if (this->_loadWindow.running)
             return;
 
+        // Keep the context menu's hover highlight live; it sits above the menu
+        // bar and panels, so refresh it before the menu-bar early-return below.
+        this->_contextMenu.update(mouse);
+
         this->_menuBar.update(mouse);
 
         if (this->_menuBar.isOpen())
@@ -719,6 +728,10 @@ namespace rc
 
         this->_menuBar.layout(static_cast<float>(window.getSize().x));
         window.draw(this->_menuBar);
+
+        // Drawn after the menu bar so the popup sits on top of every panel; it
+        // no-ops while closed.
+        window.draw(this->_contextMenu);
 
         this->_toastManager.draw(window);
     }
@@ -852,6 +865,115 @@ namespace rc
         hover_renderer->setHover(hoveredObject);
     }
 
+    const ISceneObject *DefaultScreen::pickViewportObject(const sf::Vector2i &mouse)
+    {
+        IScene *scene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+        if (!scene)
+            return (nullptr);
+
+        sf::Vector2i pixel;
+        if (!this->_rendererPanel.getViewportPixel(mouse, pixel))
+            return (nullptr);
+
+        const ISceneObject *object = ViewportHelper::pickViewportLight(*scene, scene->getCamera(), pixel);
+        if (!object)
+        {
+            Intersection hit;
+            const Ray ray = scene->getCamera().generateRay(pixel.x, pixel.y);
+            if (scene->intersect(ray, 0.001f, std::numeric_limits<float>::infinity(), hit) && hit.primitive)
+                object = hit.primitive;
+        }
+        return (object);
+    }
+
+    void DefaultScreen::openContextMenu(const ISceneObject *object, const sf::Vector2i &mouse)
+    {
+        if (!object)
+            return;
+
+        std::vector<std::pair<std::string, std::function<void()>>> entries;
+
+        // Only leaves carry a visibility toggle, matching the eye button the
+        // hierarchy shows for primitives and lights (groups just get Delete).
+        const ObjectType type = object->getObjectType();
+        if (type == ObjectType::PRIMITIVE || type == ObjectType::LIGHT)
+        {
+            const std::string hideLabel = object->isHidden() ? "Show" : "Hide";
+            entries.emplace_back(hideLabel, [this]() { this->hideSelection(); });
+        }
+        // Grouping only makes sense for a real multi-selection: gather the
+        // selected objects under one new group.
+        if (this->_hierarchyPanel.getSelection().size() >= 2)
+            entries.emplace_back("Group selection", [this]() { this->groupSelection(); });
+        // Delete reuses the hierarchy's Delete path (selection-wide, with the
+        // safe pointer cleanup and the "Object deleted" toast).
+        entries.emplace_back("Delete", [this]() { this->_hierarchyPanel.deleteSelection(); });
+
+        this->_contextMenu.openAt(static_cast<float>(mouse.x), static_cast<float>(mouse.y), entries);
+    }
+
+    void DefaultScreen::hideSelection()
+    {
+        IScene *scene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+        if (!scene)
+            return;
+
+        for (const ISceneObject *selected : this->_hierarchyPanel.getSelection())
+        {
+            auto *object = const_cast<ISceneObject *>(selected);
+            if (object)
+                object->setHidden(!object->isHidden());
+        }
+        this->markViewportBvhDirty();
+        this->syncSelectionToRenderer();
+    }
+
+    void DefaultScreen::groupSelection()
+    {
+        IScene *scene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+        if (!scene)
+            return;
+
+        // Snapshot the selection: reparenting mutates the scene graph.
+        const std::vector<const ISceneObject *> selection = this->_hierarchyPanel.getSelection();
+        if (selection.size() < 2)
+            return;
+
+        // Only move the "roots" of the selection. An object whose selected
+        // ancestor is also in the batch already travels with that ancestor's
+        // subtree, so moving it too would tear it out of its parent. This mirrors
+        // the skip rule HierarchyPanel::deleteObjects uses.
+        std::vector<ISceneObject *> toGroup;
+        for (const ISceneObject *object : selection)
+        {
+            if (!object)
+                continue;
+            bool coveredByAncestor = false;
+            for (ISceneObject *ancestor = object->getParent(); ancestor && !coveredByAncestor; ancestor = ancestor->getParent())
+                for (const ISceneObject *other : selection)
+                    if (other == ancestor)
+                    {
+                        coveredByAncestor = true;
+                        break;
+                    }
+            if (!coveredByAncestor)
+                toGroup.push_back(const_cast<ISceneObject *>(object));
+        }
+        if (toGroup.empty())
+            return;
+
+        // Created only once there is something to hold, so no empty group is
+        // left behind. reparent preserves each object's world transform.
+        ISceneObject *group = scene->addGroup();
+        for (ISceneObject *object : toGroup)
+            scene->reparent(object, group, -1);
+
+        this->markViewportBvhDirty();
+        this->_hierarchyPanel.applyViewportSelection({group});
+        this->syncSelectionToRenderer();
+        this->_toastManager.push("Group created", "Grouped " + std::to_string(toGroup.size()) + " objects into a new group.", ToastType::SUCCESS);
+    }
+
     void DefaultScreen::handleEvent(sf::RenderWindow &window, sf::Event &event)
     {
         const sf::Vector2i mouse = sf::Mouse::getPosition(window);
@@ -865,21 +987,51 @@ namespace rc
         if (this->_loadWindow.running)
             return;
 
-        // Right mouse drives the viewport camera rotation independently of the
-        // component routing below, but only when the drag begins over the
-        // viewport itself - a right-press on a panel must not grab the camera.
+        // Right mouse over the viewport is overloaded: a drag rotates the camera
+        // (independently of the component routing below), while a plain click
+        // (released without dragging past the threshold) opens the object
+        // context menu. A right-press on a panel must not grab the camera, and
+        // is handled by the hierarchy panel via consumeContextMenuRequest below.
         if (event.type == sf::Event::MouseButtonPressed &&
-            event.mouseButton.button == sf::Mouse::Right &&
-            this->isViewportCaptured(mouse))
+            event.mouseButton.button == sf::Mouse::Right)
         {
-            this->_rightMouseHeld = true;
-            this->_lastMouse = sf::Mouse::getPosition(window);
+            this->_rightPressInViewport = this->isViewportCaptured(mouse);
+            this->_rightDragged = false;
+            this->_rightPressMouse = mouse;
+            if (this->_rightPressInViewport)
+            {
+                this->_rightMouseHeld = true;
+                this->_lastMouse = sf::Mouse::getPosition(window);
+            }
+        }
+
+        if (event.type == sf::Event::MouseMoved && this->_rightMouseHeld && !this->_rightDragged)
+        {
+            const int dx = mouse.x - this->_rightPressMouse.x;
+            const int dy = mouse.y - this->_rightPressMouse.y;
+            if (dx * dx + dy * dy > RIGHT_CLICK_DRAG * RIGHT_CLICK_DRAG)
+                this->_rightDragged = true;
         }
 
         if (event.type == sf::Event::MouseButtonReleased &&
             event.mouseButton.button == sf::Mouse::Right)
         {
+            const bool wasClick = this->_rightPressInViewport && !this->_rightDragged;
             this->_rightMouseHeld = false;
+            this->_rightPressInViewport = false;
+            if (wasClick)
+            {
+                const ISceneObject *object = this->pickViewportObject(mouse);
+                if (object)
+                {
+                    if (!this->_hierarchyPanel.isSelected(object))
+                    {
+                        this->_hierarchyPanel.applyViewportSelection({object});
+                        this->syncSelectionToRenderer();
+                    }
+                    this->openContextMenu(object, mouse);
+                }
+            }
         }
 
         // Latch fly-camera keys here, while the event is fresh and before the
@@ -891,7 +1043,7 @@ namespace rc
         // (menu bar and open pop-ups win over the panels and the viewport).
         const bool viewportMode = this->_viewMode == ViewMode::VIEWPORT;
 
-        std::vector<Component *> candidates = {&this->_menuBar, &this->_rendererPanel};
+        std::vector<Component *> candidates = {&this->_contextMenu, &this->_menuBar, &this->_rendererPanel};
 
         if (viewportMode)
         {
@@ -918,6 +1070,12 @@ namespace rc
         {
             this->syncSelectionToRenderer();
         }
+
+        // A right-click on a hierarchy row asks for the context menu; open it at
+        // the (window-space) cursor. The viewport right-click is handled above,
+        // where the picked object is already known.
+        if (const ISceneObject *ctxObject = this->_hierarchyPanel.consumeContextMenuRequest())
+            this->openContextMenu(ctxObject, mouse);
 
         // Fall back to viewport picking only when no UI component claimed the
         // click, so clicks on panels or pop-ups no longer leak to the scene.
@@ -949,7 +1107,7 @@ namespace rc
         // A menu, pop-up, in-progress drag or focused text field anywhere in the
         // UI owns the input even when the cursor sits over the render, so the
         // viewport must not steal keys/clicks while any of them is live.
-        if (this->_menuBar.isCapturing())
+        if (this->_menuBar.isCapturing() || this->_contextMenu.isCapturing())
             return (false);
 
         std::vector<Component *> components;
