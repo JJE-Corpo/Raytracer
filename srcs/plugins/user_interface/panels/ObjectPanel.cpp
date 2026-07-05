@@ -133,11 +133,13 @@ namespace rc
         if (asLight)
         {
             this->isLight = true;
-            this->_lightColorPicker.onChange = [currentObject](const ColorF &color)
+            this->_lightColorPicker.onChange = [this, currentObject](const ColorF &color)
             {
                 const auto *tmp = dynamic_cast<const ILight *>(currentObject);
                 auto *light = const_cast<ILight *>(tmp);
                 light->setColorF(color);
+                if (this->onSceneMutated)
+                    this->onSceneMutated();
             };
             this->_lightIntensityField.enabled = true;
             this->_lightIntensityField.setValue(std::to_string(asLight->getIntensity()));
@@ -149,7 +151,7 @@ namespace rc
                     return (false);
                 return (true);
             };
-            this->_lightIntensityField.onValidate = [asLight](const std::string &value)
+            this->_lightIntensityField.onValidate = [this, asLight](const std::string &value)
             {
                 if (!Utils::isFloat(value))
                     return (false);
@@ -157,6 +159,8 @@ namespace rc
                 if (result < 0)
                     result = 0;
                 const_cast<ILight *>(asLight)->setIntensity(result);
+                if (this->onSceneMutated)
+                    this->onSceneMutated();
                 return (true);
             };
         }
@@ -224,9 +228,11 @@ namespace rc
                 slider.setFont(this->_font);
                 slider.setRange(0.0f, 100.0f);
                 slider.setValue(std::stof(val.first));
-                slider.onChange = [_tmp, asPrimitive](const float value)
+                slider.onChange = [this, _tmp, asPrimitive](const float value)
                 {
                     const_cast<IPrimitive *>(asPrimitive)->setPropertyFloat(_tmp, value);
+                    if (this->onSceneMutated)
+                        this->onSceneMutated();
                 };
                 this->_objectSliders.push_back(slider);
             }
