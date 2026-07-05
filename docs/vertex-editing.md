@@ -32,9 +32,10 @@ Mesh** in the Object panel. Its surface is tessellated into a triangle mesh
 (baked to `generated_meshes/<name>_<n>.obj`), the primitive is replaced by that
 mesh, and the mesh is selected so you can immediately enter edit mode. Because it
 is a normal file-backed mesh, it saves/reloads and accepts `vertex_overrides`
-like any other mesh. Infinite primitives (a plane) cannot be converted. The
-tessellation is a generic surface sampling, so convex shapes (cube, sphere, cone,
-cylinder) come out clean while non-convex ones (torus, tanglecube) are
+like any other mesh. Infinite primitives (a plane) cannot be converted. A **cube** is baked exactly
+to its 8 corners / 12 triangles (flat faces), so it stays a clean editable box.
+Everything else uses a generic surface sampling: smooth/convex shapes (sphere,
+cone, cylinder) come out clean, while non-convex ones (torus, tanglecube) are
 approximated.
 
 ## Entering / leaving edit mode
