@@ -11,6 +11,7 @@
 #include "../../../plugins/primitive/Cube.hpp"
 #include "../../../plugins/primitive/Cone.hpp"
 #include "../../../plugins/primitive/Torus.hpp"
+#include "../../../plugins/primitive/mesh/Mesh.hpp"
 
 rc::PrimitiveBuilder &rc::PrimitiveBuilder::withName(const std::string &name)
 {
@@ -101,6 +102,12 @@ rc::PrimitiveBuilder &rc::PrimitiveBuilder::withIterations(int iterations)
     return (*this);
 }
 
+rc::PrimitiveBuilder &rc::PrimitiveBuilder::withFile(const std::string &file)
+{
+    this->_file = file;
+    return (*this);
+}
+
 rc::PrimitiveBuilder &rc::PrimitiveBuilder::withMaterial(const Material *material)
 {
     this->_material = material;
@@ -133,5 +140,7 @@ rc::IPrimitive *rc::PrimitiveBuilder::build() const
         return (new Cone(this->_name, this->_position, this->_rotation, this->_scale, static_cast<float>(this->_radius), this->_height, this->_material));
     if (this->_type == PRIMITIVE_TORUS)
         return (new Torus(this->_name, this->_position, this->_rotation, static_cast<float>(this->_radius), this->_height, this->_material));
+    if (this->_type == PRIMITIVE_MESH)
+        return (new Mesh(this->_name, this->_file, this->_position, this->_rotation, this->_scale, this->_material));
     return (nullptr);
 }

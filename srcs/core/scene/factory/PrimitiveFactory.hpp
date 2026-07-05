@@ -15,6 +15,7 @@
 #include "../../../plugins/primitive/Fractal.hpp"
 #include "../../../plugins/primitive/Cone.hpp"
 #include "../../../plugins/primitive/Cylinder.hpp"
+#include "../../../plugins/primitive/mesh/Mesh.hpp"
 
 namespace rc
 {
@@ -58,6 +59,10 @@ namespace rc
                 else if (type == PRIMITIVE_CYLINDER)
                 {
                     return new Cylinder();
+                }
+                else if (type == PRIMITIVE_MESH)
+                {
+                    return new Mesh();
                 }
                 else
                 {
