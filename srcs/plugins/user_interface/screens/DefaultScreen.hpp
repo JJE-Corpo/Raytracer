@@ -30,6 +30,7 @@
 #include "../windows/ExploratorWindow.hpp"
 #include "../windows/JoinClusterWindow.hpp"
 #include "../windows/LoadWindow.hpp"
+#include "../windows/MarketWindow.hpp"
 #include "../../../common/ICoreAccess.hpp"
 #include "../../../common/ISceneRenderer.hpp"
 
@@ -117,6 +118,11 @@ namespace rc
         JoinClusterWindow _joinClusterWindow;
         LoadWindow _loadWindow;
         ExploratorWindow _exploratorWindow;
+        MarketWindow _marketWindow;
+
+        // Apply any "Add" clicks queued by the (threaded) market window into the
+        // current scene's material set. Runs on the main thread.
+        void applyMarketAdditions();
 
         std::string _exploratorResult;
         bool _exploratorJustClosed = false;

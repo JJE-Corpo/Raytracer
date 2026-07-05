@@ -8,6 +8,7 @@
 #include "../../../common/scene/IPrimitive.hpp"
 #include "../../../common/ISelectionAwareRenderer.hpp"
 #include "../../../common/scene/IScene.hpp"
+#include "../../../common/MaterialLibrary.hpp"
 #include <algorithm>
 #include <limits>
 
@@ -525,6 +526,37 @@ namespace rc
 
         clusterMenu.items = { clusterHost, clusterConnect };
 
+        Menu materialsMenu;
+        materialsMenu.setLabel("Materials");
+
+        MenuItem openMarket;
+        openMarket.setLabel("Material market");
+        openMarket.onClick = [&]
+        {
+            if (this->_marketWindow.running)
+            {
+                this->_toastManager.push("Market already open", "The material market window is already open.", ToastType::INFO);
+                return;
+            }
+            this->_marketWindow.create(*this->_font);
+        };
+
+        MenuItem saveToMarket;
+        saveToMarket.setLabel("Save materials to market");
+        saveToMarket.onClick = [&]
+        {
+            IScene *scene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+            if (!scene)
+                return;
+            std::size_t saved = 0;
+            for (const auto &entry : scene->getMaterials())
+                if (MaterialLibrary::save(entry.second))
+                    saved++;
+            this->_toastManager.push("Saved to market", std::to_string(saved) + " material(s) saved to ~/.raytracer/materials.", ToastType::SUCCESS);
+        };
+
+        materialsMenu.items = { openMarket, saveToMarket };
+
         this->_joinClusterWindow.windowCallback = [this](std::string ip, size_t port)
         {
             try
@@ -542,6 +574,7 @@ namespace rc
         this->_menuBar.menus.push_back(addMenu);
         this->_menuBar.menus.push_back(renderMenu);
         this->_menuBar.menus.push_back(clusterMenu);
+        this->_menuBar.menus.push_back(materialsMenu);
         this->_menuBar.setFont(*this->_font);
 
         this->_contextMenu.setFont(*this->_font);
@@ -635,6 +668,12 @@ namespace rc
         sf::Vector2i mouse = sf::Mouse::getPosition(window);
         CursorType cursorType = this->_menuBar.getCursor();
 
+        // Pull in any material the user added from the market window (threaded),
+        // applying it to the scene here on the main thread. Done every frame,
+        // before the modal-window guards below, so it lands live while the
+        // market window stays open.
+        this->applyMarketAdditions();
+
         if (this->_exploratorJustClosed && !this->_exploratorWindow.running)
         {
             this->_exploratorJustClosed = false;
@@ -654,6 +693,9 @@ namespace rc
             return;
 
         if (this->_loadWindow.running)
+            return;
+
+        if (this->_marketWindow.running)
             return;
 
         // Keep the context menu's hover highlight live; it sits above the menu
@@ -991,6 +1033,9 @@ namespace rc
         if (this->_loadWindow.running)
             return;
 
+        if (this->_marketWindow.running)
+            return;
+
         // Right mouse over the viewport is overloaded: a drag rotates the camera
         // (independently of the component routing below), while a plain click
         // (released without dragging past the threshold) opens the object
@@ -1322,5 +1367,34 @@ namespace rc
         this->_joinClusterWindow.destroy();
         this->_exploratorWindow.destroy();
         this->_loadWindow.destroy();
+        this->_marketWindow.destroy();
+    }
+
+    void DefaultScreen::applyMarketAdditions()
+    {
+        IScene *scene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+        if (!scene)
+            return;
+
+        std::vector<Material> additions;
+        this->_marketWindow.drainPendingAdds(additions);
+        if (additions.empty())
+            return;
+
+        for (const Material &material : additions)
+        {
+            // createMaterial returns the existing entry when the name is already
+            // taken, so re-adding a market material just refreshes its fields.
+            Material *target = scene->createMaterial(material.name);
+            if (target)
+                *target = material;
+        }
+
+        // Refresh the object panel's material dropdown so the new entries can be
+        // assigned right away, and rebuild the BVH like any other scene edit.
+        this->markViewportBvhDirty();
+        this->syncSelectionToRenderer();
+        this->_toastManager.push("Materials added",
+            std::to_string(additions.size()) + " material(s) added from the market.", ToastType::SUCCESS);
     }
 }
