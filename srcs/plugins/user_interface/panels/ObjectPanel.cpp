@@ -13,6 +13,7 @@
 #include "../../../common/scene/IScene.hpp"
 #include "../../../common/scene/ILight.hpp"
 #include "../../../common/scene/IPrimitive.hpp"
+#include "../../../common/scene/IEditablePrimitive.hpp"
 #include "../../../common/scene/ISceneObject.hpp"
 
 namespace rc
@@ -69,6 +70,10 @@ namespace rc
         this->_scaleDownButton.setLabel("-");
         this->_scaleUpButton.setFont(font);
         this->_scaleUpButton.setLabel("+");
+
+        this->_convertToMeshButton.setFont(font);
+        this->_convertToMeshButton.setLabel("Convert to Mesh");
+        this->_convertToMeshButton.onClick = [this]() { if (this->onConvertToMesh) this->onConvertToMesh(); };
 
         this->_materialLabel.setFont(font);
         this->_materialLabel.setCharacterSize(12);
@@ -147,6 +152,12 @@ namespace rc
         this->_scaleUpButton.layout(layout.x + width - stepBtnW, layout.y, stepBtnW, stepBtnH);
         layout.next(28);
 
+        if (this->_showConvertToMesh)
+        {
+            this->_convertToMeshButton.layout(layout.x, layout.y, width, 24.0f);
+            layout.next(30);
+        }
+
         this->height = layout.y - y;
     }
 
@@ -189,6 +200,8 @@ namespace rc
         }
         this->_scaleDownButton.update(mouse);
         this->_scaleUpButton.update(mouse);
+        if (this->_showConvertToMesh)
+            this->_convertToMeshButton.update(mouse);
     }
 
     void ObjectPanel::rebuild(const ISceneObject *currentObject)
@@ -197,6 +210,10 @@ namespace rc
 
         this->isLight = false;
         this->isPrimitive = false;
+        // Offer "Convert to Mesh" only for primitives that are not already
+        // vertex-editable (mesh / triangle already have movable vertices).
+        this->_showConvertToMesh = dynamic_cast<const IPrimitive *>(currentObject) != nullptr
+            && dynamic_cast<const IEditablePrimitive *>(currentObject) == nullptr;
 
         this->_lightColorPicker.onChange = nullptr;
         this->_lightIntensityField.onType = nullptr;
@@ -423,6 +440,8 @@ namespace rc
         }
         children.push_back(&this->_scaleDownButton);
         children.push_back(&this->_scaleUpButton);
+        if (this->_showConvertToMesh)
+            children.push_back(&this->_convertToMeshButton);
 
         // Open pop-ups (color picker, material dropdown) capture events and
         // are served first, so their clicks no longer leak to the sliders
@@ -454,6 +473,8 @@ namespace rc
         target.draw(this->_scaleStepLabel, states);
         target.draw(this->_scaleDownButton, states);
         target.draw(this->_scaleUpButton, states);
+        if (this->_showConvertToMesh)
+            target.draw(this->_convertToMeshButton, states);
 
         if (this->isLight)
         {
@@ -514,6 +535,8 @@ namespace rc
 
         std::vector<Component *> fields = {&this->_positionField, &this->_rotationField, &this->_scaleField,
             &this->_scaleDownButton, &this->_scaleUpButton};
+        if (this->_showConvertToMesh)
+            fields.push_back(&this->_convertToMeshButton);
         if (this->_showVertexNav)
         {
             fields.push_back(&this->_vertexPrevButton);

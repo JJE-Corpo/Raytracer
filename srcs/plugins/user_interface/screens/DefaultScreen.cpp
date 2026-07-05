@@ -646,6 +646,12 @@ namespace rc
         {
             this->navigateVertex(direction);
         };
+        // "Convert to Mesh": bake the selected analytic primitive into an
+        // editable triangle mesh and select the result.
+        this->_objectPanel.onConvertToMesh = [this]
+        {
+            this->convertSelectionToMesh();
+        };
         this->_materialPanel.setFont(*this->_font);
 
         this->_sidebarResize.onResize = [this](float width)
@@ -1516,6 +1522,35 @@ namespace rc
         else
             this->_objectPanel.setVertexEditor(false, {0.0f, 0.0f, 0.0f});
         this->syncVertexNavigator();
+    }
+
+    void DefaultScreen::convertSelectionToMesh()
+    {
+        if (!this->_coreAccess)
+            return;
+        IScene *scene = this->_coreAccess->getScene();
+        if (!scene)
+            return;
+        const IPrimitive *primitive = this->_hierarchyPanel.tryCast<const IPrimitive>();
+        if (!primitive)
+            return;
+        if (this->_editMode)
+            this->exitEditMode();
+
+        IPrimitive *mesh = scene->convertToMesh(const_cast<IPrimitive *>(primitive));
+        if (!mesh)
+        {
+            this->_toastManager.push("Cannot convert", "This primitive can't be meshed (infinite, e.g. a plane, or already a mesh).", ToastType::INFO);
+            return;
+        }
+        this->markViewportBvhDirty();
+        this->forceViewportRetrace();
+        // Refresh the hierarchy and select the new mesh so it is ready to edit.
+        this->_hierarchyPanel.setScene(scene);
+        const ISceneObject *asObject = dynamic_cast<const ISceneObject *>(mesh);
+        if (asObject)
+            this->_hierarchyPanel.applyViewportSelection({asObject});
+        this->_toastManager.push("Converted to mesh", "Now an editable mesh — press Tab to move its vertices.", ToastType::SUCCESS);
     }
 
     void DefaultScreen::syncVertexNavigator()
