@@ -317,11 +317,25 @@ namespace rc
             return (true);
         };
 
-        // -/+ apply a uniform multiplicative step to the current scale, going
-        // through the same setLocalScale + onSceneMutated path as the field so
-        // meshes rebuild their geometry/BVH and the viewport re-traces.
-        this->_scaleDownButton.onClick = [this, obj]() { this->applyScaleStep(obj, 1.0f / 1.1f); };
-        this->_scaleUpButton.onClick = [this, obj]() { this->applyScaleStep(obj, 1.1f); };
+        // -/+ : when a vertex is selected, grow/shrink that single vertex
+        // (onVertexScale); otherwise apply a uniform multiplicative step to the
+        // whole object's scale through the same setLocalScale + onSceneMutated
+        // path as the field, so meshes rebuild their geometry/BVH and the
+        // viewport re-traces.
+        this->_scaleDownButton.onClick = [this, obj]()
+        {
+            if (this->_showVertexEditor && this->onVertexScale)
+                this->onVertexScale(1.0f / 1.1f);
+            else
+                this->applyScaleStep(obj, 1.0f / 1.1f);
+        };
+        this->_scaleUpButton.onClick = [this, obj]()
+        {
+            if (this->_showVertexEditor && this->onVertexScale)
+                this->onVertexScale(1.1f);
+            else
+                this->applyScaleStep(obj, 1.1f);
+        };
     }
 
     void ObjectPanel::applyScaleStep(ISceneObject *object, float factor)
