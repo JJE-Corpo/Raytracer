@@ -15,11 +15,16 @@
 #define CUBE_HPP
 #include "../../common/Color.hpp"
 #include "../../common/scene/IPrimitive.hpp"
+#include "../../common/scene/IEditablePrimitive.hpp"
 #include "../../common/scene/ASceneObject.hpp"
 #include "../../common/Material.hpp"
 #include "../../common/Vector.hpp"
 #include "../../common/Matrix.hpp"
 
+#include <cstddef>
+#include <map>
+#include <utility>
+#include <vector>
 #include <float.h>
 
 namespace rc
@@ -107,7 +112,7 @@ namespace rc
         }
     };
 
-    class Cube : public ASceneObject, public IPrimitive
+    class Cube : public ASceneObject, public IPrimitive, public IEditablePrimitive
     {
         private:
             std::string _name = "Cube";
@@ -119,13 +124,34 @@ namespace rc
             const Material *_material = nullptr;
 
             bool _hidden = false;
+
+            // The 8 corners in OBJECT space (default +/- size/2). Editing a corner
+            // stores its new object-space position here and in _cornerOverrides so
+            // the deformation survives the transform and a save/reload. Rendering
+            // triangulates the 8 corners, so an unedited cube is the analytic box
+            // and an edited one is a free-form 8-vertex hull.
+            Vector3f _corners[8];
+            std::map<std::size_t, Vector3f> _cornerOverrides;
+
+            void resetCorners();
+            Matrix<4> objectToWorldMatrix() const;
+            Matrix<4> worldToObjectMatrix() const;
+
         public:
             Cube() = default;
-            Cube(std::string name, const Vector3f &center, const Vector3f &rotation, const Vector3f &scale, float size, const Material *material);
+            Cube(std::string name, const Vector3f &center, const Vector3f &rotation, const Vector3f &scale, float size, const Material *material,
+                const std::vector<std::pair<int, Vector3f>> &overrides = {});
 
             bool intersect(const Ray &ray, float tMin, float tMax, Intersection &hit) const override;
             bool isFinite() const override;
             AABB bounding_box() const override;
+
+            // IEditablePrimitive
+            std::size_t getVertexCount() const override;
+            Vector3f getVertex(std::size_t index) const override;
+            void setVertex(std::size_t index, const Vector3f &worldPos) override;
+            void onGeometryChanged() override;
+            std::map<std::size_t, Vector3f> getVertexOverrides() const override;
 
             std::string getName() const override;
             void setName(const std::string &name) override { this->_name = name; }

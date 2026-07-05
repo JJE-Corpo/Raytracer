@@ -19,7 +19,12 @@ Currently editable:
 | Primitive | Vertices |
 |---|---|
 | **Triangle** | its 3 corners |
+| **Cube** | its 8 corners; an unedited cube is the analytic box, an edited one is a free-form 8-vertex hull |
 | **Mesh** | the unique (welded) vertices of the loaded `.obj`; a shared vertex moves every incident face |
+
+Smooth/analytic primitives without vertices (sphere, plane, cylinder, cone,
+torus, tanglecube, fractal) are not vertex-editable — move/scale them with the
+Object-panel transform fields instead.
 
 ## Entering / leaving edit mode
 

@@ -115,7 +115,7 @@ namespace rc
             void onGeometryChanged() override;
 
             // Serialization: object-space edits to persist as vertex_overrides.
-            const std::map<std::size_t, Vector3f> &getVertexOverrides() const;
+            std::map<std::size_t, Vector3f> getVertexOverrides() const override;
     };
 }
 

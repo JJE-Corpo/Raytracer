@@ -20,6 +20,7 @@
 #define IEDITABLEPRIMITIVE_HPP
 
 #include <cstddef>
+#include <map>
 
 #include "../Vector.hpp"
 
@@ -46,6 +47,12 @@ namespace rc
             // primitive may now do the work it deferred during the drag, e.g.
             // rebuild a local BVH. Safe to call at any time / repeatedly.
             virtual void onGeometryChanged() = 0;
+
+            // Object-space vertex edits to persist in the scene file as a
+            // `vertex_overrides` list, keyed by vertex index. Default empty: a
+            // primitive that already round-trips its vertices another way (e.g.
+            // Triangle stores its three points directly) leaves this untouched.
+            virtual std::map<std::size_t, Vector3f> getVertexOverrides() const { return {}; }
     };
 }
 

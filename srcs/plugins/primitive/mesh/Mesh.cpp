@@ -416,7 +416,7 @@ namespace rc
         this->rebuildBvh();
     }
 
-    const std::map<std::size_t, Vector3f> &Mesh::getVertexOverrides() const
+    std::map<std::size_t, Vector3f> Mesh::getVertexOverrides() const
     {
         return (this->_overrides);
     }
