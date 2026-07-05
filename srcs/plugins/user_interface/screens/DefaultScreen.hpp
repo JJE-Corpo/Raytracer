@@ -46,6 +46,15 @@ namespace rc
             RENDERING
         };
 
+        // Which transform gizmo is active on the selected object. Chosen from the
+        // Object panel's Move / Rotate / Scale buttons (values match those: 0/1/2).
+        enum class GizmoMode
+        {
+            MOVE = 0,
+            ROTATE = 1,
+            SCALE = 2
+        };
+
         void setupSidebarSection(SidebarStack::Slot slot, const std::string &id, const std::string &title,
             Component *content, std::function<void(float, float, float)> layoutContent,
             std::function<float()> contentHeight);
@@ -126,6 +135,12 @@ namespace rc
         void beginRotationDrag(ISceneObject *object, int axis, const sf::Vector2i &mouse);
         void applyRotationDrag(const sf::Vector2i &mouse);
         void endRotationDrag();
+        // Scale gizmo: reuses the move-arrow geometry (box-tipped), dragging an
+        // axis scales the object along that axis.
+        void drawScaleGizmo(sf::RenderWindow &window) const;
+        void beginScaleDrag(ISceneObject *object, int axis, const sf::Vector2i &mouse);
+        void applyScaleDrag(const sf::Vector2i &mouse);
+        void endScaleDrag();
         void drawEditOverlay(sf::RenderWindow &window);
         void applyImport();
         void updateViewportCamera(sf::RenderWindow &window);
@@ -231,6 +246,20 @@ namespace rc
         Vector3f _rotDragObjPos = {0.0f, 0.0f, 0.0f};
         Vector3f _rotDragAxisN = {0.0f, 0.0f, 0.0f};
         Vector3f _rotDragGrabVec = {0.0f, 0.0f, 0.0f};
+
+        // Scale-gizmo drag: the object's scale for _scaleDragAxis is multiplied by
+        // how far the mouse moved along the axis relative to where it was grabbed.
+        bool _scaleDragActive = false;
+        bool _scaleDragMoved = false;
+        ISceneObject *_scaleDragTarget = nullptr;
+        int _scaleDragAxis = -1;
+        Vector3f _scaleDragStartScale = {1.0f, 1.0f, 1.0f};
+        Vector3f _scaleDragObjStart = {0.0f, 0.0f, 0.0f};
+        Vector3f _scaleDragDir = {0.0f, 0.0f, 0.0f};
+        float _scaleDragGrabT = 0.0f;
+
+        // Active transform gizmo (Move / Rotate / Scale).
+        GizmoMode _gizmoMode = GizmoMode::MOVE;
 
         // viewport
         sf::Vector2i _lastMouse;

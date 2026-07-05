@@ -51,6 +51,12 @@ namespace rc
             // vertex-editable) so they can be turned into an editable triangle mesh.
             std::function<void()> onConvertToMesh;
 
+            // Gizmo tool selector (Move / Rotate / Scale). onGizmoModeChanged is
+            // called with 0 = move, 1 = rotate, 2 = scale; setGizmoMode reflects
+            // the owner's current mode by highlighting the matching button.
+            std::function<void(int mode)> onGizmoModeChanged;
+            void setGizmoMode(int mode);
+
             void setFont(sf::Font &font) override;
             void layout(float x, float y, float width);
             void setScene(IScene *scene);
@@ -87,6 +93,11 @@ namespace rc
             VectorField _positionField;
             VectorField _rotationField;
             VectorField _scaleField;
+
+            // Gizmo tool selector row (Move / Rotate / Scale) at the top.
+            Button _gizmoMoveButton;
+            Button _gizmoRotateButton;
+            Button _gizmoScaleButton;
 
             // Vertex navigator (< Point N / total >), shown above the size row.
             sf::Text _vertexNavLabel;
