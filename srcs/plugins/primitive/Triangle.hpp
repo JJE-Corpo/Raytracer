@@ -10,6 +10,7 @@
 
     #include "../../common/Color.hpp"
     #include "../../common/scene/IPrimitive.hpp"
+    #include "../../common/scene/IEditablePrimitive.hpp"
     #include "../../common/scene/ASceneObject.hpp"
     #include "../../common/Material.hpp"
     #include "../../common/Vector.hpp"
@@ -17,7 +18,7 @@
 
 namespace rc
 {
-    class Triangle : public ASceneObject, public IPrimitive
+    class Triangle : public ASceneObject, public IPrimitive, public IEditablePrimitive
     {
         private:
             Vector3f _vertex0 = {0.0f, 0.0f, 0.0f};
@@ -61,6 +62,12 @@ namespace rc
 
             bool isHidden() const override;
             void setHidden(bool hidden) override;
+
+            // IEditablePrimitive: the three corners are the editable vertices.
+            std::size_t getVertexCount() const override;
+            Vector3f getVertex(std::size_t index) const override;
+            void setVertex(std::size_t index, const Vector3f &worldPos) override;
+            void onGeometryChanged() override;
     };
 }
 
