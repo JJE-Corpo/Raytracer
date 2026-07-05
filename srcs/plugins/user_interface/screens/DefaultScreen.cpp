@@ -1284,6 +1284,11 @@ namespace rc
     void DefaultScreen::markViewportBvhDirty()
     {
         this->_viewportBvhDirty = true;
+        // A dirty BVH always means the geometry changed, so force the viewport to
+        // re-trace: the ViewportRenderer otherwise only refreshes on a camera or
+        // selection change and would keep showing the cached image (e.g. after
+        // adding or deleting an object) until the camera moved.
+        this->forceViewportRetrace();
     }
 
     void DefaultScreen::applyImport()
