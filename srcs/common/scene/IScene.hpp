@@ -31,6 +31,12 @@ namespace rc
             // untouched.
             virtual ISceneObject *addGroup() = 0;
             virtual void reparent(ISceneObject *child, ISceneObject *newParent, int index = -1) = 0;
+            // Remove `object` from the scene and free it. A group takes its whole
+            // subtree with it. The object is detached from its parent (or the
+            // root list) first. A no-op when `object` is null or no longer owned
+            // by the scene, so deleting a group and one of its descendants in the
+            // same batch is safe in any order. The caller must rebuild the BVH.
+            virtual void removeObject(ISceneObject *object) = 0;
             virtual Material *getMaterial(const std::string &name) = 0;
             virtual Material *createMaterial(const std::string &name) = 0;
             virtual Material *createMaterial() = 0;
