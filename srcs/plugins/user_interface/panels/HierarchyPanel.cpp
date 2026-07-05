@@ -163,7 +163,11 @@ namespace rc
             item.hovered = false;
             item.bounds = {itemX, y, itemW, ITEM_HEIGHT};
             const float buttonSize = 10.f;
-            item.buttonBounds = {item.bounds.left + item.bounds.width - buttonSize - 6.f, item.bounds.top + (item.bounds.height - buttonSize) / 2.f, buttonSize, buttonSize};
+            const float buttonY = item.bounds.top + (item.bounds.height - buttonSize) / 2.f;
+            // Delete button occupies the right-most slot on every object row; the
+            // hide (eye) button, drawn only for leaves, sits just to its left.
+            item.deleteButtonBounds = {item.bounds.left + item.bounds.width - buttonSize - 6.f, buttonY, buttonSize, buttonSize};
+            item.buttonBounds = {item.deleteButtonBounds.left - buttonSize - 6.f, buttonY, buttonSize, buttonSize};
             item.hidden = (object != nullptr) && object->isHidden();
             item.expandable = (type == ItemType::GROUP);
             if (item.expandable)
@@ -310,6 +314,26 @@ namespace rc
                 btn.setOutlineColor(theme::TEXT_DIM);
                 btn.setOutlineThickness(1.f);
                 target.draw(btn, states);
+            }
+
+            // Delete affordance: a small "x" shown only on the active row (hover
+            // or selected) so it stays out of the way and is hard to hit by
+            // accident. Every object row has one; the camera row (no object) does
+            // not.
+            if (item.object && (item.hovered || item.selected))
+            {
+                const sf::FloatRect &d = item.deleteButtonBounds;
+                const sf::Vector2f center(d.left + d.width / 2.f, d.top + d.height / 2.f);
+                const sf::Color color = item.hovered ? sf::Color(230, 110, 110) : sf::Color(170, 90, 90);
+                for (float angle : {45.f, -45.f})
+                {
+                    sf::RectangleShape bar({d.width, 2.f});
+                    bar.setOrigin(d.width / 2.f, 1.f);
+                    bar.setPosition(center);
+                    bar.setRotation(angle);
+                    bar.setFillColor(color);
+                    target.draw(bar, states);
+                }
             }
         }
 
@@ -511,6 +535,16 @@ namespace rc
             return (true);
         }
 
+        // Delete / Suppr removes the current selection. Only reaches the panel
+        // while the cursor is over it; DefaultScreen handles the same key as a
+        // fallback for the rest of the window.
+        if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Delete)
+        {
+            const bool had_selection = !this->_selection.empty();
+            this->deleteSelection();
+            return (had_selection);
+        }
+
         // Drag tracking: promote a held press into a drag past the threshold,
         // then follow the cursor to update the drop target.
         if (event.type == sf::Event::MouseMoved)
@@ -588,6 +622,16 @@ namespace rc
                     return (true);
                 }
                 this->_onItemHideRequest(item.object);
+                return (true);
+            }
+            if (item.object && item.deleteButtonBounds.contains(static_cast<sf::Vector2f>(mouse)))
+            {
+                // Deleting a selected row removes the whole selection; deleting an
+                // unselected row removes just that one.
+                if (this->isSelected(item.object))
+                    this->deleteObjects(this->_selection);
+                else
+                    this->deleteObjects({item.object});
                 return (true);
             }
             if (!item.selectable)
@@ -686,6 +730,50 @@ namespace rc
         // The camera can't take part in an object range, so it clears the pivot.
         this->_selectionAnchor = nullptr;
         this->_selectionLead = nullptr;
+    }
+
+    void HierarchyPanel::deleteObjects(const std::vector<const ISceneObject *> &objects)
+    {
+        if (objects.empty() || !this->_onItemDeleteRequest)
+            return;
+
+        // Fire once per object, but skip any object already covered by an
+        // ancestor in the same batch: deleting a group frees its whole subtree,
+        // so firing on a nested selected child too would read/free it twice.
+        for (const ISceneObject *object : objects)
+        {
+            if (!object)
+                continue;
+            bool coveredByAncestor = false;
+            for (const ISceneObject *other : objects)
+                if (other && other != object && this->isAncestorOf(other, object))
+                {
+                    coveredByAncestor = true;
+                    break;
+                }
+            if (!coveredByAncestor)
+                this->_onItemDeleteRequest(object);
+        }
+
+        // A group delete frees its descendants too, so any of these transient
+        // pointers may now dangle - and _selection is dereferenced by tryCast().
+        // Reset the lot rather than track which objects survived; the row list is
+        // rebuilt from the scene on the next layout().
+        this->_selection.clear();
+        this->_cameraSelected = false;
+        this->_selectionAnchor = nullptr;
+        this->_selectionLead = nullptr;
+        this->_lastClickedObject = nullptr;
+        this->_dragObject = nullptr;
+        this->_dragActive = false;
+        if (this->_renamingObject)
+            this->cancelRename();
+        this->_selectionChanged = true;
+    }
+
+    void HierarchyPanel::deleteSelection()
+    {
+        this->deleteObjects(this->_selection);
     }
 
     // Selects every selectable object row between the anchor and `target`
