@@ -108,6 +108,12 @@ rc::PrimitiveBuilder &rc::PrimitiveBuilder::withFile(const std::string &file)
     return (*this);
 }
 
+rc::PrimitiveBuilder &rc::PrimitiveBuilder::withVertexOverrides(const std::vector<std::pair<int, Vector3f>> &overrides)
+{
+    this->_vertexOverrides = overrides;
+    return (*this);
+}
+
 rc::PrimitiveBuilder &rc::PrimitiveBuilder::withMaterial(const Material *material)
 {
     this->_material = material;
@@ -141,6 +147,6 @@ rc::IPrimitive *rc::PrimitiveBuilder::build() const
     if (this->_type == PRIMITIVE_TORUS)
         return (new Torus(this->_name, this->_position, this->_rotation, static_cast<float>(this->_radius), this->_height, this->_material));
     if (this->_type == PRIMITIVE_MESH)
-        return (new Mesh(this->_name, this->_file, this->_position, this->_rotation, this->_scale, this->_material));
+        return (new Mesh(this->_name, this->_file, this->_position, this->_rotation, this->_scale, this->_material, this->_vertexOverrides));
     return (nullptr);
 }

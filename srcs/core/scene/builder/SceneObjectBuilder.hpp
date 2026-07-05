@@ -1,6 +1,9 @@
 #ifndef SCENEOBJECTBUILDER_HPP
 #define SCENEOBJECTBUILDER_HPP
 
+#include <utility>
+#include <vector>
+
 #include "LightBuilder.hpp"
 #include "PrimitiveBuilder.hpp"
 
@@ -46,6 +49,7 @@ namespace rc
             SceneObjectBuilder &withAxis(const Axis &axis);
             SceneObjectBuilder &withSize(float size);
             SceneObjectBuilder &withFile(const std::string &file);
+            SceneObjectBuilder &withVertexOverrides(const std::vector<std::pair<int, Vector3f>> &overrides);
             SceneObjectBuilder &withMaterial(const Material *material);
             SceneObjectBuilder &withPower(float power);
             SceneObjectBuilder &withIterations(int iterations);

@@ -3,6 +3,8 @@
 #include <fstream>
 #include <iostream>
 
+#include "../../plugins/primitive/mesh/Mesh.hpp"
+
 namespace rc
 {
     using json = nlohmann::json;
@@ -92,6 +94,25 @@ namespace rc
 
         for (const auto &property : primitive->getProperties())
             writeProperty(object, property.first, property.second.first, property.second.second);
+
+        // A mesh persists its interactive vertex edits as object-space overrides
+        // applied on top of the untouched .obj file (see the mesh docs).
+        if (const Mesh *mesh = dynamic_cast<const Mesh *>(primitive))
+        {
+            const auto &overrides = mesh->getVertexOverrides();
+            if (!overrides.empty())
+            {
+                nlohmann::json overrideArray = nlohmann::json::array();
+                for (const auto &entry : overrides)
+                {
+                    nlohmann::json overrideEntry;
+                    overrideEntry["index"] = static_cast<int>(entry.first);
+                    overrideEntry["position"] = vector3fJson(entry.second);
+                    overrideArray.push_back(overrideEntry);
+                }
+                object["vertex_overrides"] = overrideArray;
+            }
+        }
 
         // Nested objects serialize their LOCAL transform so the hierarchy round-
         // trips. Roots keep the world values getProperties() wrote above (local ==

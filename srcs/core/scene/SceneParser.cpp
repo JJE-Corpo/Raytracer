@@ -10,6 +10,8 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <utility>
+#include <vector>
 
 #include "Scene.hpp"
 #include "../../common/Color.hpp"
@@ -328,6 +330,18 @@ namespace rc
             {"height",     [](SceneObjectBuilder &b, const json &v) { b.withHeight(asFloat(v, "height")); }},
             {"size",       [](SceneObjectBuilder &b, const json &v) { b.withSize(asFloat(v, "size")); }},
             {"file",       [](SceneObjectBuilder &b, const json &v) { b.withFile(asString(v, "file")); }},
+            {"vertex_overrides", [](SceneObjectBuilder &b, const json &v) {
+                if (!v.is_array())
+                    throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "vertex_overrides must be a list");
+                std::vector<std::pair<int, Vector3f>> overrides;
+                for (const auto &entry : v)
+                {
+                    if (!entry.contains("index") || !entry.contains("position"))
+                        throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "vertex override needs an index and a position");
+                    overrides.emplace_back(asInt(entry["index"], "index"), parseVector3f(entry["position"]));
+                }
+                b.withVertexOverrides(overrides);
+            }},
             {"power",      [](SceneObjectBuilder &b, const json &v) { b.withPower(asFloat(v, "power")); }},
             {"threshold",  [](SceneObjectBuilder &b, const json &v) { b.withThreshold(asFloat(v, "threshold")); }},
             {"intensity",  [](SceneObjectBuilder &b, const json &v) { b.withIntensity(asFloat(v, "intensity")); }},
