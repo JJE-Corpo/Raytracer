@@ -61,6 +61,23 @@ namespace rc
         void applyImport();
         void updateViewportCamera(sf::RenderWindow &window);
 
+        // Keyboard shortcuts (Ctrl+S save, Ctrl+Z undo, Ctrl+Shift+Z redo).
+        // handleShortcut consumes the matching key event and returns true so the
+        // rest of handleEvent (routing, fly keys) is skipped for it.
+        bool handleShortcut(const sf::Event &event);
+        // Save the current scene (Ctrl+S and the Scene > Save menu item both
+        // funnel here): overwrites the current file, or opens the save dialog
+        // when the scene has no path yet.
+        void triggerSave();
+        void undoShortcut();
+        void redoShortcut();
+        // Re-sync the UI after undo/redo swapped the scene object out: the old
+        // selection/hover pointers are dropped and the viewport rebuilt.
+        void onSceneRestored();
+        // True while a component (a focused text field, an open menu/pop-up) owns
+        // the keyboard, so global shortcuts must not fire under it.
+        bool isKeyboardCaptured();
+
         // Object under the cursor in the viewport (light gizmo first, then a ray
         // cast), or nullptr. Shared by the right-click context menu.
         const ISceneObject *pickViewportObject(const sf::Vector2i &mouse);
@@ -92,6 +109,11 @@ namespace rc
         ViewMode _viewMode = ViewMode::VIEWPORT;
         bool _viewportBvhDirty = true;
         ISceneRenderer *_activeRenderer = nullptr;
+
+        // Tracks which scene the undo/redo baseline belongs to. When the live
+        // scene pointer changes for a reason other than our own undo/redo (a
+        // load, an Open, a config reload), the history is reset to that scene.
+        IScene *_lastHistoryScene = nullptr;
 
         MenuBar _menuBar;
 
