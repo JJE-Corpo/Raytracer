@@ -64,7 +64,7 @@ Final pixel color is assembled from:
 
 ### 7. Output
 
-After all pixels are computed, the image buffer is exported to `render.ppm`.
+After all pixels are computed, the image buffer is exported to `render.png`.
 
 ## Runtime Integration Notes
 
