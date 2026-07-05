@@ -13,6 +13,9 @@
 #include <functional>
 #include <string>
 
+#include <SFML/System/Clock.hpp>
+#include <SFML/Window/Keyboard.hpp>
+
 #include "AScreen.hpp"
 #include "../components/menu/MenuBar.hpp"
 #include "../components/ResizeHandle.hpp"
@@ -55,6 +58,13 @@ namespace rc
         void syncSelectionToRenderer();
         void markViewportBvhDirty();
         void updateViewportCamera(sf::RenderWindow &window);
+
+        // Latch the fly-camera key state from window key events. Done at event
+        // time (before the frame's render) so a slow render frame can never make
+        // the once-per-frame poll miss a press or release.
+        void trackFlyKeys(const sf::Event &event, const sf::Vector2i &mouse);
+        void setFlyKey(sf::Keyboard::Key key, bool pressed);
+        void resetFlyKeys();
 
         // True when the pointer currently "belongs to" the viewport, so the
         // camera fly/look controls may act. See the definition for the exact
@@ -99,7 +109,19 @@ namespace rc
         // viewport
         sf::Vector2i _lastMouse;
         bool _rightMouseHeld = false;
-        float _cameraSpeed = 5.0f;
+        // Fly-camera speed in world units per second (integrated with real frame
+        // time so motion is smooth and independent of frame rate / render cost).
+        float _cameraSpeed = 6.0f;
+        sf::Clock _frameClock;
+        // Held fly keys, latched from key events (see trackFlyKeys). Movement is
+        // driven by these rather than by polling, so a press captured over the
+        // viewport keeps moving the camera while held even if the cursor drifts.
+        bool _keyForward = false;
+        bool _keyBack = false;
+        bool _keyLeft = false;
+        bool _keyRight = false;
+        bool _keyUp = false;
+        bool _keyDown = false;
 
         public:
             // UserInterface wires this to hand a just-joined cluster client over
