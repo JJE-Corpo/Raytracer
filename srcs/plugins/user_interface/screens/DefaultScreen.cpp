@@ -694,6 +694,9 @@ namespace rc
         if (this->_activeRenderer)
             this->drawRenderer(window, this->_activeRenderer);
 
+        if (this->_movementMode && this->_viewMode == ViewMode::VIEWPORT)
+            this->drawMovementIndicator(window);
+
         this->_menuBar.layout(static_cast<float>(window.getSize().x));
         window.draw(this->_menuBar);
 
@@ -710,6 +713,49 @@ namespace rc
         this->_rendererPanel.layout(this->_sidebarWidth, MENU_HEIGHT, static_cast<float>(windowSize.x) - this->_sidebarWidth, static_cast<float>(windowSize.y) - MENU_HEIGHT);
         this->_rendererPanel.updateRender(renderer->getRender());
         window.draw(this->_rendererPanel);
+    }
+
+    void DefaultScreen::drawMovementIndicator(sf::RenderWindow &window)
+    {
+        if (!this->_font)
+            return;
+
+        sf::Text label;
+        label.setFont(*this->_font);
+        label.setString("MOVEMENT MODE");
+        label.setCharacterSize(13);
+        label.setFillColor(theme::TEXT_WHITE);
+
+        // Badge geometry: a fixed height keeps the text and status dot vertically
+        // centred (SFML text bounds carry a baseline offset), and the width grows
+        // to fit the label.
+        const float padX = 12.0f;
+        const float dot = 8.0f;
+        const float gap = 8.0f;
+        const float badgeH = 26.0f;
+        const float badgeW = padX + dot + gap + label.getLocalBounds().width + padX;
+        const float margin = 14.0f;
+
+        // Anchor to the bottom-left of the viewport (right of the sidebar, above
+        // the window's bottom edge) - a conventional, unobtrusive HUD corner.
+        const sf::Vector2u size = window.getSize();
+        const float x = this->_sidebarWidth + margin;
+        const float y = static_cast<float>(size.y) - margin - badgeH;
+
+        sf::RectangleShape badge({badgeW, badgeH});
+        badge.setPosition(x, y);
+        badge.setFillColor(theme::withAlpha(theme::CHECKED, 235));
+        badge.setOutlineThickness(1.0f);
+        badge.setOutlineColor(theme::OUTLINE);
+        window.draw(badge);
+
+        sf::CircleShape statusDot(dot / 2.0f);
+        statusDot.setPosition(x + padX, y + (badgeH - dot) / 2.0f);
+        statusDot.setFillColor(theme::TEXT_WHITE);
+        window.draw(statusDot);
+
+        label.setPosition(x + padX + dot + gap, y + 5.0f);
+        window.draw(label);
     }
 
     void DefaultScreen::syncSelectionToRenderer()
@@ -1009,6 +1055,15 @@ namespace rc
             }
         }
 
+        // 'M' toggles movement mode, which gates all camera controls (the
+        // right-drag look and the ZQSD fly keys). Only fires in the viewport and
+        // never while a text field / menu owns the keyboard, so typing 'm' into a
+        // field can't flip the mode.
+        if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::M
+            && !event.key.control && this->_viewMode == ViewMode::VIEWPORT
+            && !this->isKeyboardCaptured())
+            this->toggleMovementMode();
+
         // Latch fly-camera keys here, while the event is fresh and before the
         // frame's (possibly slow) render, so presses/releases are never missed.
         this->trackFlyKeys(event, mouse);
@@ -1116,7 +1171,7 @@ namespace rc
         ICamera &camera = scene->getCamera();
         const sf::Vector2i mouse = sf::Mouse::getPosition(window);
 
-        if (this->_rightMouseHeld)
+        if (this->_movementMode && this->_rightMouseHeld)
         {
             sf::Vector2i delta = mouse - this->_lastMouse;
             this->_lastMouse = mouse;
@@ -1185,13 +1240,15 @@ namespace rc
             return;
         }
         // Releases always count, so a key can never stick regardless of where the
-        // cursor is; presses only start a fly while the viewport owns input, so
-        // typing into a focused field or panel never drives the camera. A press
-        // with Ctrl held is a shortcut (Ctrl+S/Z), not a fly key, so ignore it -
-        // otherwise Ctrl+Z would also nudge the camera forward (Z == forward).
+        // cursor is; presses only start a fly while movement mode is on and the
+        // viewport owns input, so typing into a focused field or panel never
+        // drives the camera. A press with Ctrl held is a shortcut (Ctrl+S/Z), not
+        // a fly key, so ignore it - otherwise Ctrl+Z would also nudge the camera
+        // forward (Z == forward).
         if (event.type == sf::Event::KeyReleased)
             this->setFlyKey(event.key.code, false);
         else if (event.type == sf::Event::KeyPressed && !event.key.control &&
+                 this->_movementMode &&
                  (this->_rightMouseHeld || this->isViewportCaptured(mouse)))
             this->setFlyKey(event.key.code, true);
     }
@@ -1218,6 +1275,21 @@ namespace rc
         this->_keyRight = false;
         this->_keyUp = false;
         this->_keyDown = false;
+    }
+
+    void DefaultScreen::toggleMovementMode()
+    {
+        this->_movementMode = !this->_movementMode;
+        // Drop any keys latched while flying so releasing the mode instantly
+        // stops the camera instead of coasting until the next physical key-up.
+        if (!this->_movementMode)
+            this->resetFlyKeys();
+        if (this->_movementMode)
+            this->_toastManager.push("Movement mode on",
+                "Right-drag to look, Z/Q/S/D + Space/Shift to fly.", ToastType::INFO);
+        else
+            this->_toastManager.push("Movement mode off",
+                "Camera controls are disabled.", ToastType::INFO);
     }
 
     void DefaultScreen::prepareFrame()

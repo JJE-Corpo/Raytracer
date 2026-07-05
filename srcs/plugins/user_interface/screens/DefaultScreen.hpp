@@ -52,6 +52,10 @@ namespace rc
         void layoutSidebarResize(const sf::RenderWindow &window);
         void refreshSidebarVisibility();
         void drawRenderer(sf::RenderWindow &window, ISceneRenderer *renderer);
+        // Persistent badge in the viewport's bottom-left corner, drawn only while
+        // movement mode is on, so the active camera controls are always visible
+        // (the toggle toast is transient).
+        void drawMovementIndicator(sf::RenderWindow &window);
 
         void updateSelectionFromClick(const sf::Vector2i &mouse);
         void updateHoverFromMouse(const sf::Vector2i &mouse);
@@ -97,6 +101,11 @@ namespace rc
         void trackFlyKeys(const sf::Event &event, const sf::Vector2i &mouse);
         void setFlyKey(sf::Keyboard::Key key, bool pressed);
         void resetFlyKeys();
+
+        // Flip movement mode (bound to 'M'). Only while it is on do the right-drag
+        // look and the ZQSD fly keys drive the camera; turning it off also drops
+        // any held fly keys so the camera can't keep coasting.
+        void toggleMovementMode();
 
         // True when the pointer currently "belongs to" the viewport, so the
         // camera fly/look controls may act. See the definition for the exact
@@ -170,6 +179,10 @@ namespace rc
         bool _keyRight = false;
         bool _keyUp = false;
         bool _keyDown = false;
+        // Camera controls (right-drag look + ZQSD fly) only act while this is on;
+        // toggled with the 'M' key. Off by default so plain clicks/keys edit the
+        // scene without nudging the camera.
+        bool _movementMode = false;
 
         public:
             // UserInterface wires this to hand a just-joined cluster client over
