@@ -6,9 +6,13 @@
 #include "../../../common/scene/ILight.hpp"
 #include "../../../common/Intersection.hpp"
 #include "../../../common/scene/IPrimitive.hpp"
+#include "../../../common/scene/IEditablePrimitive.hpp"
 #include "../../../common/ISelectionAwareRenderer.hpp"
 #include "../../../common/scene/IScene.hpp"
+#include "../../../common/Axis.hpp"
 #include <algorithm>
+#include <cmath>
+#include <cstddef>
 #include <limits>
 
 #include "../EventRouter.hpp"
@@ -591,6 +595,22 @@ namespace rc
         {
             this->markViewportBvhDirty();
         };
+        // Keyboard edit of the selected vertex's world coordinates, kept in sync
+        // with dragging. Applies straight onto the editable primitive.
+        this->_objectPanel.onVertexEdit = [this](Axis axis, float value) -> bool
+        {
+            if (!this->_editMode || !this->_editTarget || this->_selectedVertex < 0)
+                return (false);
+            Vector3f vertex = this->_editTarget->getVertex(static_cast<std::size_t>(this->_selectedVertex));
+            if (axis == Axis::X) vertex.x = value;
+            else if (axis == Axis::Y) vertex.y = value;
+            else if (axis == Axis::Z) vertex.z = value;
+            this->_editTarget->setVertex(static_cast<std::size_t>(this->_selectedVertex), vertex);
+            this->_editTarget->onGeometryChanged();
+            this->markViewportBvhDirty();
+            this->forceViewportRetrace();
+            return (true);
+        };
         this->_materialPanel.setFont(*this->_font);
 
         this->_sidebarResize.onResize = [this](float width)
@@ -674,6 +694,13 @@ namespace rc
         this->layoutSidebarResize(window);
 
         this->_hierarchyPanel.setScene(this->_coreAccess ? this->_coreAccess->getScene() : nullptr);
+
+        // Leave edit mode if the selection changed away from the edited object
+        // (hierarchy reselection, deletion, multi-select). Guards against acting
+        // on a stale/freed _editTarget.
+        if (this->_editMode && this->editableFromSelection() != this->_editTarget)
+            this->exitEditMode();
+
         this->refreshSidebarVisibility();
         this->_sidebar.layout(this->_sidebarWidth, MENU_HEIGHT, static_cast<float>(window.getSize().y));
         this->_sidebar.update(mouse);
@@ -720,6 +747,9 @@ namespace rc
 
         if (this->_activeRenderer)
             this->drawRenderer(window, this->_activeRenderer);
+
+        if (this->_viewMode == ViewMode::VIEWPORT)
+            this->drawEditOverlay(window);
 
         this->_menuBar.layout(static_cast<float>(window.getSize().x));
         window.draw(this->_menuBar);
@@ -890,11 +920,44 @@ namespace rc
         // frame's (possibly slow) render, so presses/releases are never missed.
         this->trackFlyKeys(event, mouse);
 
+        const bool viewportMode = this->_viewMode == ViewMode::VIEWPORT;
+
+        // Vertex edit mode: keep driving an in-progress drag no matter what the
+        // cursor is now over, and end it on release. Handled before component
+        // routing so a fast drag that strays onto a panel is never dropped.
+        if (this->_vertexDragActive)
+        {
+            if (event.type == sf::Event::MouseMoved)
+            {
+                this->applyVertexDrag(mouse);
+                return;
+            }
+            if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left)
+            {
+                this->endVertexDrag();
+                return;
+            }
+        }
+
+        // Tab toggles vertex edit mode for a selected editable primitive;
+        // Escape leaves it. Suppressed while a field/pop-up owns the input.
+        if (viewportMode && event.type == sf::Event::KeyPressed && !this->anyUiCapturing())
+        {
+            if (event.key.code == sf::Keyboard::Tab)
+            {
+                this->toggleEditMode();
+                return;
+            }
+            if (event.key.code == sf::Keyboard::Escape && this->_editMode)
+            {
+                this->exitEditMode();
+                return;
+            }
+        }
+
         // Build the set of top-level components that are live in the current view
         // mode, then let the router pick the single best one for this event
         // (menu bar and open pop-ups win over the panels and the viewport).
-        const bool viewportMode = this->_viewMode == ViewMode::VIEWPORT;
-
         std::vector<Component *> candidates = {&this->_menuBar, &this->_rendererPanel};
 
         if (viewportMode)
@@ -929,17 +992,58 @@ namespace rc
             event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left)
         {
             if (mouse.x > this->_sidebarWidth && mouse.y >= static_cast<int>(MENU_HEIGHT))
-                this->updateSelectionFromClick(mouse);
+            {
+                if (this->_editMode)
+                {
+                    // In edit mode a left click grabs the nearest vertex handle
+                    // (object selection is intentionally disabled); a miss just
+                    // clears the vertex selection.
+                    const int vertex = this->pickVertexHandle(mouse);
+                    if (vertex >= 0)
+                        this->beginVertexDrag(vertex);
+                    else
+                    {
+                        this->_selectedVertex = -1;
+                        this->syncVertexEditorField();
+                    }
+                }
+                else
+                {
+                    this->updateSelectionFromClick(mouse);
+
+                    // Double-click an editable primitive to jump into edit mode.
+                    const IPrimitive *prim = this->_hierarchyPanel.tryCast<const IPrimitive>();
+                    const ISceneObject *obj = this->_hierarchyPanel.tryCast<const ISceneObject>();
+                    IEditablePrimitive *editable = prim ? dynamic_cast<IEditablePrimitive *>(const_cast<IPrimitive *>(prim)) : nullptr;
+                    if (editable && obj && obj == this->_editClickObject
+                        && this->_editClickClock.getElapsedTime().asMilliseconds() < 350)
+                        this->enterEditMode(obj, editable);
+                    this->_editClickObject = obj;
+                    this->_editClickClock.restart();
+                }
+            }
         }
 
-        // Track what's under the cursor so the viewport can highlight it, the
-        // same way the click fallback above picks the object to select.
+        // Track what's under the cursor so the viewport can highlight it. In edit
+        // mode this highlights the nearest vertex handle instead of an object.
         if (event.type == sf::Event::MouseMoved || event.type == sf::Event::MouseLeft)
         {
             if (viewportMode && consumer == nullptr && event.type == sf::Event::MouseMoved)
-                this->updateHoverFromMouse(mouse);
+            {
+                if (this->_editMode)
+                {
+                    this->_hoverVertex = this->pickVertexHandle(mouse);
+                    this->clearHover();
+                }
+                else
+                    this->updateHoverFromMouse(mouse);
+            }
             else
+            {
+                if (this->_editMode)
+                    this->_hoverVertex = -1;
                 this->clearHover();
+            }
         }
     }
 
@@ -1047,7 +1151,7 @@ namespace rc
         // typing into a focused field or panel never drives the camera.
         if (event.type == sf::Event::KeyReleased)
             this->setFlyKey(event.key.code, false);
-        else if (event.type == sf::Event::KeyPressed &&
+        else if (event.type == sf::Event::KeyPressed && !this->_vertexDragActive &&
                  (this->_rightMouseHeld || this->isViewportCaptured(mouse)))
             this->setFlyKey(event.key.code, true);
     }
@@ -1164,5 +1268,261 @@ namespace rc
         this->_joinClusterWindow.destroy();
         this->_exploratorWindow.destroy();
         this->_loadWindow.destroy();
+    }
+
+    bool DefaultScreen::anyUiCapturing()
+    {
+        if (this->_menuBar.isCapturing())
+            return (true);
+        std::vector<Component *> components;
+        this->_sidebar.collectComponents(components);
+        for (Component *component : components)
+            if (component && component->isCapturing())
+                return (true);
+        return (false);
+    }
+
+    IEditablePrimitive *DefaultScreen::editableFromSelection() const
+    {
+        // tryCast is non-const; the panel is only inspected here.
+        HierarchyPanel &panel = const_cast<HierarchyPanel &>(this->_hierarchyPanel);
+        const IPrimitive *primitive = panel.tryCast<const IPrimitive>();
+        if (!primitive)
+            return (nullptr);
+        return (dynamic_cast<IEditablePrimitive *>(const_cast<IPrimitive *>(primitive)));
+    }
+
+    void DefaultScreen::toggleEditMode()
+    {
+        if (this->_editMode)
+        {
+            this->exitEditMode();
+            return;
+        }
+        IEditablePrimitive *editable = this->editableFromSelection();
+        if (!editable)
+        {
+            this->_toastManager.push("Nothing to edit", "Select a single Triangle or Mesh to edit its vertices.", ToastType::INFO);
+            return;
+        }
+        const ISceneObject *object = const_cast<HierarchyPanel &>(this->_hierarchyPanel).tryCast<const ISceneObject>();
+        this->enterEditMode(object, editable);
+    }
+
+    void DefaultScreen::enterEditMode(const ISceneObject *object, IEditablePrimitive *editable)
+    {
+        this->_editMode = true;
+        this->_editObject = object;
+        this->_editTarget = editable;
+        this->_selectedVertex = -1;
+        this->_hoverVertex = -1;
+        this->_vertexDragActive = false;
+        this->resetFlyKeys();
+        this->clearHover();
+        this->_objectPanel.setVertexEditor(false, {0.0f, 0.0f, 0.0f});
+        const std::string name = object ? object->getName() : "object";
+        this->_toastManager.push("Edit mode — " + name, "Drag a handle to move a vertex. X/Y/Z locks an axis. Tab/Esc to exit.", ToastType::INFO);
+    }
+
+    void DefaultScreen::exitEditMode()
+    {
+        // Never calls into _editTarget here: the selection may have changed
+        // because the object was deleted, so the pointer can already be stale.
+        const bool wasEditing = this->_editMode;
+        this->_editMode = false;
+        this->_editObject = nullptr;
+        this->_editTarget = nullptr;
+        this->_selectedVertex = -1;
+        this->_hoverVertex = -1;
+        this->_vertexDragActive = false;
+        this->_objectPanel.setVertexEditor(false, {0.0f, 0.0f, 0.0f});
+        if (wasEditing)
+            this->_toastManager.push("Edit mode off", "Back to object mode.", ToastType::INFO);
+    }
+
+    bool DefaultScreen::vertexHandleWindowPos(std::size_t index, sf::Vector2f &out) const
+    {
+        if (!this->_coreAccess || !this->_editTarget)
+            return (false);
+        IScene *scene = this->_coreAccess->getScene();
+        if (!scene)
+            return (false);
+        const ICamera &camera = scene->getCamera();
+        const Vector2i resolution = camera.getResolution();
+        sf::Vector2i pixel;
+        if (!ViewportHelper::projectToPixel(camera, this->_editTarget->getVertex(index), resolution.x, resolution.y, pixel))
+            return (false);
+        const sf::IntRect &bounds = this->_rendererPanel.viewportBounds;
+        const float scale = this->_rendererPanel.viewportScale;
+        out.x = static_cast<float>(bounds.left) + static_cast<float>(pixel.x) * scale;
+        out.y = static_cast<float>(bounds.top) + static_cast<float>(pixel.y) * scale;
+        return (true);
+    }
+
+    int DefaultScreen::pickVertexHandle(const sf::Vector2i &mouse) const
+    {
+        if (!this->_editTarget || !this->_coreAccess || !this->_coreAccess->getScene())
+            return (-1);
+        const Vector3f cameraPos = this->_coreAccess->getScene()->getCamera().getPosition();
+        const float pickRadius = 9.0f;
+        const float pickRadiusSq = pickRadius * pickRadius;
+
+        int best = -1;
+        float bestDistSq = pickRadiusSq;
+        float bestCameraDist = 0.0f;
+        const std::size_t count = this->_editTarget->getVertexCount();
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            sf::Vector2f handle;
+            if (!this->vertexHandleWindowPos(i, handle))
+                continue;
+            const float dx = handle.x - static_cast<float>(mouse.x);
+            const float dy = handle.y - static_cast<float>(mouse.y);
+            const float distSq = dx * dx + dy * dy;
+            if (distSq > pickRadiusSq)
+                continue;
+            const float cameraDist = static_cast<float>((this->_editTarget->getVertex(i) - cameraPos).length());
+            // Nearest to the cursor wins; ties (overlapping handles) go to the
+            // vertex closest to the camera.
+            if (best == -1 || distSq < bestDistSq - 0.5f
+                || (std::fabs(distSq - bestDistSq) <= 0.5f && cameraDist < bestCameraDist))
+            {
+                best = static_cast<int>(i);
+                bestDistSq = distSq;
+                bestCameraDist = cameraDist;
+            }
+        }
+        return (best);
+    }
+
+    void DefaultScreen::beginVertexDrag(int index)
+    {
+        this->_selectedVertex = index;
+        this->_vertexDragActive = true;
+        this->_dragStartWorld = this->_editTarget->getVertex(static_cast<std::size_t>(index));
+        this->resetFlyKeys();
+        this->syncVertexEditorField();
+    }
+
+    void DefaultScreen::applyVertexDrag(const sf::Vector2i &mouse)
+    {
+        if (!this->_editTarget || this->_selectedVertex < 0 || !this->_coreAccess)
+            return;
+        IScene *scene = this->_coreAccess->getScene();
+        if (!scene)
+            return;
+        const ICamera &camera = scene->getCamera();
+
+        sf::Vector2i pixel;
+        if (!this->_rendererPanel.getViewportPixel(mouse, pixel))
+            return;
+        const Vector2i resolution = camera.getResolution();
+        const Ray ray = ViewportHelper::rayThroughPixel(camera, pixel.x, pixel.y, resolution.x, resolution.y);
+
+        // Drag in the plane through the vertex's start position, parallel to the
+        // image plane (normal = camera forward) -- the intuitive default.
+        const Vector3f normal = camera.getForward();
+        const float denom = dot(ray.direction, normal);
+        if (std::fabs(denom) < 1e-6f)
+            return;
+        const float t = dot(this->_dragStartWorld - ray.origin, normal) / denom;
+        if (t <= 0.0f)
+            return;
+        Vector3f world = ray.origin + ray.direction * t;
+
+        // Optional world-axis lock while X, Y or Z is held.
+        Vector3f axis = {0.0f, 0.0f, 0.0f};
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::X))
+            axis = {1.0f, 0.0f, 0.0f};
+        else if (sf::Keyboard::isKeyPressed(sf::Keyboard::Y))
+            axis = {0.0f, 1.0f, 0.0f};
+        else if (sf::Keyboard::isKeyPressed(sf::Keyboard::Z))
+            axis = {0.0f, 0.0f, 1.0f};
+        if (axis.x != 0.0f || axis.y != 0.0f || axis.z != 0.0f)
+        {
+            const Vector3f delta = world - this->_dragStartWorld;
+            world = this->_dragStartWorld + axis * dot(delta, axis);
+        }
+
+        this->_editTarget->setVertex(static_cast<std::size_t>(this->_selectedVertex), world);
+        this->markViewportBvhDirty();
+        this->forceViewportRetrace();
+        this->syncVertexEditorField();
+    }
+
+    void DefaultScreen::endVertexDrag()
+    {
+        if (!this->_vertexDragActive)
+            return;
+        this->_vertexDragActive = false;
+        if (this->_editTarget)
+            this->_editTarget->onGeometryChanged();
+        this->markViewportBvhDirty();
+        this->forceViewportRetrace();
+        this->syncVertexEditorField();
+    }
+
+    void DefaultScreen::forceViewportRetrace()
+    {
+        if (!this->_coreAccess)
+            return;
+        auto *selection_renderer = dynamic_cast<ISelectionAwareRenderer *>(this->_coreAccess->getViewportRenderer());
+        if (selection_renderer)
+            selection_renderer->setSelection(this->_hierarchyPanel.getSelection());
+    }
+
+    void DefaultScreen::syncVertexEditorField()
+    {
+        if (this->_editMode && this->_editTarget && this->_selectedVertex >= 0)
+            this->_objectPanel.setVertexEditor(true, this->_editTarget->getVertex(static_cast<std::size_t>(this->_selectedVertex)));
+        else
+            this->_objectPanel.setVertexEditor(false, {0.0f, 0.0f, 0.0f});
+    }
+
+    void DefaultScreen::drawEditOverlay(sf::RenderWindow &window)
+    {
+        if (!this->_editMode || !this->_editTarget || !this->_font)
+            return;
+
+        const sf::IntRect &bounds = this->_rendererPanel.viewportBounds;
+
+        // Persistent "Edit Mode" banner over the top-left of the viewport.
+        const std::string name = this->_editObject ? this->_editObject->getName() : "object";
+        sf::Text banner("Edit Mode  —  " + name + "    (Tab/Esc: exit    drag: move    X/Y/Z: lock axis)", *this->_font, 13);
+        banner.setFillColor(theme::TEXT_WHITE);
+        banner.setPosition(static_cast<float>(bounds.left) + 10.0f, static_cast<float>(bounds.top) + 7.0f);
+        const sf::FloatRect textBounds = banner.getLocalBounds();
+        sf::RectangleShape bannerBg({textBounds.width + 20.0f, 24.0f});
+        bannerBg.setPosition(static_cast<float>(bounds.left) + 6.0f, static_cast<float>(bounds.top) + 6.0f);
+        bannerBg.setFillColor(theme::withAlpha(theme::ACCENT, 210));
+        window.draw(bannerBg);
+        window.draw(banner);
+
+        // Vertex handles. Drawing is capped so a dense mesh can't stall the UI;
+        // off-screen / behind-camera vertices are skipped by the projection.
+        const sf::Color baseColor(0, 170, 255);
+        const sf::Color hoverColor(255, 255, 255);
+        const sf::Color selectedColor(255, 200, 40);
+        const std::size_t MAX_HANDLES = 4000;
+        const std::size_t count = this->_editTarget->getVertexCount();
+        std::size_t drawn = 0;
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            sf::Vector2f handle;
+            if (!this->vertexHandleWindowPos(i, handle))
+                continue;
+            const bool selected = static_cast<int>(i) == this->_selectedVertex;
+            const bool hovered = static_cast<int>(i) == this->_hoverVertex;
+            const float radius = selected ? 5.0f : 4.0f;
+            sf::CircleShape dot(radius);
+            dot.setOrigin(radius, radius);
+            dot.setPosition(handle);
+            dot.setFillColor(selected ? selectedColor : (hovered ? hoverColor : baseColor));
+            dot.setOutlineThickness(1.0f);
+            dot.setOutlineColor(theme::OUTLINE);
+            window.draw(dot);
+            if (++drawn >= MAX_HANDLES)
+                break;
+        }
     }
 }

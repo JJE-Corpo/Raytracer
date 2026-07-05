@@ -34,6 +34,15 @@ namespace rc
         this->_lightIntensityField.setFont(font);
         this->_lightIntensityField.setCharacterSize(12);
 
+        this->_vertexField.setLabel("Vertex");
+        this->_vertexField.setFont(font);
+        this->_vertexField.onValidate = [this](Axis axis, float value)
+        {
+            if (this->onVertexEdit)
+                return (this->onVertexEdit(axis, value));
+            return (false);
+        };
+
         this->_positionField.setLabel("Position");
         this->_positionField.setFont(font);
         this->_rotationField.setLabel("Rotation");
@@ -58,6 +67,12 @@ namespace rc
 
         // this->_title.setPosition({layout.x, layout.y});
         // layout.next(24);
+
+        if (this->_showVertexEditor)
+        {
+            this->_vertexField.layout(layout.x, layout.y, width);
+            layout.next(32);
+        }
 
         if (this->isLight)
         {
@@ -94,8 +109,17 @@ namespace rc
         this->height = layout.y - y;
     }
 
+    void ObjectPanel::setVertexEditor(bool visible, const Vector3f &value)
+    {
+        this->_showVertexEditor = visible;
+        if (visible)
+            this->_vertexField.setValue(value);
+    }
+
     void ObjectPanel::update(sf::Vector2i mouse)
     {
+        if (this->_showVertexEditor)
+            this->_vertexField.update(mouse);
         if (this->isLight)
         {
             this->_lightColorPicker.update(mouse);
@@ -276,7 +300,8 @@ namespace rc
 
     bool ObjectPanel::isCapturing() const
     {
-        if (this->_lightColorPicker.isCapturing()
+        if ((this->_showVertexEditor && this->_vertexField.isCapturing())
+            || this->_lightColorPicker.isCapturing()
             || this->_materialDropdown.isCapturing()
             || this->_lightIntensityField.isCapturing()
             || this->_positionField.isCapturing()
@@ -293,6 +318,8 @@ namespace rc
     {
         std::vector<Component *> children;
 
+        if (this->_showVertexEditor)
+            children.push_back(&this->_vertexField);
         if (this->isLight)
         {
             children.push_back(&this->_lightColorPicker);
@@ -315,6 +342,9 @@ namespace rc
     void ObjectPanel::draw(sf::RenderTarget &target, sf::RenderStates states) const
     {
         // target.draw(this->_title, states);
+
+        if (this->_showVertexEditor)
+            target.draw(this->_vertexField, states);
 
         for (auto &slider : this->_objectSliders)
         {
@@ -382,7 +412,9 @@ namespace rc
             }
         }
 
-        const std::vector<Component *> fields = {&this->_positionField, &this->_rotationField, &this->_scaleField};
+        std::vector<Component *> fields = {&this->_positionField, &this->_rotationField, &this->_scaleField};
+        if (this->_showVertexEditor)
+            fields.push_back(&this->_vertexField);
 
         for (auto *field : fields)
         {

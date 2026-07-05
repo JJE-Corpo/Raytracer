@@ -31,6 +31,7 @@
 #include "../windows/LoadWindow.hpp"
 #include "../../../common/ICoreAccess.hpp"
 #include "../../../common/ISceneRenderer.hpp"
+#include "../../../common/scene/IEditablePrimitive.hpp"
 
 namespace rc
 {
@@ -57,6 +58,30 @@ namespace rc
         void clearHover();
         void syncSelectionToRenderer();
         void markViewportBvhDirty();
+
+        // --- Vertex edit mode ------------------------------------------------
+        // True while any panel/pop-up/text field owns the input, so viewport
+        // shortcuts (Tab/Escape) must not fire.
+        bool anyUiCapturing();
+        // The single-selected object cast to IEditablePrimitive, or nullptr.
+        IEditablePrimitive *editableFromSelection() const;
+        void toggleEditMode();
+        void enterEditMode(const ISceneObject *object, IEditablePrimitive *editable);
+        void exitEditMode();
+        // Nearest vertex handle to the window-space cursor within the pick
+        // radius (tie-broken by proximity to the camera), or -1 if none.
+        int pickVertexHandle(const sf::Vector2i &mouse) const;
+        // Project vertex `index` to window space; false if behind/off screen.
+        bool vertexHandleWindowPos(std::size_t index, sf::Vector2f &out) const;
+        void beginVertexDrag(int index);
+        void applyVertexDrag(const sf::Vector2i &mouse);
+        void endVertexDrag();
+        // Re-push the current selection to the viewport renderer, which bumps
+        // its selection version and forces a fresh geometry pass -- the way the
+        // UI signals "the scene changed, re-trace" after an edit.
+        void forceViewportRetrace();
+        void syncVertexEditorField();
+        void drawEditOverlay(sf::RenderWindow &window);
         void applyImport();
         void updateViewportCamera(sf::RenderWindow &window);
 
@@ -109,6 +134,19 @@ namespace rc
         std::function<void()> _loadWindowOnClose;
 
         ToastManager _toastManager;
+
+        // Vertex edit mode state. _editTarget is a mutable view of the selected
+        // editable primitive; _selectedVertex / _hoverVertex index its vertices.
+        bool _editMode = false;
+        const ISceneObject *_editObject = nullptr;
+        IEditablePrimitive *_editTarget = nullptr;
+        int _selectedVertex = -1;
+        int _hoverVertex = -1;
+        bool _vertexDragActive = false;
+        Vector3f _dragStartWorld = {0.0f, 0.0f, 0.0f};
+        // Double-click-to-edit tracking (viewport).
+        sf::Clock _editClickClock;
+        const ISceneObject *_editClickObject = nullptr;
 
         // viewport
         sf::Vector2i _lastMouse;
