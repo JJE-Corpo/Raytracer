@@ -35,6 +35,13 @@ namespace rc
             Vector3f _lastCameraRotation = {0, 0, 0};
             double _lastCameraFov = 0.0;
             int _lastSamplesPerPixel = -1;
+            // Set when the last geometry pass was a coarse (draft) render done
+            // while the camera was moving; forces one full-resolution refine pass
+            // on the next frame once the camera settles.
+            bool _pendingRefine = false;
+            // Set after a crisp full-resolution pass; schedules one edge-adaptive
+            // anti-aliasing pass on the next idle frame to smooth silhouettes.
+            bool _pendingAA = false;
             std::vector<const ISceneObject *> _selection;
             size_t _selectionVersion = 0;
             size_t _lastSelectionVersion = 0;
