@@ -65,6 +65,21 @@ namespace rc
                 return (true);
             }
 
+            // Delete the market file backing `name` (used when a material is
+            // renamed, so the old entry does not linger). A missing file is not
+            // an error.
+            static bool remove(const std::string &name)
+            {
+                const std::string dir = directory();
+
+                if (dir.empty())
+                    return (false);
+
+                std::error_code ec;
+                std::filesystem::path path = std::filesystem::path(dir) / (sanitize(name) + ".json");
+                return (std::filesystem::remove(path, ec));
+            }
+
             // Every material found in the market folder, sorted by name so the
             // UI shows a stable order. Unreadable/invalid files are skipped.
             static std::vector<Material> loadAll()
