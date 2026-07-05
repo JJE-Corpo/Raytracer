@@ -868,6 +868,10 @@ namespace rc
             this->_rightMouseHeld = false;
         }
 
+        // Latch fly-camera keys here, while the event is fresh and before the
+        // frame's (possibly slow) render, so presses/releases are never missed.
+        this->trackFlyKeys(event, mouse);
+
         // Build the set of top-level components that are live in the current view
         // mode, then let the router pick the single best one for this event
         // (menu bar and open pop-ups win over the panels and the viewport).
@@ -954,29 +958,92 @@ namespace rc
             camera.setRotation(rot);
         }
 
-        // Fly keys only respond while the viewport owns the pointer, or while a
-        // right-drag look (which can only start over the viewport) is ongoing.
-        // Otherwise the keys belong to the focused panel / text field.
-        if (!this->_rightMouseHeld && !this->isViewportCaptured(mouse))
+        // Real elapsed frame time drives the motion so speed is constant
+        // regardless of frame rate or how long the render took. The clock is
+        // restarted every frame (this runs each viewport frame), and dt is
+        // clamped so a single slow frame -- e.g. a full-resolution refine --
+        // can't fling the camera across the scene.
+        const float dt = std::clamp(this->_frameClock.restart().asSeconds(), 0.0f, 0.1f);
+
+        // Which fly keys are held is latched from events (trackFlyKeys), not
+        // polled here, so a press captured over the viewport keeps moving the
+        // camera while held even if the cursor later drifts off the viewport.
+        // Reconcile each latch against the physical key so a missed key-up (a
+        // modal window stealing focus mid-hold, etc.) can never leave the camera
+        // stuck moving -- this only clears latches, it never starts a fly.
+        this->_keyForward = this->_keyForward && sf::Keyboard::isKeyPressed(sf::Keyboard::Z);
+        this->_keyBack = this->_keyBack && sf::Keyboard::isKeyPressed(sf::Keyboard::S);
+        this->_keyLeft = this->_keyLeft && sf::Keyboard::isKeyPressed(sf::Keyboard::Q);
+        this->_keyRight = this->_keyRight && sf::Keyboard::isKeyPressed(sf::Keyboard::D);
+        this->_keyUp = this->_keyUp && sf::Keyboard::isKeyPressed(sf::Keyboard::Space);
+        this->_keyDown = this->_keyDown && sf::Keyboard::isKeyPressed(sf::Keyboard::LShift);
+
+        const bool moving = this->_keyForward || this->_keyBack || this->_keyLeft ||
+                            this->_keyRight || this->_keyUp || this->_keyDown;
+        if (!moving)
             return;
 
-        Vector3f pos = camera.getPosition();
-        Vector3f forward = camera.getForward();
-        Vector3f right = camera.getRight();
+        const Vector3f forward = camera.getForward();
+        const Vector3f right = camera.getRight();
+        const float step = this->_cameraSpeed * dt;
 
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Z))
-            pos = pos + forward * this->_cameraSpeed;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::S))
-            pos = pos - forward * this->_cameraSpeed;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::D))
-            pos = pos + right * this->_cameraSpeed;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Q))
-            pos = pos - right * this->_cameraSpeed;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space))
-            pos.z += this->_cameraSpeed;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::LShift))
-            pos.z -= this->_cameraSpeed;
+        Vector3f pos = camera.getPosition();
+        if (this->_keyForward)
+            pos = pos + forward * step;
+        if (this->_keyBack)
+            pos = pos - forward * step;
+        if (this->_keyRight)
+            pos = pos + right * step;
+        if (this->_keyLeft)
+            pos = pos - right * step;
+        if (this->_keyUp)
+            pos.z += step;
+        if (this->_keyDown)
+            pos.z -= step;
         camera.setPosition(pos);
+    }
+
+    void DefaultScreen::trackFlyKeys(const sf::Event &event, const sf::Vector2i &mouse)
+    {
+        // Losing window focus (Alt-Tab, etc.) can swallow the matching key-up, so
+        // clear everything to avoid a stuck, forever-moving camera.
+        if (event.type == sf::Event::LostFocus)
+        {
+            this->resetFlyKeys();
+            return;
+        }
+        // Releases always count, so a key can never stick regardless of where the
+        // cursor is; presses only start a fly while the viewport owns input, so
+        // typing into a focused field or panel never drives the camera.
+        if (event.type == sf::Event::KeyReleased)
+            this->setFlyKey(event.key.code, false);
+        else if (event.type == sf::Event::KeyPressed &&
+                 (this->_rightMouseHeld || this->isViewportCaptured(mouse)))
+            this->setFlyKey(event.key.code, true);
+    }
+
+    void DefaultScreen::setFlyKey(sf::Keyboard::Key key, bool pressed)
+    {
+        switch (key)
+        {
+            case sf::Keyboard::Z: this->_keyForward = pressed; break;
+            case sf::Keyboard::S: this->_keyBack = pressed; break;
+            case sf::Keyboard::Q: this->_keyLeft = pressed; break;
+            case sf::Keyboard::D: this->_keyRight = pressed; break;
+            case sf::Keyboard::Space: this->_keyUp = pressed; break;
+            case sf::Keyboard::LShift: this->_keyDown = pressed; break;
+            default: break;
+        }
+    }
+
+    void DefaultScreen::resetFlyKeys()
+    {
+        this->_keyForward = false;
+        this->_keyBack = false;
+        this->_keyLeft = false;
+        this->_keyRight = false;
+        this->_keyUp = false;
+        this->_keyDown = false;
     }
 
     void DefaultScreen::prepareFrame()
