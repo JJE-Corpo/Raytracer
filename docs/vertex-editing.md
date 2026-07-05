@@ -48,6 +48,11 @@ radius; ties (overlapping handles) go to the vertex closest to the camera.
 Vertices behind the camera or off screen are skipped. For very dense meshes the
 number of drawn handles is capped (picking still considers them all).
 
+Alternatively, use the **`< Point N / total >`** navigator in the Object panel
+(just above the *Size* row): the arrows step through the shape's vertices one by
+one without aiming at the on-screen handles. Stepping enters edit mode if needed
+and highlights the current vertex in bright red on the shape.
+
 ## Dragging a vertex
 
 Drag a handle to move its vertex. By default the vertex slides in the plane that
