@@ -9,6 +9,9 @@
 // clicks are queued and drained by DefaultScreen on the main thread, so the
 // scene is only ever mutated from one thread.
 //
+// Clicking a row toggles an inline, scrollable details panel (accordion) that
+// lists every property of that material.
+//
 
 #ifndef MARKETWINDOW_HPP
 #define MARKETWINDOW_HPP
@@ -18,7 +21,9 @@
 #include <cstddef>
 #include <cstdio>
 #include <mutex>
+#include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 #include <SFML/Graphics.hpp>
 
@@ -43,6 +48,12 @@ namespace rc
         // query are shown. `visibleIndices` maps rows to marketMaterials slots.
         TextField searchField;
         std::vector<std::size_t> visibleIndices;
+        // Top Y (window space, scrolled) of each visible row, for hit-testing a
+        // click on the row body. Parallel to visibleIndices.
+        std::vector<float> rowTops;
+
+        // marketMaterials index whose details are expanded, or -1 for none.
+        int expandedIndex = -1;
 
         // "Add" clicks land here; DefaultScreen drains them on the main thread.
         std::mutex actionMutex;
@@ -54,6 +65,9 @@ namespace rc
         static constexpr float ROW_HEIGHT = 54.f;
         static constexpr float HEADER_HEIGHT = 90.f;
         static constexpr float ADD_BUTTON_WIDTH = 90.f;
+        static constexpr float DETAIL_LINE_H = 18.f;
+        static constexpr float DETAIL_PAD_TOP = 8.f;
+        static constexpr float DETAIL_PAD_BOTTOM = 12.f;
 
         void create(sf::Font &f)
         {
@@ -99,6 +113,7 @@ namespace rc
                 button.onClick = [this, i] { this->queueAdd(i); };
                 this->addButtons.push_back(button);
             }
+            this->expandedIndex = -1;
             this->scrollY = 0.f;
             this->computeVisible();
         }
@@ -149,11 +164,64 @@ namespace rc
             return (std::string(buf));
         }
 
+        static std::string colorText(const ColorF &cf)
+        {
+            const Color c = cf.toColor();
+            return (std::to_string(c.r) + ", " + std::to_string(c.g) + ", " + std::to_string(c.b));
+        }
+
         static std::string materialProps(const Material &m)
         {
             if (m.model == MaterialModel::PBR)
                 return ("metallic " + fmt(m.metallic) + "   roughness " + fmt(m.roughness) + "   ior " + fmt(m.ior));
             return ("shininess " + fmt(m.shininess) + "   refl " + fmt(m.reflectivity) + "   transp " + fmt(m.transparency));
+        }
+
+        // The (label, value) rows shown in an expanded material's details panel.
+        // The list is the same length for every material, so the panel height is
+        // constant.
+        static std::vector<std::pair<std::string, std::string>> detailLines(const Material &m)
+        {
+            std::string model = m.getModelName();
+            std::transform(model.begin(), model.end(), model.begin(), ::toupper);
+
+            return {
+                {"Model", model},
+                {"Base color", colorText(m.baseColor)},
+                {"Specular", colorText(m.specular)},
+                {"Shininess", fmt(m.shininess)},
+                {"Reflectivity", fmt(m.reflectivity)},
+                {"Transparency", fmt(m.transparency)},
+                {"IOR", fmt(m.ior)},
+                {"Metallic", fmt(m.metallic)},
+                {"Roughness", fmt(m.roughness)},
+                {"AO", fmt(m.ao)},
+                {"Specular level", fmt(m.specular_level)},
+                {"Specular tint", fmt(m.specular_tint)},
+                {"Clearcoat", fmt(m.clearcoat)},
+                {"Clearcoat rough.", fmt(m.clearcoat_roughness)},
+                {"Sheen", fmt(m.sheen)},
+                {"Sheen tint", fmt(m.sheen_tint)},
+                {"Transmission", fmt(m.transmission)},
+                {"Alpha", fmt(m.alpha)},
+                {"Normal map", m.normal_map_enabled ? (m.normal_map.empty() ? "on" : m.normal_map) : "off"},
+                {"Normal scale", fmt(m.normal_scale)},
+                {"Normal noise", fmt(m.normal_noise_frequency)},
+            };
+        }
+
+        static float detailHeight(const Material &m)
+        {
+            return (static_cast<float>(detailLines(m).size()) * DETAIL_LINE_H + DETAIL_PAD_TOP + DETAIL_PAD_BOTTOM);
+        }
+
+        // Full height of a row: its header, plus the details panel when expanded.
+        float rowHeight(std::size_t idx) const
+        {
+            float h = ROW_HEIGHT;
+            if (static_cast<int>(idx) == this->expandedIndex && idx < this->marketMaterials.size())
+                h += detailHeight(this->marketMaterials[idx]);
+            return (h);
         }
 
         void drawColoredText(const std::string &text, float x, float y, unsigned int size, const sf::Color &color)
@@ -193,14 +261,34 @@ namespace rc
         {
             this->computeVisible();
 
-            float y = HEADER_HEIGHT + 10.f + this->scrollY;
+            const float start = HEADER_HEIGHT + 10.f + this->scrollY;
+            float y = start;
+
+            this->rowTops.clear();
             for (std::size_t idx : this->visibleIndices)
             {
+                this->rowTops.push_back(y);
                 if (idx < this->addButtons.size())
                     this->addButtons[idx].layout(static_cast<float>(windowWidth) - 20.f - ADD_BUTTON_WIDTH, y + 8.f, ADD_BUTTON_WIDTH, 30.f);
-                y += ROW_HEIGHT;
+                y += this->rowHeight(idx);
             }
-            this->contentHeight = static_cast<float>(this->visibleIndices.size()) * ROW_HEIGHT;
+            this->contentHeight = y - start;
+        }
+
+        void drawDetails(const Material &m, float x, float y, float width)
+        {
+            const auto lines = detailLines(m);
+
+            drawRect(x, y, width, detailHeight(m), theme::BG_PANEL);
+            drawRect(x, y, 3.f, detailHeight(m), theme::ACCENT);
+
+            float ly = y + DETAIL_PAD_TOP;
+            for (const auto &line : lines)
+            {
+                drawColoredText(line.first, x + 14.f, ly, 12, theme::TEXT_DIM);
+                drawColoredText(line.second, x + 160.f, ly, 12, theme::TEXT_MAIN);
+                ly += DETAIL_LINE_H;
+            }
         }
 
         void drawHeader()
@@ -240,6 +328,10 @@ namespace rc
             {
                 const Material &m = this->marketMaterials[idx];
                 const Color c = m.getBaseColor().toColor();
+                const bool expanded = static_cast<int>(idx) == this->expandedIndex;
+
+                if (expanded)
+                    drawRect(0.f, y, static_cast<float>(windowWidth), ROW_HEIGHT, theme::BG_ITEM);
 
                 drawRect(x0, y + 6.f, 24.f, 24.f, sf::Color(c.r, c.g, c.b), 1.f, theme::OUTLINE_MID);
                 drawColoredText(m.getName(), x0 + 36.f, y + 4.f, 15, theme::TEXT_MAIN);
@@ -251,7 +343,11 @@ namespace rc
 
                 if (idx < this->addButtons.size())
                     window.draw(this->addButtons[idx]);
-                y += ROW_HEIGHT;
+
+                if (expanded)
+                    this->drawDetails(m, 12.f, y + ROW_HEIGHT, static_cast<float>(windowWidth) - 24.f);
+
+                y += this->rowHeight(idx);
             }
 
             // Opaque header drawn last so scrolled rows slide underneath it.
@@ -274,6 +370,27 @@ namespace rc
                 else
                     this->addButtons[idx].update(mouse);
             }
+        }
+
+        // Toggle the details panel of the row whose body (left of the Add button)
+        // is under the cursor. Returns true when a row was hit.
+        bool toggleRowAt(const sf::Vector2i &mouse)
+        {
+            const float buttonLeft = static_cast<float>(windowWidth) - 20.f - ADD_BUTTON_WIDTH;
+
+            if (mouse.x < 20.f || mouse.x >= buttonLeft || mouse.y < HEADER_HEIGHT)
+                return (false);
+            for (std::size_t k = 0; k < this->visibleIndices.size() && k < this->rowTops.size(); ++k)
+            {
+                const float top = this->rowTops[k];
+                if (mouse.y >= top && mouse.y < top + ROW_HEIGHT)
+                {
+                    const int idx = static_cast<int>(this->visibleIndices[k]);
+                    this->expandedIndex = (this->expandedIndex == idx) ? -1 : idx;
+                    return (true);
+                }
+            }
+            return (false);
         }
 
         void handleEvent(const sf::Event &event) override
@@ -299,6 +416,10 @@ namespace rc
                     continue;
                 this->addButtons[idx].handleEvent(event, mouse);
             }
+
+            // A click on a row body (not on its Add button) folds/unfolds details.
+            if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left)
+                this->toggleRowAt(mouse);
         }
     };
 }
