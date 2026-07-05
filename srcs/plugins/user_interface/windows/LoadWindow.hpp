@@ -39,6 +39,8 @@ namespace rc
         IScene *scene;
         IScene *loadedScene;
 
+        bool confirmed = false;
+
         Button saveButton;
         Separator separator1;
         Separator separator2;
@@ -116,6 +118,7 @@ namespace rc
             windowWidth = 620;
             windowTitle = "Import scene";
 
+            confirmed = false;
             running = true;
             thread = std::thread(&LoadWindow::loop, this);
 
@@ -123,22 +126,7 @@ namespace rc
             saveButton.setLabel("Import selected");
             saveButton.onClick = [&]
             {
-                if (loadCameraPositionCheckbox.checked)
-                    scene->getCamera().setPosition(loadedScene->getCamera().getPosition());
-                if (loadCameraResolutionCheckbox.checked)
-                    scene->getCamera().setResolution(loadedScene->getCamera().getResolution());
-                if (loadCameraRotationCheckbox.checked)
-                    scene->getCamera().setRotation(loadedScene->getCamera().getRotation());
-                if (loadCameraFovCheckbox.checked)
-                    scene->getCamera().setFov(loadedScene->getCamera().getFov());
-                if (loadCameraSppCheckbox.checked)
-                    scene->getCamera().setSamplesPerPixel(loadedScene->getCamera().getSamplesPerPixel());
-
-                if (loadLightAmbientCheckbox.checked)
-                    scene->setAmbientCoefficient(loadedScene->getAmbientCoefficient());
-                if (loadLightDiffuseCheckbox.checked)
-                    scene->setDiffuseCoefficient(loadedScene->getDiffuseCoefficient());
-                
+                confirmed = true;
                 destroy();
             };
 
