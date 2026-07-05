@@ -59,6 +59,10 @@ camera forward) — the intuitive "move it where I point" behaviour.
 - **Keyboard**: the selected vertex's world coordinates appear in a **Vertex**
   field in the Object panel; typing a value moves the vertex and stays in sync
   with dragging.
+- **Grow / shrink (-/+ buttons)**: the **-/+** buttons in the Object panel's
+  *Size* row move the selected vertex away from / toward the shape's centroid,
+  so a single point can be pushed out or pulled in. With **no** vertex selected
+  the same buttons scale the whole object instead.
 
 After every edit the scene BVH is flagged dirty and the viewport re-traces, so
 the change is visible immediately.

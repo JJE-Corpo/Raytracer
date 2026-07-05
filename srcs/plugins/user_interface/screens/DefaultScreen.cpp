@@ -617,6 +617,30 @@ namespace rc
             this->forceViewportRetrace();
             return (true);
         };
+        // -/+ buttons while a vertex is selected: move only that vertex, away
+        // from (factor > 1) or toward (factor < 1) the shape's centroid, so the
+        // selected point grows/shrinks while the rest of the geometry stays put.
+        this->_objectPanel.onVertexScale = [this](float factor) -> bool
+        {
+            if (!this->_editMode || !this->_editTarget || this->_selectedVertex < 0)
+                return (false);
+            const std::size_t count = this->_editTarget->getVertexCount();
+            if (count == 0)
+                return (false);
+            Vector3f centroid = {0.0f, 0.0f, 0.0f};
+            for (std::size_t i = 0; i < count; ++i)
+                centroid = centroid + this->_editTarget->getVertex(i);
+            centroid = centroid * (1.0f / static_cast<float>(count));
+
+            const Vector3f vertex = this->_editTarget->getVertex(static_cast<std::size_t>(this->_selectedVertex));
+            const Vector3f moved = centroid + (vertex - centroid) * factor;
+            this->_editTarget->setVertex(static_cast<std::size_t>(this->_selectedVertex), moved);
+            this->_editTarget->onGeometryChanged();
+            this->markViewportBvhDirty();
+            this->forceViewportRetrace();
+            this->syncVertexEditorField();
+            return (true);
+        };
         this->_materialPanel.setFont(*this->_font);
 
         this->_sidebarResize.onResize = [this](float width)

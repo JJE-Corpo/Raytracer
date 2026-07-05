@@ -34,6 +34,10 @@ namespace rc
             // keyboard edit (world coordinate) back onto that vertex; the screen
             // keeps the displayed value in sync with the live drag.
             std::function<bool(Axis axis, float value)> onVertexEdit;
+            // When a vertex is selected (the vertex editor is visible), the -/+
+            // buttons grow/shrink THAT vertex relative to the shape centre
+            // instead of scaling the whole object. Returns true if handled.
+            std::function<bool(float factor)> onVertexScale;
             void setVertexEditor(bool visible, const Vector3f &value);
 
             void setFont(sf::Font &font) override;
