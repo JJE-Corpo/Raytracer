@@ -25,6 +25,7 @@ In a typical interface-based design:
 - [Torus](./primitives/torus.md)
 - [Tanglecube](./primitives/tanglecube.md)
 - [Fractal](./primitives/fractal.md)
+- [Mesh](./primitives/mesh.md)
 - [AABB](./primitives/aabb.md)
 
 ### Notes
