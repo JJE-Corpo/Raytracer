@@ -572,6 +572,20 @@ namespace rc
             scene->reparent(const_cast<ISceneObject *>(child), const_cast<ISceneObject *>(newParent), index);
             this->markViewportBvhDirty();
         });
+        this->_hierarchyPanel.setOnItemDeleteRequest([this](const ISceneObject *payload)
+        {
+            IScene *scene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+
+            if (!scene || !payload)
+                return;
+            // Read the name before removeObject() frees the object. The panel
+            // skips descendants covered by a deleted ancestor, so `payload` is
+            // always still alive here.
+            const std::string name = payload->getName();
+            scene->removeObject(const_cast<ISceneObject *>(payload));
+            this->markViewportBvhDirty();
+            this->_toastManager.push("Object deleted", name + " has been removed from the scene.", ToastType::SUCCESS);
+        });
 
         this->_cameraPanel.setFont(*this->_font);
         this->_objectPanel.setFont(*this->_font);
@@ -887,6 +901,18 @@ namespace rc
         }
 
         const Component *consumer = EventRouter::route(candidates, event, mouse);
+
+        // Delete / Suppr with the cursor outside the hierarchy panel: the key
+        // never reaches the panel (its ScrollView only forwards keys while
+        // hovered), so fall back to deleting the current selection here - the
+        // same shape as the unclaimed-left-click viewport fallback below. A live
+        // text field or the hovered panel consumes the key first (consumer set),
+        // which keeps Delete editing text / handled once.
+        if (viewportMode && consumer == nullptr
+            && event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Delete)
+        {
+            this->_hierarchyPanel.deleteSelection();
+        }
 
         if (this->_hierarchyPanel.consumeSelectionChanged() || this->_objectPanel.consumeMaterialChanged())
         {
