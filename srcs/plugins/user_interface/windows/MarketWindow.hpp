@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstddef>
 #include <cstdio>
 #include <mutex>
 #include <thread>
@@ -26,6 +27,7 @@
 #include "../Theme.hpp"
 #include "../LayoutPen.hpp"
 #include "../components/Button.hpp"
+#include "../components/TextField.hpp"
 #include "Window.hpp"
 
 namespace rc
@@ -37,6 +39,11 @@ namespace rc
         std::vector<bool> added;
         Button refreshButton;
 
+        // Search bar: only materials whose name contains the (case-insensitive)
+        // query are shown. `visibleIndices` maps rows to marketMaterials slots.
+        TextField searchField;
+        std::vector<std::size_t> visibleIndices;
+
         // "Add" clicks land here; DefaultScreen drains them on the main thread.
         std::mutex actionMutex;
         std::vector<Material> pendingAdds;
@@ -45,7 +52,7 @@ namespace rc
         float contentHeight = 0.f;
 
         static constexpr float ROW_HEIGHT = 54.f;
-        static constexpr float HEADER_HEIGHT = 66.f;
+        static constexpr float HEADER_HEIGHT = 90.f;
         static constexpr float ADD_BUTTON_WIDTH = 90.f;
 
         void create(sf::Font &f)
@@ -58,6 +65,9 @@ namespace rc
             refreshButton.setFont(*font);
             refreshButton.setLabel("Refresh");
             refreshButton.onClick = [this] { this->reload(); };
+
+            searchField.setFont(*font);
+            searchField.setCharacterSize(14);
 
             this->reload();
 
@@ -90,6 +100,7 @@ namespace rc
                 this->addButtons.push_back(button);
             }
             this->scrollY = 0.f;
+            this->computeVisible();
         }
 
         void queueAdd(std::size_t index)
@@ -106,6 +117,28 @@ namespace rc
             {
                 this->addButtons[index].setLabel("Added");
                 this->addButtons[index].enabled = false;
+            }
+        }
+
+        static std::string toLower(const std::string &s)
+        {
+            std::string out = s;
+            std::transform(out.begin(), out.end(), out.begin(), [](unsigned char c) {
+                return static_cast<char>(std::tolower(c));
+            });
+            return (out);
+        }
+
+        // Rebuild visibleIndices from the current search query.
+        void computeVisible()
+        {
+            const std::string query = toLower(this->searchField.value);
+
+            this->visibleIndices.clear();
+            for (std::size_t i = 0; i < this->marketMaterials.size(); ++i)
+            {
+                if (query.empty() || toLower(this->marketMaterials[i].name).find(query) != std::string::npos)
+                    this->visibleIndices.push_back(i);
             }
         }
 
@@ -158,15 +191,32 @@ namespace rc
 
         void layoutRows()
         {
-            float y = HEADER_HEIGHT + 10.f + this->scrollY;
+            this->computeVisible();
 
-            for (std::size_t i = 0; i < this->marketMaterials.size(); ++i)
+            float y = HEADER_HEIGHT + 10.f + this->scrollY;
+            for (std::size_t idx : this->visibleIndices)
             {
-                if (i < this->addButtons.size())
-                    this->addButtons[i].layout(static_cast<float>(windowWidth) - 20.f - ADD_BUTTON_WIDTH, y + 8.f, ADD_BUTTON_WIDTH, 30.f);
+                if (idx < this->addButtons.size())
+                    this->addButtons[idx].layout(static_cast<float>(windowWidth) - 20.f - ADD_BUTTON_WIDTH, y + 8.f, ADD_BUTTON_WIDTH, 30.f);
                 y += ROW_HEIGHT;
             }
-            this->contentHeight = y - (HEADER_HEIGHT + 10.f + this->scrollY);
+            this->contentHeight = static_cast<float>(this->visibleIndices.size()) * ROW_HEIGHT;
+        }
+
+        void drawHeader()
+        {
+            drawRect(0.f, 0.f, static_cast<float>(windowWidth), HEADER_HEIGHT - 2.f, theme::BG_BAR);
+            drawRect(0.f, HEADER_HEIGHT - 2.f, static_cast<float>(windowWidth), 2.f, theme::ACCENT);
+            drawColoredText("Material Market", 20.f, 12.f, 20, theme::TEXT_WHITE);
+
+            refreshButton.layout(static_cast<float>(windowWidth) - 20.f - ADD_BUTTON_WIDTH, 12.f, ADD_BUTTON_WIDTH, 28.f);
+            window.draw(refreshButton);
+
+            searchField.layout(20.f, 50.f, static_cast<float>(windowWidth) - 40.f, 28.f);
+            window.draw(searchField);
+            // Placeholder hint shown only while the field is empty and unfocused.
+            if (searchField.value.empty() && !searchField.focused)
+                drawColoredText("Search materials...", 30.f, 55.f, 13, theme::TEXT_DIM);
         }
 
         void drawUi() override
@@ -181,10 +231,14 @@ namespace rc
                 drawColoredText("No saved materials yet.", x0, y + 4.f, 14, theme::TEXT_DIM);
                 drawColoredText("Create or load a material and it will appear here.", x0, y + 26.f, 12, theme::TEXT_DIM);
             }
-
-            for (std::size_t i = 0; i < this->marketMaterials.size(); ++i)
+            else if (this->visibleIndices.empty())
             {
-                const Material &m = this->marketMaterials[i];
+                drawColoredText("No material matches \"" + searchField.value + "\".", x0, y + 4.f, 14, theme::TEXT_DIM);
+            }
+
+            for (std::size_t idx : this->visibleIndices)
+            {
+                const Material &m = this->marketMaterials[idx];
                 const Color c = m.getBaseColor().toColor();
 
                 drawRect(x0, y + 6.f, 24.f, 24.f, sf::Color(c.r, c.g, c.b), 1.f, theme::OUTLINE_MID);
@@ -195,39 +249,39 @@ namespace rc
                 drawColoredText(model, x0 + 36.f, y + 26.f, 11, theme::ACCENT);
                 drawColoredText(materialProps(m), x0 + 90.f, y + 26.f, 11, theme::TEXT_DIM);
 
-                if (i < this->addButtons.size())
-                    window.draw(this->addButtons[i]);
+                if (idx < this->addButtons.size())
+                    window.draw(this->addButtons[idx]);
                 y += ROW_HEIGHT;
             }
 
             // Opaque header drawn last so scrolled rows slide underneath it.
-            drawRect(0.f, 0.f, static_cast<float>(windowWidth), 64.f, theme::BG_BAR);
-            drawRect(0.f, 64.f, static_cast<float>(windowWidth), 2.f, theme::ACCENT);
-            drawColoredText("Material Market", 20.f, 14.f, 22, theme::TEXT_WHITE);
-            drawColoredText("~/.raytracer/materials", 20.f, 42.f, 12, theme::TEXT_DIM);
-
-            refreshButton.layout(static_cast<float>(windowWidth) - 20.f - ADD_BUTTON_WIDTH, 18.f, ADD_BUTTON_WIDTH, 30.f);
-            window.draw(refreshButton);
+            this->drawHeader();
         }
 
         void updateUi() override
         {
             sf::Vector2i mouse = sf::Mouse::getPosition(window);
 
+            searchField.update(mouse);
             refreshButton.update(mouse);
-            for (std::size_t i = 0; i < this->addButtons.size(); ++i)
+            for (std::size_t idx : this->visibleIndices)
             {
+                if (idx >= this->addButtons.size())
+                    continue;
                 // Rows scrolled up behind the header must not react to hover.
-                if (this->addButtons[i].getBounds().top < HEADER_HEIGHT)
-                    this->addButtons[i].hovered = false;
+                if (this->addButtons[idx].getBounds().top < HEADER_HEIGHT)
+                    this->addButtons[idx].hovered = false;
                 else
-                    this->addButtons[i].update(mouse);
+                    this->addButtons[idx].update(mouse);
             }
         }
 
         void handleEvent(const sf::Event &event) override
         {
             sf::Vector2i mouse = sf::Mouse::getPosition(window);
+
+            // The search field gets first pick so keystrokes go to it while focused.
+            searchField.handleEvent(event, mouse);
 
             if (event.type == sf::Event::MouseWheelScrolled)
             {
@@ -236,12 +290,14 @@ namespace rc
             }
 
             refreshButton.handleEvent(event, mouse);
-            for (std::size_t i = 0; i < this->addButtons.size(); ++i)
+            for (std::size_t idx : this->visibleIndices)
             {
-                // Ignore clicks landing on the fixed header strip.
-                if (this->addButtons[i].getBounds().top < HEADER_HEIGHT)
+                if (idx >= this->addButtons.size())
                     continue;
-                this->addButtons[i].handleEvent(event, mouse);
+                // Ignore clicks landing on the fixed header strip.
+                if (this->addButtons[idx].getBounds().top < HEADER_HEIGHT)
+                    continue;
+                this->addButtons[idx].handleEvent(event, mouse);
             }
         }
     };
