@@ -20,6 +20,7 @@
 #include "builder/SceneObjectBuilder.hpp"
 #include "../../core/PluginLoader.hpp"
 #include "../../common/Material.hpp"
+#include "../../common/MaterialLibrary.hpp"
 #include "../obj/ObjParser.hpp"
 #include "../../common/scene/ISceneObject.hpp"
 
@@ -286,6 +287,10 @@ namespace rc
                 material.name = name;
 
                 Material *matPtr = new Material(material);
+
+                // Loaded materials are mirrored into the market so they can be
+                // reused from other scenes (see MaterialLibrary).
+                MaterialLibrary::save(*matPtr);
 
                 this->_materials.push_back(matPtr);
                 result.push_back(matPtr);
