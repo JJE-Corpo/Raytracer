@@ -169,4 +169,41 @@ namespace rc
     {
         this->_hidden = hidden;
     }
+
+    std::size_t Triangle::getVertexCount() const
+    {
+        return (3);
+    }
+
+    Vector3f Triangle::getVertex(std::size_t index) const
+    {
+        if (index == 1)
+            return (this->_vertex1);
+        if (index == 2)
+            return (this->_vertex2);
+        return (this->_vertex0);
+    }
+
+    void Triangle::setVertex(std::size_t index, const Vector3f &worldPos)
+    {
+        if (index == 0)
+            this->_vertex0 = worldPos;
+        else if (index == 1)
+            this->_vertex1 = worldPos;
+        else if (index == 2)
+            this->_vertex2 = worldPos;
+        else
+            return;
+        // Keep the cached edges and face normal in sync so intersection and the
+        // bounding box (computed on demand from the vertices) stay correct.
+        this->_edge1 = this->_vertex1 - this->_vertex0;
+        this->_edge2 = this->_vertex2 - this->_vertex0;
+        this->_normal = this->_edge1.cross(this->_edge2).unit_vector();
+    }
+
+    void Triangle::onGeometryChanged()
+    {
+        // Everything is recomputed eagerly in setVertex and bounding_box() is
+        // derived from the live vertices, so there is nothing to defer here.
+    }
 }
