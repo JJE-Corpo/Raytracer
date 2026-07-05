@@ -792,6 +792,7 @@ namespace rc
         if (this->_viewMode == ViewMode::VIEWPORT)
         {
             this->drawEditOverlay(window);
+            this->drawRotationRings(window);
             this->drawMoveGizmo(window);
             this->drawMarker(window);
             this->drawAxisGizmo(window);
@@ -1010,6 +1011,22 @@ namespace rc
             }
         }
 
+        // Rotation gizmo: keep driving an in-progress ring drag and end it on
+        // release, handled before component routing (same as the vertex drag).
+        if (this->_rotDragActive)
+        {
+            if (event.type == sf::Event::MouseMoved)
+            {
+                this->applyRotationDrag(mouse);
+                return;
+            }
+            if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left)
+            {
+                this->endRotationDrag();
+                return;
+            }
+        }
+
         // Object move: keep driving an in-progress object drag and end it on
         // release, handled before component routing (same as the vertex drag).
         if (this->_objectDragActive)
@@ -1100,6 +1117,12 @@ namespace rc
                     // selection is kept and the object slides along the axis only.
                     // (pickGizmoAxis only returns >= 0 for a single selection.)
                     this->beginAxisDrag(this->singleSelectedObject(), gizmoAxis, mouse);
+                }
+                else if (int rotAxis = this->pickRotationRing(mouse); rotAxis >= 0)
+                {
+                    // Clicking a rotation ring grabs that axis: the object rotates
+                    // around it while the selection is kept.
+                    this->beginRotationDrag(this->singleSelectedObject(), rotAxis, mouse);
                 }
                 else
                 {
@@ -1255,7 +1278,7 @@ namespace rc
         if (event.type == sf::Event::KeyReleased)
             this->setFlyKey(event.key.code, false);
         else if (event.type == sf::Event::KeyPressed && !this->_vertexDragActive && !this->_objectDragActive
-                 && !this->_axisDragActive &&
+                 && !this->_axisDragActive && !this->_rotDragActive &&
                  (this->_rightMouseHeld || this->isViewportCaptured(mouse)))
             this->setFlyKey(event.key.code, true);
     }
@@ -1960,6 +1983,224 @@ namespace rc
         this->_axisDragMoved = false;
         this->_axisDragTarget = nullptr;
         this->_axisDragAxis = -1;
+    }
+
+    namespace
+    {
+        // Two orthonormal vectors spanning the plane perpendicular to the axis,
+        // i.e. the plane the rotation ring lives in.
+        void ringBasis(int axis, Vector3f &u, Vector3f &v)
+        {
+            if (axis == 0) // X ring lives in the YZ plane
+            {
+                u = {0.0f, 1.0f, 0.0f};
+                v = {0.0f, 0.0f, 1.0f};
+            }
+            else if (axis == 1) // Y ring in the ZX plane
+            {
+                u = {0.0f, 0.0f, 1.0f};
+                v = {1.0f, 0.0f, 0.0f};
+            }
+            else // Z ring in the XY plane
+            {
+                u = {1.0f, 0.0f, 0.0f};
+                v = {0.0f, 1.0f, 0.0f};
+            }
+        }
+
+        constexpr int RING_SEGMENTS = 48;
+    }
+
+    bool DefaultScreen::rayPlanePoint(const sf::Vector2i &mouse, const Vector3f &origin,
+        const Vector3f &normal, Vector3f &out) const
+    {
+        IScene *scene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+        if (!scene)
+            return (false);
+        sf::Vector2i pixel;
+        if (!this->_rendererPanel.getViewportPixel(mouse, pixel))
+            return (false);
+        const ICamera &camera = scene->getCamera();
+        const Vector2i resolution = camera.getResolution();
+        const Ray ray = ViewportHelper::rayThroughPixel(camera, pixel.x, pixel.y, resolution.x, resolution.y);
+        const float denom = dot(ray.direction, normal);
+        if (std::fabs(denom) < 1e-6f)
+            return (false);
+        const float t = dot(origin - ray.origin, normal) / denom;
+        if (t <= 0.0f)
+            return (false);
+        out = ray.origin + ray.direction * t;
+        return (true);
+    }
+
+    bool DefaultScreen::rotationRing(int axis, std::vector<sf::Vector2f> &pts, std::vector<char> &valid) const
+    {
+        ISceneObject *object = this->singleSelectedObject();
+        if (!object || !this->_coreAccess)
+            return (false);
+        IScene *scene = this->_coreAccess->getScene();
+        if (!scene)
+            return (false);
+        const Vector3f objPos = object->getPosition();
+        const Vector3f toCam = objPos - scene->getCamera().getPosition();
+        float radius = std::sqrt(dot(toCam, toCam)) * 0.19f; // just outside the move arrows
+        if (radius < 1e-4f)
+            radius = 1.2f;
+        Vector3f u;
+        Vector3f v;
+        ringBasis(axis, u, v);
+
+        constexpr float PI = 3.14159265358979323846f;
+        pts.assign(RING_SEGMENTS + 1, {0.0f, 0.0f});
+        valid.assign(RING_SEGMENTS + 1, 0);
+        for (int i = 0; i <= RING_SEGMENTS; ++i)
+        {
+            const float theta = 2.0f * PI * static_cast<float>(i) / static_cast<float>(RING_SEGMENTS);
+            const Vector3f world = objPos + (u * std::cos(theta) + v * std::sin(theta)) * radius;
+            sf::Vector2f screen;
+            valid[i] = this->projectToViewport(world, screen) ? 1 : 0;
+            pts[i] = screen;
+        }
+        return (true);
+    }
+
+    int DefaultScreen::pickRotationRing(const sf::Vector2i &mouse) const
+    {
+        if (this->_editMode || !this->singleSelectedObject())
+            return (-1);
+        if (!this->_rendererPanel.viewportBounds.contains(mouse))
+            return (-1);
+        const sf::Vector2f m(static_cast<float>(mouse.x), static_cast<float>(mouse.y));
+        int best = -1;
+        float bestDistance = 7.0f; // pick radius in pixels
+        std::vector<sf::Vector2f> pts;
+        std::vector<char> valid;
+        for (int axis = 0; axis < 3; ++axis)
+        {
+            if (!this->rotationRing(axis, pts, valid))
+                continue;
+            for (int i = 0; i < RING_SEGMENTS; ++i)
+            {
+                if (!valid[i] || !valid[i + 1])
+                    continue;
+                const float d = segmentDistance(m, pts[i], pts[i + 1]);
+                if (d < bestDistance)
+                {
+                    bestDistance = d;
+                    best = axis;
+                }
+            }
+        }
+        return (best);
+    }
+
+    void DefaultScreen::drawRotationRings(sf::RenderWindow &window) const
+    {
+        if (this->_editMode || !this->singleSelectedObject())
+            return;
+        constexpr float PI = 3.14159265358979323846f;
+        const sf::Color colors[3] = {sf::Color(235, 80, 80), sf::Color(95, 205, 100), sf::Color(95, 160, 245)};
+        std::vector<sf::Vector2f> pts;
+        std::vector<char> valid;
+        for (int axis = 0; axis < 3; ++axis)
+        {
+            if (!this->rotationRing(axis, pts, valid))
+                continue;
+            const bool active = this->_rotDragActive && this->_rotDragAxis == axis;
+            const sf::Color color = active ? sf::Color(255, 235, 90) : colors[axis];
+            const float thick = active ? 3.0f : 2.0f;
+            for (int i = 0; i < RING_SEGMENTS; ++i)
+            {
+                if (!valid[i] || !valid[i + 1])
+                    continue;
+                const sf::Vector2f a = pts[i];
+                const sf::Vector2f b = pts[i + 1];
+                const sf::Vector2f d(b.x - a.x, b.y - a.y);
+                const float len = std::sqrt(d.x * d.x + d.y * d.y);
+                if (len < 0.5f)
+                    continue;
+                sf::RectangleShape seg({len, thick});
+                seg.setOrigin(0.0f, thick / 2.0f);
+                seg.setPosition(a);
+                seg.setRotation(std::atan2(d.y, d.x) * 180.0f / PI);
+                seg.setFillColor(color);
+                window.draw(seg);
+            }
+        }
+    }
+
+    void DefaultScreen::beginRotationDrag(ISceneObject *object, int axis, const sf::Vector2i &mouse)
+    {
+        if (!object)
+            return;
+        this->_rotDragActive = true;
+        this->_rotDragMoved = false;
+        this->_rotDragTarget = object;
+        this->_rotDragAxis = axis;
+        this->_rotDragStartRot = object->getLocalRotation();
+        this->_rotDragObjPos = object->getPosition();
+        this->_rotDragAxisN = axisVector(axis);
+        Vector3f grab;
+        this->_rotDragValid = false;
+        if (this->rayPlanePoint(mouse, this->_rotDragObjPos, this->_rotDragAxisN, grab))
+        {
+            const Vector3f gv = grab - this->_rotDragObjPos;
+            const float len = std::sqrt(dot(gv, gv));
+            if (len > 1e-5f)
+            {
+                this->_rotDragGrabVec = gv * (1.0f / len);
+                this->_rotDragValid = true;
+            }
+        }
+    }
+
+    void DefaultScreen::applyRotationDrag(const sf::Vector2i &mouse)
+    {
+        if (!this->_rotDragTarget || !this->_rotDragValid)
+            return;
+        Vector3f point;
+        if (!this->rayPlanePoint(mouse, this->_rotDragObjPos, this->_rotDragAxisN, point))
+            return;
+        const Vector3f cv = point - this->_rotDragObjPos;
+        const float len = std::sqrt(dot(cv, cv));
+        if (len < 1e-5f)
+            return;
+        const Vector3f cur = cv * (1.0f / len);
+
+        // Signed angle from the grab vector to the current vector, about the axis.
+        constexpr float PI = 3.14159265358979323846f;
+        const float sine = dot(this->_rotDragGrabVec.cross(cur), this->_rotDragAxisN);
+        const float cosine = dot(this->_rotDragGrabVec, cur);
+        const float angleDeg = std::atan2(sine, cosine) * 180.0f / PI;
+
+        Vector3f rotation = this->_rotDragStartRot;
+        if (this->_rotDragAxis == 0)
+            rotation.x += angleDeg;
+        else if (this->_rotDragAxis == 1)
+            rotation.y += angleDeg;
+        else
+            rotation.z += angleDeg;
+        this->_rotDragTarget->setLocalRotation(rotation);
+        this->_rotDragMoved = true;
+        this->markViewportBvhDirty();
+        this->forceViewportRetrace();
+    }
+
+    void DefaultScreen::endRotationDrag()
+    {
+        if (!this->_rotDragActive)
+            return;
+        this->_rotDragActive = false;
+        if (this->_rotDragMoved && this->_rotDragTarget)
+        {
+            this->_objectPanel.rebuild(this->_rotDragTarget);
+            this->markViewportBvhDirty();
+            this->forceViewportRetrace();
+        }
+        this->_rotDragMoved = false;
+        this->_rotDragValid = false;
+        this->_rotDragTarget = nullptr;
+        this->_rotDragAxis = -1;
     }
 
     bool DefaultScreen::computeMarker(const sf::Vector2i &mouse, Vector3f &out)

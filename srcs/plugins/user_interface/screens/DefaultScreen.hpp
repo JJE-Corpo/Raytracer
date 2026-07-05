@@ -12,6 +12,7 @@
 
 #include <functional>
 #include <string>
+#include <vector>
 
 #include <SFML/System/Clock.hpp>
 #include <SFML/Window/Keyboard.hpp>
@@ -115,6 +116,16 @@ namespace rc
         void beginAxisDrag(ISceneObject *object, int axis, const sf::Vector2i &mouse);
         void applyAxisDrag(const sf::Vector2i &mouse);
         void endAxisDrag();
+        // Rotation gizmo: three rings around the selected object; dragging one
+        // rotates the object around that axis.
+        bool rayPlanePoint(const sf::Vector2i &mouse, const Vector3f &origin,
+            const Vector3f &normal, Vector3f &out) const;
+        bool rotationRing(int axis, std::vector<sf::Vector2f> &pts, std::vector<char> &valid) const;
+        int pickRotationRing(const sf::Vector2i &mouse) const;
+        void drawRotationRings(sf::RenderWindow &window) const;
+        void beginRotationDrag(ISceneObject *object, int axis, const sf::Vector2i &mouse);
+        void applyRotationDrag(const sf::Vector2i &mouse);
+        void endRotationDrag();
         void drawEditOverlay(sf::RenderWindow &window);
         void applyImport();
         void updateViewportCamera(sf::RenderWindow &window);
@@ -207,6 +218,19 @@ namespace rc
         Vector3f _axisDragObjStart = {0.0f, 0.0f, 0.0f};
         Vector3f _axisDragDir = {0.0f, 0.0f, 0.0f};
         float _axisDragGrabT = 0.0f;
+
+        // Rotation-gizmo drag: a ring was grabbed; the object's Euler angle for
+        // that axis follows the signed angle swept by the mouse in the ring's
+        // plane relative to where it was grabbed (see applyRotationDrag).
+        bool _rotDragActive = false;
+        bool _rotDragMoved = false;
+        bool _rotDragValid = false;
+        ISceneObject *_rotDragTarget = nullptr;
+        int _rotDragAxis = -1;
+        Vector3f _rotDragStartRot = {0.0f, 0.0f, 0.0f};
+        Vector3f _rotDragObjPos = {0.0f, 0.0f, 0.0f};
+        Vector3f _rotDragAxisN = {0.0f, 0.0f, 0.0f};
+        Vector3f _rotDragGrabVec = {0.0f, 0.0f, 0.0f};
 
         // viewport
         sf::Vector2i _lastMouse;
