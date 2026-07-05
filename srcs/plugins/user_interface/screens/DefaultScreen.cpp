@@ -793,6 +793,7 @@ namespace rc
         {
             this->drawEditOverlay(window);
             this->drawMarker(window);
+            this->drawAxisGizmo(window);
         }
 
         this->_menuBar.layout(static_cast<float>(window.getSize().x));
@@ -1229,7 +1230,7 @@ namespace rc
         // typing into a focused field or panel never drives the camera.
         if (event.type == sf::Event::KeyReleased)
             this->setFlyKey(event.key.code, false);
-        else if (event.type == sf::Event::KeyPressed && !this->_vertexDragActive &&
+        else if (event.type == sf::Event::KeyPressed && !this->_vertexDragActive && !this->_objectDragActive &&
                  (this->_rightMouseHeld || this->isViewportCaptured(mouse)))
             this->setFlyKey(event.key.code, true);
     }
@@ -1658,7 +1659,24 @@ namespace rc
         Vector3f grab;
         if (!this->viewportPlanePoint(mouse, this->_objectDragPlaneOrigin, grab))
             return;
-        this->_objectDragTarget->setLocalPosition(grab + this->_objectDragOffset);
+        Vector3f newPos = grab + this->_objectDragOffset;
+
+        // Hold X, Y or Z to constrain the move to that world axis, measured from
+        // the object's position at the start of the drag.
+        Vector3f axis = {0.0f, 0.0f, 0.0f};
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::X))
+            axis = {1.0f, 0.0f, 0.0f};
+        else if (sf::Keyboard::isKeyPressed(sf::Keyboard::Y))
+            axis = {0.0f, 1.0f, 0.0f};
+        else if (sf::Keyboard::isKeyPressed(sf::Keyboard::Z))
+            axis = {0.0f, 0.0f, 1.0f};
+        if (axis.x != 0.0f || axis.y != 0.0f || axis.z != 0.0f)
+        {
+            const Vector3f delta = newPos - this->_objectDragPlaneOrigin;
+            newPos = this->_objectDragPlaneOrigin + axis * dot(delta, axis);
+        }
+
+        this->_objectDragTarget->setLocalPosition(newPos);
         this->_objectDragMoved = true;
         this->markViewportBvhDirty();
         this->forceViewportRetrace();
@@ -1790,6 +1808,79 @@ namespace rc
                 if (object)
                     object->setLocalPosition(this->_markerPos);
             }
+        }
+    }
+
+    void DefaultScreen::drawAxisGizmo(sf::RenderWindow &window) const
+    {
+        if (!this->_coreAccess || !this->_font)
+            return;
+        IScene *scene = this->_coreAccess->getScene();
+        if (!scene)
+            return;
+        const sf::IntRect &bounds = this->_rendererPanel.viewportBounds;
+        if (bounds.width <= 0 || bounds.height <= 0)
+            return;
+
+        const ICamera &camera = scene->getCamera();
+        const Vector3f forward = camera.getForward();
+        const Vector3f right = camera.getRight();
+        const Vector3f up = right.cross(forward).unit_vector();
+
+        constexpr float PI = 3.14159265358979323846f;
+        const float radius = 26.0f;
+        const float margin = 18.0f;
+        const sf::Vector2f center(static_cast<float>(bounds.left + bounds.width) - margin - radius,
+            static_cast<float>(bounds.top) + margin + radius);
+
+        // Faint backing disc for contrast over any scene colour.
+        sf::CircleShape disc(radius + 9.0f);
+        disc.setOrigin(radius + 9.0f, radius + 9.0f);
+        disc.setPosition(center);
+        disc.setFillColor(sf::Color(18, 20, 26, 140));
+        window.draw(disc);
+
+        struct GizmoAxis { Vector3f dir; sf::Color color; const char *label; float depth; };
+        GizmoAxis axes[3] = {
+            {{1.0f, 0.0f, 0.0f}, sf::Color(235, 80, 80), "X", 0.0f},
+            {{0.0f, 1.0f, 0.0f}, sf::Color(95, 205, 100), "Y", 0.0f},
+            {{0.0f, 0.0f, 1.0f}, sf::Color(95, 160, 245), "Z", 0.0f},
+        };
+        for (GizmoAxis &a : axes)
+            a.depth = dot(a.dir, forward);
+        // Draw far axes first (larger depth = pointing away) so near ones sit on top.
+        std::sort(axes, axes + 3, [](const GizmoAxis &a, const GizmoAxis &b) { return a.depth > b.depth; });
+
+        for (const GizmoAxis &a : axes)
+        {
+            const float gx = dot(a.dir, right);
+            const float gy = -dot(a.dir, up);
+            const sf::Vector2f tip(center.x + gx * radius, center.y + gy * radius);
+            const sf::Vector2f d(tip.x - center.x, tip.y - center.y);
+            const float len = std::sqrt(d.x * d.x + d.y * d.y);
+
+            if (len > 0.5f)
+            {
+                sf::RectangleShape line({len, 2.5f});
+                line.setOrigin(0.0f, 1.25f);
+                line.setPosition(center);
+                line.setRotation(std::atan2(d.y, d.x) * 180.0f / PI);
+                line.setFillColor(a.color);
+                window.draw(line);
+            }
+            sf::CircleShape knob(4.5f);
+            knob.setOrigin(4.5f, 4.5f);
+            knob.setPosition(tip);
+            knob.setFillColor(a.color);
+            window.draw(knob);
+
+            sf::Text label(a.label, *this->_font, 12);
+            label.setFillColor(sf::Color::White);
+            const sf::FloatRect lb = label.getLocalBounds();
+            label.setOrigin(lb.left + lb.width / 2.0f, lb.top + lb.height / 2.0f);
+            const sf::Vector2f nd = (len > 0.5f) ? sf::Vector2f(d.x / len, d.y / len) : sf::Vector2f(0.0f, 0.0f);
+            label.setPosition(tip.x + nd.x * 9.0f, tip.y + nd.y * 9.0f);
+            window.draw(label);
         }
     }
 
