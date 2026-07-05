@@ -249,9 +249,7 @@ namespace rc
                         try
                         {
                             this->_loadWindow.create(*this->_font, *this->_coreAccess->getScene(), this->_coreAccess->loadNewScene(this->_exploratorResult));
-                            this->markViewportBvhDirty();
-
-                            this->_toastManager.push("Import successful", "Scene imported successfully.", ToastType::SUCCESS);
+                            this->_loadWindowPending = true;
                         }
                         catch (const std::exception &e)
                         {
@@ -636,6 +634,12 @@ namespace rc
         {
             this->_exploratorJustClosed = false;
             this->_exploratorOnClose();
+        }
+
+        if (this->_loadWindowPending && !this->_loadWindow.running)
+        {
+            this->_loadWindowPending = false;
+            this->applyImport();
         }
 
         if (this->_joinClusterWindow.running)
@@ -1098,6 +1102,43 @@ namespace rc
     void DefaultScreen::markViewportBvhDirty()
     {
         this->_viewportBvhDirty = true;
+    }
+
+    void DefaultScreen::applyImport()
+    {
+        if (!this->_loadWindow.confirmed)
+        {
+            this->_toastManager.push("Import cancelled", "No changes were applied.", ToastType::INFO);
+            return;
+        }
+
+        IScene *scene = this->_loadWindow.scene;
+        IScene *loaded = this->_loadWindow.loadedScene;
+
+        for (auto *primitive : loaded->getPrimitives())
+            scene->addPrimitive(primitive);
+
+        ICamera &camera = scene->getCamera();
+        const ICamera &loadedCamera = loaded->getCamera();
+
+        if (this->_loadWindow.loadCameraPositionCheckbox.checked)
+            camera.setPosition(loadedCamera.getPosition());
+        if (this->_loadWindow.loadCameraResolutionCheckbox.checked)
+            camera.setResolution(loadedCamera.getResolution());
+        if (this->_loadWindow.loadCameraRotationCheckbox.checked)
+            camera.setRotation(loadedCamera.getRotation());
+        if (this->_loadWindow.loadCameraFovCheckbox.checked)
+            camera.setFov(loadedCamera.getFov());
+        if (this->_loadWindow.loadCameraSppCheckbox.checked)
+            camera.setSamplesPerPixel(loadedCamera.getSamplesPerPixel());
+
+        if (this->_loadWindow.loadLightAmbientCheckbox.checked)
+            scene->setAmbientCoefficient(loaded->getAmbientCoefficient());
+        if (this->_loadWindow.loadLightDiffuseCheckbox.checked)
+            scene->setDiffuseCoefficient(loaded->getDiffuseCoefficient());
+
+        this->markViewportBvhDirty();
+        this->_toastManager.push("Import successful", "Scene imported successfully.", ToastType::SUCCESS);
     }
 
     void DefaultScreen::layoutSidebarResize(const sf::RenderWindow &window)
