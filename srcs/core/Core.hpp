@@ -44,7 +44,7 @@ namespace rc
 
             std::atomic<CoreState> _state;
 
-            std::string _renderOutputPath = "render.ppm";
+            std::string _renderOutputPath = "render.png";
 
             // Undo/redo: full-scene JSON snapshots. _historyIndex points at the
             // snapshot matching the live scene; entries after it are the redo
