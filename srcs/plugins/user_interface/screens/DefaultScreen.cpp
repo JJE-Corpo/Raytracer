@@ -292,7 +292,7 @@ namespace rc
         {
             try
             {
-                this->_coreAccess->getScene()->addDefaultPrimitive("plane");
+                this->addPrimitiveAtMarker("plane");
                 this->markViewportBvhDirty();
                 this->_toastManager.push("Plane added", "A new plane primitive has been added to the scene.", ToastType::SUCCESS);
             }
@@ -308,7 +308,7 @@ namespace rc
         {
             try
             {
-                this->_coreAccess->getScene()->addDefaultPrimitive("sphere");
+                this->addPrimitiveAtMarker("sphere");
                 this->markViewportBvhDirty();
                 this->_toastManager.push("Sphere added", "A new sphere primitive has been added to the scene.", ToastType::SUCCESS);
             }
@@ -324,7 +324,7 @@ namespace rc
         {
             try
             {
-                this->_coreAccess->getScene()->addDefaultPrimitive("cylinder");
+                this->addPrimitiveAtMarker("cylinder");
                 this->markViewportBvhDirty();
                 this->_toastManager.push("Cylinder added", "A new cylinder primitive has been added to the scene.", ToastType::SUCCESS);
             }
@@ -340,7 +340,7 @@ namespace rc
         {
             try
             {
-                this->_coreAccess->getScene()->addDefaultPrimitive("cone");
+                this->addPrimitiveAtMarker("cone");
                 this->markViewportBvhDirty();
                 this->_toastManager.push("Cone added", "A new cone primitive has been added to the scene.", ToastType::SUCCESS);
             }
@@ -356,7 +356,7 @@ namespace rc
         {
             try
             {
-                this->_coreAccess->getScene()->addDefaultPrimitive("triangle");
+                this->addPrimitiveAtMarker("triangle");
                 this->markViewportBvhDirty();
                 this->_toastManager.push("Triangle added", "A new triangle primitive has been added to the scene.", ToastType::SUCCESS);
             }
@@ -372,7 +372,7 @@ namespace rc
         {
             try
             {
-                this->_coreAccess->getScene()->addDefaultPrimitive("cube");
+                this->addPrimitiveAtMarker("cube");
                 this->markViewportBvhDirty();
                 this->_toastManager.push("Cube added", "A new cube primitive has been added to the scene.", ToastType::SUCCESS);
             }
@@ -388,7 +388,7 @@ namespace rc
         {
             try
             {
-                this->_coreAccess->getScene()->addDefaultPrimitive("fractal");
+                this->addPrimitiveAtMarker("fractal");
                 this->markViewportBvhDirty();
                 this->_toastManager.push("Fractal added", "A new fractal primitive has been added to the scene.", ToastType::SUCCESS);
             }
@@ -404,7 +404,7 @@ namespace rc
         {
             try
             {
-                this->_coreAccess->getScene()->addDefaultPrimitive("tanglecube");
+                this->addPrimitiveAtMarker("tanglecube");
                 this->markViewportBvhDirty();
                 this->_toastManager.push("Tanglecube added", "A new tanglecube primitive has been added to the scene.", ToastType::SUCCESS);
             }
@@ -420,7 +420,7 @@ namespace rc
         {
             try
             {
-                this->_coreAccess->getScene()->addDefaultPrimitive("torus");
+                this->addPrimitiveAtMarker("torus");
                 this->markViewportBvhDirty();
                 this->_toastManager.push("Torus added", "A new torus primitive has been added to the scene.", ToastType::SUCCESS);
             }
@@ -790,7 +790,10 @@ namespace rc
             this->drawRenderer(window, this->_activeRenderer);
 
         if (this->_viewMode == ViewMode::VIEWPORT)
+        {
             this->drawEditOverlay(window);
+            this->drawMarker(window);
+        }
 
         this->_menuBar.layout(static_cast<float>(window.getSize().x));
         window.draw(this->_menuBar);
@@ -948,6 +951,14 @@ namespace rc
             event.mouseButton.button == sf::Mouse::Right &&
             this->isViewportCaptured(mouse))
         {
+            // Shift + right-click drops a 3D marker under the cursor instead of
+            // orbiting; the next primitive added from the menu spawns there.
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::LShift)
+                || sf::Keyboard::isKeyPressed(sf::Keyboard::RShift))
+            {
+                this->placeMarker(mouse);
+                return;
+            }
             this->_rightMouseHeld = true;
             this->_lastMouse = sf::Mouse::getPosition(window);
         }
@@ -1662,6 +1673,119 @@ namespace rc
             this->forceViewportRetrace();
         }
         this->_objectDragTarget = nullptr;
+    }
+
+    bool DefaultScreen::computeMarker(const sf::Vector2i &mouse, Vector3f &out)
+    {
+        IScene *scene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+        if (!scene)
+            return (false);
+        sf::Vector2i pixel;
+        if (!this->_rendererPanel.getViewportPixel(mouse, pixel))
+            return (false);
+        const ICamera &camera = scene->getCamera();
+        const Vector2i resolution = camera.getResolution();
+        const Ray ray = ViewportHelper::rayThroughPixel(camera, pixel.x, pixel.y, resolution.x, resolution.y);
+
+        // Prefer the point on the surface under the cursor.
+        Intersection hit;
+        if (scene->intersect(ray, 0.001f, std::numeric_limits<float>::infinity(), hit))
+        {
+            out = hit.point;
+            return (true);
+        }
+        // Otherwise drop it on the ground plane (z = 0), or a fixed distance ahead.
+        if (std::fabs(ray.direction.z) > 1e-6f)
+        {
+            const float t = -ray.origin.z / ray.direction.z;
+            if (t > 0.0f)
+            {
+                out = ray.origin + ray.direction * t;
+                return (true);
+            }
+        }
+        out = ray.origin + ray.direction * 20.0f;
+        return (true);
+    }
+
+    void DefaultScreen::placeMarker(const sf::Vector2i &mouse)
+    {
+        Vector3f position;
+        if (!this->computeMarker(mouse, position))
+            return;
+        this->_markerActive = true;
+        this->_markerPos = position;
+        this->_toastManager.push("Marker placed", "New primitives from the Add menu will spawn here.", ToastType::INFO);
+    }
+
+    bool DefaultScreen::markerWindowPos(sf::Vector2f &out) const
+    {
+        if (!this->_markerActive || !this->_coreAccess)
+            return (false);
+        IScene *scene = this->_coreAccess->getScene();
+        if (!scene)
+            return (false);
+        const ICamera &camera = scene->getCamera();
+        const Vector2i resolution = camera.getResolution();
+        sf::Vector2i pixel;
+        if (!ViewportHelper::projectToPixel(camera, this->_markerPos, resolution.x, resolution.y, pixel))
+            return (false);
+        const sf::IntRect &bounds = this->_rendererPanel.viewportBounds;
+        const float scale = this->_rendererPanel.viewportScale;
+        out.x = static_cast<float>(bounds.left) + static_cast<float>(pixel.x) * scale;
+        out.y = static_cast<float>(bounds.top) + static_cast<float>(pixel.y) * scale;
+        return (true);
+    }
+
+    void DefaultScreen::drawMarker(sf::RenderWindow &window) const
+    {
+        sf::Vector2f p;
+        if (!this->markerWindowPos(p))
+            return;
+        const sf::IntRect &bounds = this->_rendererPanel.viewportBounds;
+        if (!bounds.contains(static_cast<int>(p.x), static_cast<int>(p.y)))
+            return;
+
+        const sf::Color color(255, 210, 40);
+        const float len = 9.0f;
+        const float thick = 2.0f;
+        sf::RectangleShape h({2.0f * len, thick});
+        h.setOrigin(len, thick / 2.0f);
+        h.setPosition(p);
+        h.setFillColor(color);
+        sf::RectangleShape v({thick, 2.0f * len});
+        v.setOrigin(thick / 2.0f, len);
+        v.setPosition(p);
+        v.setFillColor(color);
+        sf::CircleShape ring(5.0f);
+        ring.setOrigin(5.0f, 5.0f);
+        ring.setPosition(p);
+        ring.setFillColor(sf::Color::Transparent);
+        ring.setOutlineThickness(2.0f);
+        ring.setOutlineColor(color);
+        window.draw(h);
+        window.draw(v);
+        window.draw(ring);
+    }
+
+    void DefaultScreen::addPrimitiveAtMarker(const std::string &type)
+    {
+        if (!this->_coreAccess)
+            return;
+        IScene *scene = this->_coreAccess->getScene();
+        if (!scene)
+            return;
+        scene->addDefaultPrimitive(type);
+        if (this->_markerActive)
+        {
+            const std::vector<IPrimitive *> &primitives = scene->getPrimitives();
+            if (!primitives.empty())
+            {
+                ISceneObject *object = dynamic_cast<ISceneObject *>(primitives.back());
+                if (object)
+                    object->setLocalPosition(this->_markerPos);
+            }
+        }
     }
 
     void DefaultScreen::syncVertexNavigator()
