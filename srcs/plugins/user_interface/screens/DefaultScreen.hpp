@@ -57,6 +57,7 @@ namespace rc
         void clearHover();
         void syncSelectionToRenderer();
         void markViewportBvhDirty();
+        void applyImport();
         void updateViewportCamera(sf::RenderWindow &window);
 
         // Latch the fly-camera key state from window key events. Done at event
@@ -103,6 +104,9 @@ namespace rc
         std::string _exploratorResult;
         bool _exploratorJustClosed = false;
         std::function<void()> _exploratorOnClose;
+
+        bool _loadWindowPending = false;
+        std::function<void()> _loadWindowOnClose;
 
         ToastManager _toastManager;
 
