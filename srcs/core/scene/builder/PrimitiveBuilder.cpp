@@ -141,7 +141,7 @@ rc::IPrimitive *rc::PrimitiveBuilder::build() const
     if (this->_type == PRIMITIVE_FRACTAL)
         return (new Fractal(this->_name, this->_center, this->_size, this->_power, this->_iterations, this->_material));
     if (this->_type == PRIMITIVE_CUBE)
-        return (new Cube(this->_name, this->_position, this->_rotation, this->_scale, this->_size, this->_material));
+        return (new Cube(this->_name, this->_position, this->_rotation, this->_scale, this->_size, this->_material, this->_vertexOverrides));
     if (this->_type == PRIMITIVE_CONE)
         return (new Cone(this->_name, this->_position, this->_rotation, this->_scale, static_cast<float>(this->_radius), this->_height, this->_material));
     if (this->_type == PRIMITIVE_TORUS)

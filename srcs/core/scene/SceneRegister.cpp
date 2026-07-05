@@ -3,7 +3,7 @@
 #include <fstream>
 #include <iostream>
 
-#include "../../plugins/primitive/mesh/Mesh.hpp"
+#include "../../common/scene/IEditablePrimitive.hpp"
 
 namespace rc
 {
@@ -95,11 +95,11 @@ namespace rc
         for (const auto &property : primitive->getProperties())
             writeProperty(object, property.first, property.second.first, property.second.second);
 
-        // A mesh persists its interactive vertex edits as object-space overrides
-        // applied on top of the untouched .obj file (see the mesh docs).
-        if (const Mesh *mesh = dynamic_cast<const Mesh *>(primitive))
+        // An editable primitive (Mesh, Cube, ...) persists its interactive vertex
+        // edits as object-space overrides re-applied on top of the base geometry.
+        if (const IEditablePrimitive *editable = dynamic_cast<const IEditablePrimitive *>(primitive))
         {
-            const auto &overrides = mesh->getVertexOverrides();
+            const std::map<std::size_t, Vector3f> overrides = editable->getVertexOverrides();
             if (!overrides.empty())
             {
                 nlohmann::json overrideArray = nlohmann::json::array();
