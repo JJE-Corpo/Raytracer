@@ -48,6 +48,8 @@ SOURCES = main.cpp \
 		srcs/plugins/primitive/Cone.cpp \
 		srcs/plugins/primitive/Torus.cpp \
 		srcs/plugins/primitive/Fractal.cpp \
+		srcs/plugins/primitive/mesh/MeshTriangle.cpp \
+		srcs/plugins/primitive/mesh/Mesh.cpp \
 
 OBJECTS = ${SOURCES:.cpp=.o}
 

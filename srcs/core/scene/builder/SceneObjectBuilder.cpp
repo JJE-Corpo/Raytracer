@@ -93,6 +93,12 @@ namespace rc
         return (*this);
     }
 
+    SceneObjectBuilder &SceneObjectBuilder::withFile(const std::string &file)
+    {
+        this->_primitiveBuilder.withFile(file);
+        return (*this);
+    }
+
     SceneObjectBuilder &SceneObjectBuilder::withMaterial(const Material *material)
     {
         this->_primitiveBuilder.withMaterial(material);

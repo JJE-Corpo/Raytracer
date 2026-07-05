@@ -1,0 +1,104 @@
+{
+    "environment": {
+        "ambient": 0.3,
+        "diffuse": 0.7
+    },
+    "camera": {
+        "resolution": [960, 540],
+        "position": [0.0, -80.0, 40.0],
+        "rotation": [-20.0, 0.0, 0.0],
+        "fieldOfView": 55.0,
+        "samplesPerPixel": 24
+    },
+    "objects": [
+        {
+            "name": "Ground",
+            "type": "plane",
+            "axis": "z",
+            "position": [0.0, 0.0, 0.0],
+            "material": "Floor"
+        },
+        {
+            "name": "Polished Metal",
+            "type": "mesh",
+            "file": "tests/obj/slt.obj",
+            "position": [34.0, 4.0, 6.0],
+            "rotation": [0.0, 0.0, -18.0],
+            "scale": [110.0, 110.0, 110.0],
+            "material": "GoldMetal"
+        },
+        {
+            "name": "Glass",
+            "type": "mesh",
+            "file": "tests/obj/slt.obj",
+            "position": [-34.0, 6.0, 6.0],
+            "rotation": [0.0, 0.0, 25.0],
+            "scale": [110.0, 110.0, 110.0],
+            "material": "Glass"
+        },
+        {
+            "name": "Clearcoat",
+            "type": "mesh",
+            "file": "tests/obj/slt.obj",
+            "position": [2.0, 48.0, 6.0],
+            "rotation": [0.0, 0.0, 100.0],
+            "scale": [120.0, 120.0, 120.0],
+            "material": "CarminePaint"
+        },
+        {
+            "name": "Key Light",
+            "type": "directional_light",
+            "direction": [0.5, -0.4, 0.75],
+            "color": [255, 240, 210],
+            "intensity": 2.2
+        },
+        {
+            "name": "Cool Fill",
+            "type": "point_light",
+            "position": [-140.0, -90.0, 50.0],
+            "color": [130, 175, 255],
+            "intensity": 400000.0
+        },
+        {
+            "name": "Warm Rim",
+            "type": "point_light",
+            "position": [70.0, 150.0, 110.0],
+            "color": [255, 150, 70],
+            "intensity": 700000.0
+        }
+    ],
+    "materials": [
+        {
+            "name": "Floor",
+            "model": "pbr",
+            "base_color": [55, 58, 68],
+            "metallic": 0.0,
+            "roughness": 0.2
+        },
+        {
+            "name": "GoldMetal",
+            "model": "pbr",
+            "base_color": [255, 198, 92],
+            "metallic": 0.9,
+            "roughness": 0.22
+        },
+        {
+            "name": "Glass",
+            "model": "pbr",
+            "base_color": [150, 205, 255],
+            "metallic": 0.0,
+            "roughness": 0.06,
+            "transmission": 0.9,
+            "ior": 1.45
+        },
+        {
+            "name": "CarminePaint",
+            "model": "pbr",
+            "base_color": [92, 12, 28],
+            "metallic": 0.0,
+            "roughness": 0.55,
+            "clearcoat": 1.0,
+            "clearcoatRoughness": 0.03
+        }
+    ]
+}

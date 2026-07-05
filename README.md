@@ -39,6 +39,7 @@ Typical outputs include classic scenes with spheres, planes, cubes, cones, cylin
 | Torus primitive | [docs/objects/primitives/torus.md](docs/objects/primitives/torus.md) |
 | Tanglecube primitive | [docs/objects/primitives/tanglecube.md](docs/objects/primitives/tanglecube.md) |
 | Fractal primitive | [docs/objects/primitives/fractal.md](docs/objects/primitives/fractal.md) |
+| Mesh primitive | [docs/objects/primitives/mesh.md](docs/objects/primitives/mesh.md) |
 | AABB primitive | [docs/objects/primitives/aabb.md](docs/objects/primitives/aabb.md) |
 | Point light | [docs/objects/lights/point-light.md](docs/objects/lights/point-light.md) |
 | Directional light | [docs/objects/lights/directional-light.md](docs/objects/lights/directional-light.md) |
@@ -47,7 +48,7 @@ Typical outputs include classic scenes with spheres, planes, cubes, cones, cylin
 
 ## Features
 
-- Primitives available in builders/factories: sphere, plane, cube, cylinder, cone, triangle, torus, tanglecube, fractal.
+- Primitives available in builders/factories: sphere, plane, cube, cylinder, cone, triangle, torus, tanglecube, fractal, mesh (triangulated `.obj` with a local BVH).
 - Acceleration/utility geometry: AABB, BVH.
 - Lights implemented in parsers/builders: point light, directional light.
 - Additional source status: `Mobius_strip.*` exists but is currently not wired in parser/builder/Makefile.
