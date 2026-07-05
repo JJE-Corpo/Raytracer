@@ -101,6 +101,8 @@ namespace rc
         bool markerWindowPos(sf::Vector2f &out) const;
         void drawMarker(sf::RenderWindow &window) const;
         void addPrimitiveAtMarker(const std::string &type);
+        // Small X/Y/Z orientation compass drawn in the viewport's top-right.
+        void drawAxisGizmo(sf::RenderWindow &window) const;
         void drawEditOverlay(sf::RenderWindow &window);
         void applyImport();
         void updateViewportCamera(sf::RenderWindow &window);
