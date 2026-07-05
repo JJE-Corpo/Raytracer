@@ -86,6 +86,9 @@ namespace rc
         // "< Point N / total >" label from the current selection.
         void navigateVertex(int direction);
         void syncVertexNavigator();
+        // Bake the selected analytic primitive into an editable mesh (button in
+        // the Object panel) and select the resulting mesh.
+        void convertSelectionToMesh();
         void drawEditOverlay(sf::RenderWindow &window);
         void applyImport();
         void updateViewportCamera(sf::RenderWindow &window);

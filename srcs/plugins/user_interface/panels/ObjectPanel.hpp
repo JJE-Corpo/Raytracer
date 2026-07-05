@@ -47,6 +47,10 @@ namespace rc
             std::function<void(int direction)> onVertexNavigate;
             void setVertexNavigator(bool visible, int index, int count);
 
+            // "Convert to Mesh": shown for analytic primitives (not already
+            // vertex-editable) so they can be turned into an editable triangle mesh.
+            std::function<void()> onConvertToMesh;
+
             void setFont(sf::Font &font) override;
             void layout(float x, float y, float width);
             void setScene(IScene *scene);
@@ -94,6 +98,10 @@ namespace rc
             sf::Text _scaleStepLabel;
             Button _scaleDownButton;
             Button _scaleUpButton;
+
+            // "Convert to Mesh" button, shown for non-editable primitives.
+            Button _convertToMeshButton;
+            bool _showConvertToMesh = false;
 
             VectorField _vertexField;
             bool _showVertexEditor = false;

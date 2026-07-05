@@ -34,6 +34,9 @@ namespace rc
             std::unique_ptr<BVHNode> _bvhRoot;
             std::mutex _mutex;
 
+            // Counter for uniquely naming baked meshes in convertToMesh().
+            int _meshExportCounter = 0;
+
             // Root-list helpers (callers already hold, or don't need, _mutex).
             void addRoot(ISceneObject *object);
             // Insert a top-level node at a specific slot; a negative or
@@ -65,6 +68,7 @@ namespace rc
             ISceneObject *addGroup() override;
             void reparent(ISceneObject *child, ISceneObject *newParent, int index = -1) override;
             void removeObject(ISceneObject *object) override;
+            IPrimitive *convertToMesh(IPrimitive *primitive) override;
             // Take ownership of an already-built group (used by the parser/builder
             // when reconstructing a saved hierarchy).
             void adoptGroup(Group *group);

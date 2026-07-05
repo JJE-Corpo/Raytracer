@@ -23,8 +23,19 @@ Currently editable:
 
 The analytic primitives (cube, sphere, plane, cylinder, cone, torus, tanglecube,
 fractal) are defined by parameters rather than vertices and are not
-vertex-editable — move/scale them with the Object-panel transform fields. To edit
-a box corner by corner, load it as a mesh (e.g. `cube.obj`) instead.
+vertex-editable — move/scale them with the Object-panel transform fields.
+
+### Convert to Mesh
+
+To edit an analytic primitive vertex by vertex, select it and press **Convert to
+Mesh** in the Object panel. Its surface is tessellated into a triangle mesh
+(baked to `generated_meshes/<name>_<n>.obj`), the primitive is replaced by that
+mesh, and the mesh is selected so you can immediately enter edit mode. Because it
+is a normal file-backed mesh, it saves/reloads and accepts `vertex_overrides`
+like any other mesh. Infinite primitives (a plane) cannot be converted. The
+tessellation is a generic surface sampling, so convex shapes (cube, sphere, cone,
+cylinder) come out clean while non-convex ones (torus, tanglecube) are
+approximated.
 
 ## Entering / leaving edit mode
 
