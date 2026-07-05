@@ -981,6 +981,22 @@ namespace rc
             }
         }
 
+        // Object move: keep driving an in-progress object drag and end it on
+        // release, handled before component routing (same as the vertex drag).
+        if (this->_objectDragActive)
+        {
+            if (event.type == sf::Event::MouseMoved)
+            {
+                this->applyObjectDrag(mouse);
+                return;
+            }
+            if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left)
+            {
+                this->endObjectDrag();
+                return;
+            }
+        }
+
         // Tab toggles vertex edit mode for a selected editable primitive;
         // Escape leaves it. Suppressed while a field/pop-up owns the input.
         if (viewportMode && event.type == sf::Event::KeyPressed && !this->anyUiCapturing())
@@ -1062,6 +1078,15 @@ namespace rc
                         this->enterEditMode(obj, editable);
                     this->_editClickObject = obj;
                     this->_editClickClock.restart();
+
+                    // Left-drag the object just clicked to move it in space (a
+                    // plain click with no drag is still just a selection). Skipped
+                    // in edit mode and when Ctrl (multi-select) is held.
+                    const bool ctrl = sf::Keyboard::isKeyPressed(sf::Keyboard::LControl)
+                        || sf::Keyboard::isKeyPressed(sf::Keyboard::RControl);
+                    const ISceneObject *underCursor = this->pickObjectAt(mouse);
+                    if (!this->_editMode && !ctrl && underCursor)
+                        this->beginObjectDrag(const_cast<ISceneObject *>(underCursor), mouse);
                 }
             }
         }
@@ -1551,6 +1576,92 @@ namespace rc
         if (asObject)
             this->_hierarchyPanel.applyViewportSelection({asObject});
         this->_toastManager.push("Converted to mesh", "Now an editable mesh — press Tab to move its vertices.", ToastType::SUCCESS);
+    }
+
+    const ISceneObject *DefaultScreen::pickObjectAt(const sf::Vector2i &mouse)
+    {
+        IScene *scene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+        if (!scene)
+            return (nullptr);
+        sf::Vector2i pixel;
+        if (!this->_rendererPanel.getViewportPixel(mouse, pixel))
+            return (nullptr);
+        const ISceneObject *object = ViewportHelper::pickViewportLight(*scene, scene->getCamera(), pixel);
+        if (!object)
+        {
+            Intersection hit;
+            const Ray ray = scene->getCamera().generateRay(pixel.x, pixel.y);
+            if (scene->intersect(ray, 0.001f, std::numeric_limits<float>::infinity(), hit) && hit.primitive)
+                object = hit.primitive;
+        }
+        return (object);
+    }
+
+    bool DefaultScreen::viewportPlanePoint(const sf::Vector2i &mouse, const Vector3f &planeOrigin, Vector3f &out)
+    {
+        IScene *scene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+        if (!scene)
+            return (false);
+        sf::Vector2i pixel;
+        if (!this->_rendererPanel.getViewportPixel(mouse, pixel))
+            return (false);
+        const ICamera &camera = scene->getCamera();
+        const Vector2i resolution = camera.getResolution();
+        const Ray ray = ViewportHelper::rayThroughPixel(camera, pixel.x, pixel.y, resolution.x, resolution.y);
+        const Vector3f normal = camera.getForward();
+        const float denom = dot(ray.direction, normal);
+        if (std::fabs(denom) < 1e-6f)
+            return (false);
+        const float t = dot(planeOrigin - ray.origin, normal) / denom;
+        if (t <= 0.0f)
+            return (false);
+        out = ray.origin + ray.direction * t;
+        return (true);
+    }
+
+    void DefaultScreen::beginObjectDrag(ISceneObject *object, const sf::Vector2i &mouse)
+    {
+        if (!object)
+            return;
+        this->_objectDragActive = true;
+        this->_objectDragMoved = false;
+        this->_objectDragTarget = object;
+        const Vector3f objPos = object->getLocalPosition();
+        this->_objectDragPlaneOrigin = objPos;
+        Vector3f grab;
+        if (this->viewportPlanePoint(mouse, objPos, grab))
+            this->_objectDragOffset = objPos - grab;
+        else
+            this->_objectDragOffset = {0.0f, 0.0f, 0.0f};
+    }
+
+    void DefaultScreen::applyObjectDrag(const sf::Vector2i &mouse)
+    {
+        if (!this->_objectDragTarget)
+            return;
+        Vector3f grab;
+        if (!this->viewportPlanePoint(mouse, this->_objectDragPlaneOrigin, grab))
+            return;
+        this->_objectDragTarget->setLocalPosition(grab + this->_objectDragOffset);
+        this->_objectDragMoved = true;
+        this->markViewportBvhDirty();
+        this->forceViewportRetrace();
+    }
+
+    void DefaultScreen::endObjectDrag()
+    {
+        if (!this->_objectDragActive)
+            return;
+        this->_objectDragActive = false;
+        // A pure click (no movement) leaves the object where it was; only refresh
+        // the Object panel's position field when the object actually moved.
+        if (this->_objectDragMoved && this->_objectDragTarget)
+        {
+            this->_objectPanel.rebuild(this->_objectDragTarget);
+            this->markViewportBvhDirty();
+            this->forceViewportRetrace();
+        }
+        this->_objectDragTarget = nullptr;
     }
 
     void DefaultScreen::syncVertexNavigator()

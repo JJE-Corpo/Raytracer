@@ -89,6 +89,12 @@ namespace rc
         // Bake the selected analytic primitive into an editable mesh (button in
         // the Object panel) and select the resulting mesh.
         void convertSelectionToMesh();
+        // Object move-by-drag helpers.
+        const ISceneObject *pickObjectAt(const sf::Vector2i &mouse);
+        bool viewportPlanePoint(const sf::Vector2i &mouse, const Vector3f &planeOrigin, Vector3f &out);
+        void beginObjectDrag(ISceneObject *object, const sf::Vector2i &mouse);
+        void applyObjectDrag(const sf::Vector2i &mouse);
+        void endObjectDrag();
         void drawEditOverlay(sf::RenderWindow &window);
         void applyImport();
         void updateViewportCamera(sf::RenderWindow &window);
@@ -155,6 +161,16 @@ namespace rc
         // Double-click-to-edit tracking (viewport).
         sf::Clock _editClickClock;
         const ISceneObject *_editClickObject = nullptr;
+
+        // Object move: left-drag a selected object to slide it in the plane that
+        // passes through its position, parallel to the screen (same math as the
+        // vertex drag). _objectDragOffset preserves the grab point so the object
+        // doesn't jump under the cursor.
+        bool _objectDragActive = false;
+        bool _objectDragMoved = false;
+        ISceneObject *_objectDragTarget = nullptr;
+        Vector3f _objectDragPlaneOrigin = {0.0f, 0.0f, 0.0f};
+        Vector3f _objectDragOffset = {0.0f, 0.0f, 0.0f};
 
         // viewport
         sf::Vector2i _lastMouse;
