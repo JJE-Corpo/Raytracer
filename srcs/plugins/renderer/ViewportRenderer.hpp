@@ -19,6 +19,11 @@ namespace rc
     {
         private:
             Render _render = {0, 0, std::vector<Color>()};
+            // Cached geometry pass: base colors and the primitive hit at each pixel.
+            // Reused across overlay-only (selection/hover) changes so those never
+            // trigger a full re-raytrace of the scene.
+            std::vector<Color> _baseColors;
+            std::vector<const IPrimitive *> _primitiveIds;
             mutable std::mutex _renderMutex;
             mutable std::mutex _cacheMutex;
 
@@ -36,7 +41,7 @@ namespace rc
             const ISceneObject *_hover = nullptr;
             size_t _hoverVersion = 0;
             size_t _lastHoverVersion = 0;
-            bool needsRefresh(const IScene &scene) const;
+            bool needsGeometryRefresh(const IScene &scene) const;
         public:
             void renderScene(const IScene &scene) override;
             void setPixel(int x, int y, Color color) override;
