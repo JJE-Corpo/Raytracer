@@ -135,58 +135,7 @@ namespace rc
         MenuItem saveItem;
         saveItem.setLabel("Save");
         saveItem.onClick = [&]() {
-            if (this->_isNewScene)
-            {
-                if (this->_exploratorJustClosed == true)
-                {
-                    this->_toastManager.push("Please close the current explorer window first", "An explorer window is already open.", ToastType::ERROR);
-                    return;
-                }
-
-                try
-                {
-                    this->_exploratorResult = "";
-                    this->_exploratorJustClosed = true;
-
-                    this->_exploratorOnClose = [&]()
-                    {
-                        if (!this->_exploratorResult.empty())
-                        {
-                            try
-                            {
-                                this->_coreAccess->saveScene(this->_exploratorResult);
-                                this->_toastManager.push("Scene saved", "Scene saved successfully.", ToastType::SUCCESS);
-                            }
-                            catch (const std::exception &e)
-                            {
-                                this->_toastManager.push("Error saving scene", e.what(), ToastType::ERROR);
-                            }
-                        }
-                        else
-                        {
-                            this->_toastManager.push("No file selected", "No file was selected.", ToastType::INFO);
-                        }
-                    };
-
-                    this->_exploratorWindow.create(*this->_font, ExploratorMode::SAVE, this->_exploratorResult);
-                }
-                catch(const std::exception& e)
-                {
-                    this->_toastManager.push("Error loading scene", e.what(), ToastType::ERROR);
-                }
-
-                return;
-            }
-
-            try
-            {
-                this->_coreAccess->saveScene(this->_coreAccess->getCurrentScenePath());
-                this->_toastManager.push("Scene saved", "Scene saved successfully.", ToastType::SUCCESS);
-            }
-            catch (const std::exception &e)
-            {
-                this->_toastManager.push("Error saving scene", e.what(), ToastType::ERROR);
-            }
+            this->triggerSave();
         };
 
         MenuItem saveAsItem;
@@ -682,6 +631,21 @@ namespace rc
 
         this->layoutSidebarResize(window);
 
+        // Detect a scene replaced outside our own undo/redo (startup, Open, a
+        // config reload). Drop selection/hover that pointed into the old scene
+        // and start a fresh undo baseline on the new one. onSceneRestored keeps
+        // _lastHistoryScene in step for our swaps, so those don't reach here.
+        IScene *liveScene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+        if (liveScene != this->_lastHistoryScene)
+        {
+            this->_hierarchyPanel.applyViewportSelection({});
+            this->clearHover();
+            this->syncSelectionToRenderer();
+            if (this->_coreAccess)
+                this->_coreAccess->historyReset();
+            this->_lastHistoryScene = liveScene;
+        }
+
         this->_hierarchyPanel.setScene(this->_coreAccess ? this->_coreAccess->getScene() : nullptr);
         this->refreshSidebarVisibility();
         this->_sidebar.layout(this->_sidebarWidth, MENU_HEIGHT, static_cast<float>(window.getSize().y));
@@ -991,6 +955,13 @@ namespace rc
         if (this->_loadWindow.running)
             return;
 
+        // Global keyboard shortcuts (save / undo / redo) run before any routing
+        // so they win over the viewport and panels. handleShortcut returns true
+        // once it has consumed the event; an undo/redo may have swapped the scene
+        // object, so nothing below must touch the now-stale local state.
+        if (this->handleShortcut(event))
+            return;
+
         // Right mouse over the viewport is overloaded: a drag rotates the camera
         // (independently of the component routing below), while a plain click
         // (released without dragging past the threshold) opens the object
@@ -1099,6 +1070,19 @@ namespace rc
             else
                 this->clearHover();
         }
+
+        // Fold whatever this event changed into the undo history. Only commit-
+        // like events snapshot (a press for menu/context actions, a release to
+        // end a drag, a key release for typed edits), and historyCapture() is a
+        // no-op when nothing actually changed -- so a slider drag becomes a
+        // single undo step and plain selections/camera moves add none.
+        if (viewportMode && this->_coreAccess
+            && (event.type == sf::Event::MouseButtonPressed
+                || event.type == sf::Event::MouseButtonReleased
+                || event.type == sf::Event::KeyReleased))
+        {
+            this->_coreAccess->historyCapture();
+        }
     }
 
     bool DefaultScreen::isViewportCaptured(const sf::Vector2i &mouse)
@@ -1202,10 +1186,12 @@ namespace rc
         }
         // Releases always count, so a key can never stick regardless of where the
         // cursor is; presses only start a fly while the viewport owns input, so
-        // typing into a focused field or panel never drives the camera.
+        // typing into a focused field or panel never drives the camera. A press
+        // with Ctrl held is a shortcut (Ctrl+S/Z), not a fly key, so ignore it -
+        // otherwise Ctrl+Z would also nudge the camera forward (Z == forward).
         if (event.type == sf::Event::KeyReleased)
             this->setFlyKey(event.key.code, false);
-        else if (event.type == sf::Event::KeyPressed &&
+        else if (event.type == sf::Event::KeyPressed && !event.key.control &&
                  (this->_rightMouseHeld || this->isViewportCaptured(mouse)))
             this->setFlyKey(event.key.code, true);
     }
@@ -1260,6 +1246,150 @@ namespace rc
     void DefaultScreen::markViewportBvhDirty()
     {
         this->_viewportBvhDirty = true;
+    }
+
+    void DefaultScreen::triggerSave()
+    {
+        // A never-saved scene has no path yet, so route to the save dialog (same
+        // flow as "Save as"); an already-saved one overwrites its file directly.
+        if (this->_isNewScene)
+        {
+            if (this->_exploratorJustClosed == true)
+            {
+                this->_toastManager.push("Please close the current explorer window first", "An explorer window is already open.", ToastType::ERROR);
+                return;
+            }
+
+            try
+            {
+                this->_exploratorResult = "";
+                this->_exploratorJustClosed = true;
+
+                this->_exploratorOnClose = [&]()
+                {
+                    if (!this->_exploratorResult.empty())
+                    {
+                        try
+                        {
+                            this->_coreAccess->saveScene(this->_exploratorResult);
+                            this->_toastManager.push("Scene saved", "Scene saved successfully.", ToastType::SUCCESS);
+                        }
+                        catch (const std::exception &e)
+                        {
+                            this->_toastManager.push("Error saving scene", e.what(), ToastType::ERROR);
+                        }
+                    }
+                    else
+                    {
+                        this->_toastManager.push("No file selected", "No file was selected.", ToastType::INFO);
+                    }
+                };
+
+                this->_exploratorWindow.create(*this->_font, ExploratorMode::SAVE, this->_exploratorResult);
+            }
+            catch(const std::exception& e)
+            {
+                this->_toastManager.push("Error loading scene", e.what(), ToastType::ERROR);
+            }
+
+            return;
+        }
+
+        try
+        {
+            this->_coreAccess->saveScene(this->_coreAccess->getCurrentScenePath());
+            this->_toastManager.push("Scene saved", "Scene saved successfully.", ToastType::SUCCESS);
+        }
+        catch (const std::exception &e)
+        {
+            this->_toastManager.push("Error saving scene", e.what(), ToastType::ERROR);
+        }
+    }
+
+    bool DefaultScreen::isKeyboardCaptured()
+    {
+        if (this->_menuBar.isCapturing() || this->_contextMenu.isCapturing())
+            return (true);
+
+        std::vector<Component *> components;
+        this->_sidebar.collectComponents(components);
+        for (Component *component : components)
+            if (component && component->isCapturing())
+                return (true);
+        return (false);
+    }
+
+    bool DefaultScreen::handleShortcut(const sf::Event &event)
+    {
+        if (event.type != sf::Event::KeyPressed || !event.key.control)
+            return (false);
+
+        // Ctrl+S saves regardless of focus (it never destroys work); the modal
+        // windows already return earlier in handleEvent, so this can't fire while
+        // the save/open dialog is up.
+        if (event.key.code == sf::Keyboard::S)
+        {
+            this->triggerSave();
+            return (true);
+        }
+
+        // Ctrl+Z / Ctrl+Shift+Z undo/redo, but only in the editing viewport and
+        // never while a text field owns the keyboard (so typing keeps its own
+        // meaning and the scene isn't swapped from under an active edit).
+        if (event.key.code == sf::Keyboard::Z
+            && this->_viewMode == ViewMode::VIEWPORT && !this->isKeyboardCaptured())
+        {
+            if (event.key.shift)
+                this->redoShortcut();
+            else
+                this->undoShortcut();
+            return (true);
+        }
+        return (false);
+    }
+
+    void DefaultScreen::undoShortcut()
+    {
+        if (!this->_coreAccess)
+            return;
+        if (!this->_coreAccess->historyUndo())
+        {
+            this->_toastManager.push("Nothing to undo", "You are at the oldest change.", ToastType::INFO);
+            return;
+        }
+        this->onSceneRestored();
+        this->_toastManager.push("Undo", "Reverted the last change.", ToastType::INFO);
+    }
+
+    void DefaultScreen::redoShortcut()
+    {
+        if (!this->_coreAccess)
+            return;
+        if (!this->_coreAccess->historyRedo())
+        {
+            this->_toastManager.push("Nothing to redo", "You are at the latest change.", ToastType::INFO);
+            return;
+        }
+        this->onSceneRestored();
+        this->_toastManager.push("Redo", "Reapplied the change.", ToastType::INFO);
+    }
+
+    void DefaultScreen::onSceneRestored()
+    {
+        IScene *scene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+
+        // The previous scene object was deleted by the swap, so every cached
+        // pointer into it (selection, hover, panels) must be dropped/rebound
+        // before anything touches it again.
+        this->_hierarchyPanel.applyViewportSelection({});
+        this->_hierarchyPanel.setScene(scene);
+        this->clearHover();
+        this->syncSelectionToRenderer();
+        this->markViewportBvhDirty();
+
+        // This swap is ours, so keep the baseline tracker in step: otherwise
+        // update() would see the changed pointer and wipe the history.
+        this->_lastHistoryScene = scene;
     }
 
     void DefaultScreen::applyImport()
