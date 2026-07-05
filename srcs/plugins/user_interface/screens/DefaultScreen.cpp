@@ -593,7 +593,13 @@ namespace rc
         this->_objectPanel.setFont(*this->_font);
         this->_objectPanel.onSceneMutated = [this]
         {
+            // Rebuild the scene BVH AND force the viewport to re-trace: the
+            // renderer only re-runs its geometry pass on a camera/selection
+            // change, so without this a transform edit (position/rotation/scale,
+            // incl. the -/+ size buttons) would rebuild the BVH but keep showing
+            // the cached shape until the camera moved.
             this->markViewportBvhDirty();
+            this->forceViewportRetrace();
         };
         // Keyboard edit of the selected vertex's world coordinates, kept in sync
         // with dragging. Applies straight onto the editable primitive.
@@ -1502,7 +1508,7 @@ namespace rc
         // off-screen / behind-camera vertices are skipped by the projection.
         const sf::Color baseColor(0, 170, 255);
         const sf::Color hoverColor(255, 255, 255);
-        const sf::Color selectedColor(255, 200, 40);
+        const sf::Color selectedColor(255, 30, 30);   // bright red: the vertex being edited
         const std::size_t MAX_HANDLES = 4000;
         const std::size_t count = this->_editTarget->getVertexCount();
         std::size_t drawn = 0;
@@ -1513,13 +1519,15 @@ namespace rc
                 continue;
             const bool selected = static_cast<int>(i) == this->_selectedVertex;
             const bool hovered = static_cast<int>(i) == this->_hoverVertex;
-            const float radius = selected ? 5.0f : 4.0f;
+            // The selected handle is drawn larger with a white outline so the
+            // bright-red dot stays legible over any surface colour.
+            const float radius = selected ? 6.5f : 4.0f;
             sf::CircleShape dot(radius);
             dot.setOrigin(radius, radius);
             dot.setPosition(handle);
             dot.setFillColor(selected ? selectedColor : (hovered ? hoverColor : baseColor));
-            dot.setOutlineThickness(1.0f);
-            dot.setOutlineColor(theme::OUTLINE);
+            dot.setOutlineThickness(selected ? 2.0f : 1.0f);
+            dot.setOutlineColor(selected ? sf::Color(255, 255, 255) : theme::OUTLINE);
             window.draw(dot);
             if (++drawn >= MAX_HANDLES)
                 break;
