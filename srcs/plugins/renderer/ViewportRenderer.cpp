@@ -18,11 +18,39 @@
 namespace
 {
     constexpr int TILE_SIZE = 32;
-    const rc::Vector3f VIEWPORT_LIGHT = rc::normalize(rc::Vector3f(-0.35f, 0.75f, 0.55f));
-    const rc::ColorF SKY_TOP{56.0f / 255.0f, 96.0f / 255.0f, 150.0f / 255.0f};
-    const rc::ColorF SKY_BOTTOM{11.0f / 255.0f, 18.0f / 255.0f, 28.0f / 255.0f};
+    // Block size for the coarse draft pass rendered while the camera is moving.
+    // One primary ray fills a DRAFT_STEP x DRAFT_STEP block, cutting ray/intersect
+    // count ~DRAFT_STEP^2x during navigation; the frame refines to 1:1 on settle.
+    constexpr int DRAFT_STEP = 2;
+
+    // --- Viewport studio lighting -------------------------------------------
+    // A fixed, view-independent three-point rig plus a sky/ground ambient
+    // hemisphere. Keeping the lights in world space (instead of deriving them
+    // from the scene's own lights) means the preview always reads as solid,
+    // shaped geometry no matter how -- or whether -- the scene is lit, which is
+    // the whole point of a viewport. The warm key / cool fill contrast plus the
+    // hemisphere gradient are what pull the image out of the old flat wash.
+    const rc::Vector3f KEY_DIR  = rc::normalize(rc::Vector3f(-0.35f, 0.75f, 0.55f));
+    const rc::Vector3f FILL_DIR = rc::normalize(rc::Vector3f(0.72f, 0.10f, 0.30f));
+    const rc::Vector3f BACK_DIR = rc::normalize(rc::Vector3f(0.20f, 0.35f, -0.90f));
+
+    const rc::ColorF KEY_COLOR {1.00f, 0.94f, 0.82f};   // warm sun
+    const rc::ColorF FILL_COLOR{0.30f, 0.38f, 0.52f};   // cool bounce
+    const rc::ColorF RIM_COLOR {0.70f, 0.82f, 1.00f};   // cool rim / sky wrap
+
+    const rc::ColorF SKY_AMBIENT   {0.42f, 0.52f, 0.68f}; // hemisphere: from above
+    const rc::ColorF GROUND_AMBIENT{0.24f, 0.20f, 0.16f}; // hemisphere: from below
+
+    // Background / sky gradient (also the ray-miss colour).
+    const rc::ColorF SKY_ZENITH {0.20f, 0.36f, 0.58f};
+    const rc::ColorF SKY_HORIZON{0.58f, 0.64f, 0.72f};
+    const rc::ColorF SKY_NADIR  {0.05f, 0.07f, 0.11f};
     const rc::Color SELECTION_OUTLINE_COLOR{255, 200, 40};
     const rc::Color HOVER_OUTLINE_COLOR{120, 200, 255};
+    constexpr int SELECTION_OUTLINE_THICKNESS = 2;
+    constexpr int SELECTION_OUTLINE_GLOW = 5;
+    constexpr int HOVER_OUTLINE_THICKNESS = 1;
+    constexpr int HOVER_OUTLINE_GLOW = 3;
     const rc::Color LIGHT_GIZMO_COLOR{190, 190, 190};
     const rc::Color LIGHT_SELECTED_COLOR{255, 200, 40};
     const rc::Color LIGHT_HOVER_COLOR{170, 220, 255};
@@ -71,42 +99,179 @@ namespace
         return {origin, pixel00, pixel_delta_u, pixel_delta_v};
     }
 
-    rc::Ray viewport_primary_ray(const ViewportCameraData &camera_data, int x, int y)
+    // Sub-pixel coordinates are accepted so the anti-aliasing pass can jitter
+    // samples within a pixel; integer callers convert implicitly.
+    rc::Ray viewport_primary_ray(const ViewportCameraData &camera_data, float x, float y)
     {
         const rc::Vector3f pixel_sample = camera_data.pixel00
-                                         + (static_cast<float>(x) * camera_data.pixel_delta_u)
-                                         + (static_cast<float>(y) * camera_data.pixel_delta_v);
+                                         + (x * camera_data.pixel_delta_u)
+                                         + (y * camera_data.pixel_delta_v);
         const rc::Vector3f ray_dir = (pixel_sample - camera_data.origin).unit_vector();
         return {camera_data.origin, ray_dir};
     }
 
+    inline float saturate(float v)
+    {
+        return std::clamp(v, 0.0f, 1.0f);
+    }
+
+    inline rc::ColorF lerp(const rc::ColorF &a, const rc::ColorF &b, float t)
+    {
+        return a * (1.0f - t) + b * t;
+    }
+
+    // Narkowicz ACES filmic tone curve. Rolls off highlights gracefully and adds
+    // contrast through the mid-tones, so lit surfaces gain punch instead of
+    // washing out to flat pastels once several light terms are summed.
+    inline float aces(float x)
+    {
+        const float a = 2.51f, b = 0.03f, c = 2.43f, d = 0.59f, e = 0.14f;
+        return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
+    }
+
+    inline rc::ColorF tonemap(const rc::ColorF &c)
+    {
+        return {aces(c.r), aces(c.g), aces(c.b)};
+    }
+
+    // Rotated-grid sub-pixel offsets for the edge anti-aliasing pass. Eight taps
+    // spread over both axes; fixed (no RNG) so a settled frame is stable and
+    // reproducible.
+    constexpr int AA_SAMPLES = 8;
+    const rc::Vector2f AA_OFFSETS[AA_SAMPLES] = {
+        {-0.375f, -0.125f}, {0.125f, -0.375f}, {0.375f, 0.125f}, {-0.125f, 0.375f},
+        {-0.375f, 0.375f}, {0.375f, -0.375f}, {-0.125f, -0.125f}, {0.125f, 0.125f}
+    };
+    // Two neighbouring pixels whose colours differ by more than this (0..1 per
+    // channel, summed) are treated as an edge worth supersampling -- catches
+    // shading creases and highlights that share a primitive id.
+    constexpr float AA_COLOR_THRESHOLD = 0.10f;
+
+    inline float color_distance(const rc::Color &a, const rc::Color &b)
+    {
+        return (std::abs(a.r - b.r) + std::abs(a.g - b.g) + std::abs(a.b - b.b)) / 255.0f;
+    }
+
+    // Shading coefficients read once per frame so the hot per-pixel path never
+    // pays for the scene's virtual getters.
+    struct ShadeParams
+    {
+        float ambient;
+        float diffuse;
+    };
+
     rc::ColorF viewport_background(const rc::Ray &ray)
     {
-        rc::Vector3f dir = ray.direction.unit_vector();
-        float t = 0.5f * (dir.y + 1.0f);
+        // Primary rays are already unit length (see viewport_primary_ray), so we
+        // skip re-normalizing here -- one fewer sqrt for every sky pixel. A
+        // three-stop vertical gradient (nadir -> bright horizon -> zenith) plus a
+        // soft bloom toward the key light give the backdrop depth instead of a
+        // flat two-colour wash, which also keeps silhouettes reading clearly.
+        const float t = saturate(0.5f * (ray.direction.y + 1.0f));
+        rc::ColorF sky = (t < 0.5f)
+            ? lerp(SKY_NADIR, SKY_HORIZON, t * 2.0f)
+            : lerp(SKY_HORIZON, SKY_ZENITH, (t - 0.5f) * 2.0f);
 
-        return (SKY_BOTTOM * (1.0f - t) + SKY_TOP * t);
+        const float sun = saturate(rc::dot(ray.direction, KEY_DIR));
+        return sky + KEY_COLOR * (0.18f * std::pow(sun, 8.0f));
     }
 
-    rc::ColorF viewport_shade(const rc::Intersection &hit, const rc::IScene &scene)
+    // Full shading for one surface hit. `view_dir` is the unit primary-ray
+    // direction (points away from the eye). Everything is evaluated in a small
+    // fixed lighting rig and pushed through a filmic tone curve.
+    rc::ColorF viewport_shade(const rc::Intersection &hit, const rc::Vector3f &view_dir, const ShadeParams &shading)
     {
-        float lambert = std::max(0.0f, rc::dot(hit.normal, VIEWPORT_LIGHT));
-        float shade = scene.getAmbientCoefficient() + scene.getDiffuseCoefficient() * (0.25f + 0.75f * lambert);
+        const rc::Vector3f &N = hit.normal;
+        const rc::Vector3f V = view_dir * -1.0f;            // toward the eye (unit)
+        const rc::Material &mat = hit.material;
+        const rc::ColorF albedo = mat.baseColor;
 
-        shade = std::clamp(shade, 0.0f, 1.0f);
-        return (hit.material.baseColor * shade);
+        // Sky/ground hemisphere ambient -- the single biggest cure for flatness.
+        // Up-facing surfaces catch cool sky light, down-facing ones fall into a
+        // warm shadow, so even an otherwise unlit sphere shows a top-to-bottom
+        // gradient rather than one constant grey.
+        const float up = 0.5f * (N.y + 1.0f);
+        const rc::ColorF ambient = lerp(GROUND_AMBIENT, SKY_AMBIENT, up);
+
+        // Three-point diffuse. The fill is half-Lambert (wrapped) so it lifts the
+        // shadow side smoothly with no hard terminator; the back light rakes the
+        // far edge for separation.
+        const float key_d  = std::max(0.0f, rc::dot(N, KEY_DIR));
+        const float fill_d = 0.5f * rc::dot(N, FILL_DIR) + 0.5f;
+        const float back_d = std::max(0.0f, rc::dot(N, BACK_DIR));
+        const rc::ColorF diffuse = KEY_COLOR * key_d
+                                 + FILL_COLOR * (fill_d * fill_d * 0.7f)
+                                 + RIM_COLOR * (back_d * 0.15f);
+
+        // Blinn-Phong specular from the key light, shaped by the material. Metals
+        // tint the highlight with their base colour; dielectrics keep it white.
+        const float ndv = std::max(0.0f, rc::dot(N, V));
+        float spec = 0.0f;
+        if (key_d > 0.0f)
+        {
+            const rc::Vector3f H = rc::normalize(KEY_DIR + V);
+            const float ndh = std::max(0.0f, rc::dot(N, H));
+            const float gloss = std::clamp(mat.shininess, 8.0f, 400.0f);
+            const float energy = std::min(6.0f, 1.0f + gloss * 0.04f); // tight highlights stay bright
+            spec = std::pow(ndh, gloss) * energy * key_d;
+        }
+        const float spec_k = saturate(mat.specular_level * (1.0f - 0.7f * mat.roughness) + mat.metallic);
+        const rc::ColorF spec_color = lerp(rc::ColorF{1.0f, 1.0f, 1.0f}, albedo, mat.metallic) * (spec * spec_k);
+
+        // Fresnel rim: brightest at grazing angles, biased toward the top so it
+        // reads like sky light wrapping the silhouette and peels it off the
+        // background.
+        const float fresnel = std::pow(1.0f - ndv, 3.0f);
+        const rc::ColorF rim = RIM_COLOR * (fresnel * (0.25f + 0.35f * up));
+
+        // Compose. The scene's ambient/diffuse coefficients still steer the
+        // balance, but are floored so the preview never collapses to a flat
+        // silhouette when a scene ships with low coefficients.
+        const float amb_k = 0.30f + 0.70f * saturate(shading.ambient);
+        const float dif_k = 0.40f + 0.60f * saturate(shading.diffuse);
+        rc::ColorF lit = albedo * (ambient * amb_k + diffuse * dif_k) + spec_color + rim;
+        lit = lit * (0.25f + 0.75f * saturate(mat.ao));
+
+        return tonemap(lit);
     }
 
-    ViewportHit ray_hit(const rc::Ray &ray, const rc::IScene &scene)
+    rc::ColorF ray_color(const rc::Ray &ray, const rc::IScene &scene, const ShadeParams &shading)
+    {
+        rc::Intersection hit;
+
+        if (!scene.intersect(ray, 0.001f, std::numeric_limits<float>::infinity(), hit))
+            return viewport_background(ray);
+        return viewport_shade(hit, ray.direction, shading);
+    }
+
+    ViewportHit ray_hit(const rc::Ray &ray, const rc::IScene &scene, const ShadeParams &shading)
     {
         rc::Intersection hit;
 
         if (!scene.intersect(ray, 0.001f, std::numeric_limits<float>::infinity(), hit))
             return {viewport_background(ray).toColor(), nullptr, false};
-        return {viewport_shade(hit, scene).toColor(), hit.primitive, true};
+        return {viewport_shade(hit, ray.direction, shading).toColor(), hit.primitive, true};
     }
 
-    void apply_outline_mask(rc::Render &render, const std::vector<uint8_t> &mask, rc::Color color)
+    void blend_pixel(rc::Color &dst, const rc::Color &src, float alpha)
+    {
+        alpha = std::clamp(alpha, 0.0f, 1.0f);
+        const float inv = 1.0f - alpha;
+        dst.r = static_cast<uint8_t>(std::lround(dst.r * inv + src.r * alpha));
+        dst.g = static_cast<uint8_t>(std::lround(dst.g * inv + src.g * alpha));
+        dst.b = static_cast<uint8_t>(std::lround(dst.b * inv + src.b * alpha));
+    }
+
+    // Draws a smooth outline hugging every silhouette flagged in `mask`. Pixels
+    // within `thickness` of the edge get the solid outline color; beyond that a
+    // quadratic falloff yields an anti-aliased glow out to `glow_radius`.
+    //
+    // The outline only ever appears next to a silhouette edge, so rather than
+    // scanning a full kernel around every pixel (O(pixels * kernel)), we find the
+    // boundary pixels once and scatter the glow outward from them only
+    // (O(pixels + perimeter * kernel)). This keeps the pass cheap enough to run
+    // on every hover change.
+    void apply_outline_glow(rc::Render &render, const std::vector<uint8_t> &mask, rc::Color color, int thickness, int glow_radius)
     {
         if (render.size_x <= 0 || render.size_y <= 0)
             return;
@@ -114,51 +279,74 @@ namespace
         if (mask.size() != expected || render.pixels.size() != expected)
             return;
 
-        bool has_any_selected = false;
-        for (const auto &m : mask)
-        {
-            if (m)
-            {
-                has_any_selected = true;
-                break;
-            }
-        }
-        if (!has_any_selected)
-            return;
-
         const int w = render.size_x;
         const int h = render.size_y;
+        const int radius = std::max(1, std::max(thickness, glow_radius));
+        const int radius_sq = radius * radius;
+        const float core = static_cast<float>(thickness);
+        const float falloff = std::max(1.0f, static_cast<float>(glow_radius) - core);
+
+        // Per-pixel outline intensity; kept as the max (nearest edge) contribution.
+        std::vector<float> alpha(expected, 0.0f);
+        bool has_edge = false;
+
         for (int y = 0; y < h; ++y)
         {
             for (int x = 0; x < w; ++x)
             {
                 const size_t idx = static_cast<size_t>(y) * static_cast<size_t>(w) + static_cast<size_t>(x);
-                if (mask[idx])
+                if (!mask[idx])
                     continue;
 
-                bool neighbor_selected = false;
-                for (int dy = -1; dy <= 1 && !neighbor_selected; ++dy)
+                const bool boundary =
+                    x == 0 || !mask[idx - 1] ||
+                    x == w - 1 || !mask[idx + 1] ||
+                    y == 0 || !mask[idx - static_cast<size_t>(w)] ||
+                    y == h - 1 || !mask[idx + static_cast<size_t>(w)];
+                if (!boundary)
+                    continue;
+                has_edge = true;
+
+                for (int dy = -radius; dy <= radius; ++dy)
                 {
-                    for (int dx = -1; dx <= 1; ++dx)
+                    const int ny = y + dy;
+                    if (ny < 0 || ny >= h)
+                        continue;
+                    for (int dx = -radius; dx <= radius; ++dx)
                     {
-                        if (dx == 0 && dy == 0)
+                        const int dist_sq = dx * dx + dy * dy;
+                        if (dist_sq == 0 || dist_sq > radius_sq)
                             continue;
                         const int nx = x + dx;
-                        const int ny = y + dy;
-                        if (nx < 0 || ny < 0 || nx >= w || ny >= h)
+                        if (nx < 0 || nx >= w)
                             continue;
                         const size_t nidx = static_cast<size_t>(ny) * static_cast<size_t>(w) + static_cast<size_t>(nx);
                         if (mask[nidx])
+                            continue;
+
+                        const float dist = std::sqrt(static_cast<float>(dist_sq));
+                        float a;
+                        if (dist <= core)
+                            a = 1.0f;
+                        else
                         {
-                            neighbor_selected = true;
-                            break;
+                            const float f = 1.0f - (dist - core) / falloff;
+                            a = f * f;
                         }
+                        if (a > alpha[nidx])
+                            alpha[nidx] = a;
                     }
                 }
-
-                if (neighbor_selected)
-                    render.pixels[idx] = color;
             }
+        }
+
+        if (!has_edge)
+            return;
+
+        for (size_t idx = 0; idx < expected; ++idx)
+        {
+            if (alpha[idx] > 0.0f)
+                blend_pixel(render.pixels[idx], color, alpha[idx]);
         }
     }
 
@@ -212,7 +400,7 @@ namespace
     {
         if (radius <= 0)
             return;
-        const int steps = 24;
+        const int steps = std::max(24, radius * 6);
         const float step = 2.0f * 3.14159265358979323846f / static_cast<float>(steps);
         for (int i = 0; i < steps; ++i)
         {
@@ -315,7 +503,7 @@ namespace
 
 namespace rc
 {
-    bool ViewportRenderer::needsRefresh(const IScene &scene) const
+    bool ViewportRenderer::needsGeometryRefresh(const IScene &scene) const
     {
         const ICamera &camera = scene.getCamera();
         const Vector2i resolution = camera.getResolution();
@@ -333,10 +521,6 @@ namespace rc
             return (true);
         if (this->_lastSamplesPerPixel != camera.getSamplesPerPixel())
             return (true);
-        if (this->_lastSelectionVersion != this->_selectionVersion)
-            return (true);
-        if (this->_lastHoverVersion != this->_hoverVersion)
-            return (true);
         return (false);
     }
 
@@ -345,106 +529,279 @@ namespace rc
         const ICamera &camera = scene.getCamera();
         const Vector2i resolution = camera.getResolution();
 
-        bool needs_refresh;
-        {
-            std::lock_guard lock(_renderMutex);
-            needs_refresh = this->needsRefresh(scene) || this->_render.pixels.empty();
-        }
-
-        if (!needs_refresh)
-            return;
-
         if (resolution.x <= 0 || resolution.y <= 0)
             return;
 
-        this->_rendering = true;
-        this->_stopRequested = false;
+        const size_t pixel_count = static_cast<size_t>(resolution.x) * static_cast<size_t>(resolution.y);
 
-        const ViewportCameraData camera_data = build_viewport_camera_data(camera, resolution.x, resolution.y);
-
+        // Snapshot the current overlay state (selection + hover) and figure out
+        // whether the expensive geometry pass has to run at all.
         std::vector<const ISceneObject *> selection;
         size_t selection_version = 0;
         const ISceneObject *hover = nullptr;
         size_t hover_version = 0;
+        bool selection_changed = false;
+        bool hover_changed = false;
         {
             std::lock_guard lock(this->_cacheMutex);
             selection = this->_selection;
             selection_version = this->_selectionVersion;
             hover = this->_hover;
             hover_version = this->_hoverVersion;
+            selection_changed = this->_lastSelectionVersion != selection_version;
+            hover_changed = this->_lastHoverVersion != hover_version;
         }
-        const std::unordered_set selection_set(selection.begin(), selection.end());
-        const bool has_selection = !selection_set.empty();
-        const bool has_hover = hover != nullptr && selection_set.count(hover) == 0;
-        const size_t pixel_count = static_cast<size_t>(resolution.x) * static_cast<size_t>(resolution.y);
-        std::vector<Color> frame_buffer(pixel_count, Color());
-        std::vector<uint8_t> selection_mask(pixel_count, 0);
-        std::vector<uint8_t> hover_mask(pixel_count, 0);
 
-        std::vector<std::thread> workers;
-        std::atomic<int> next_tile = 0;
-
-        const int tiles_x = (resolution.x + TILE_SIZE - 1) / TILE_SIZE;
-        const int tiles_y = (resolution.y + TILE_SIZE - 1) / TILE_SIZE;
-        const int total_tiles = tiles_x * tiles_y;
-        const size_t thread_count = std::max<size_t>(1, std::thread::hardware_concurrency());
-
-        auto render_tile = [&](int tile_x, int tile_y)
+        // A selection change can accompany a scene mutation -- the UI piggybacks
+        // show/hide toggles onto setSelection -- so it forces a full geometry
+        // pass to stay correct. A hover change only ever tweaks the overlay, so
+        // hover-only updates skip ray tracing and re-composite from the cached
+        // buffers. Hover fires on every mouse-move across the viewport, so this
+        // is the hot path the optimization targets.
+        const bool camera_moved = this->needsGeometryRefresh(scene);
+        bool base_stale = false;
+        bool pending_refine = false;
+        bool pending_aa = false;
         {
-            const int start_x = tile_x * TILE_SIZE;
-            const int start_y = tile_y * TILE_SIZE;
-            const int end_x = std::min(start_x + TILE_SIZE, resolution.x);
-            const int end_y = std::min(start_y + TILE_SIZE, resolution.y);
+            std::lock_guard lock(_renderMutex);
+            base_stale = this->_baseColors.size() != pixel_count;
+        }
+        {
+            std::lock_guard lock(_cacheMutex);
+            pending_refine = this->_pendingRefine;
+            pending_aa = this->_pendingAA;
+        }
+        const bool geometry_dirty = camera_moved || selection_changed || base_stale || pending_refine || pending_aa;
 
-            for (int y = start_y; y < end_y; ++y)
+        if (!geometry_dirty && !hover_changed)
+            return;
+
+        // Progressive quality ladder, one rung per frame:
+        //   Draft -> coarse block trace while the camera is moving (responsive)
+        //   Full  -> exact 1:1 trace once the camera settles (crisp)
+        //   Aa    -> edge-adaptive supersample once the full frame is up (smooth)
+        // A selection change or the first frame skips straight to Full (those are
+        // not navigation and must be crisp immediately) and then still refine on
+        // to Aa. Aa only runs when nothing else forces a re-trace, so it always
+        // operates on the fresh full-resolution buffers left by a Full pass.
+        enum class Quality { Draft, Full, Aa };
+        Quality quality;
+        if (camera_moved && !base_stale)
+            quality = Quality::Draft;
+        else if (pending_aa && !pending_refine && !camera_moved && !selection_changed && !base_stale)
+            quality = Quality::Aa;
+        else
+            quality = Quality::Full;
+        const bool draft = quality == Quality::Draft;
+
+        this->_rendering = true;
+        this->_stopRequested = false;
+
+        // Geometry pass: only when the camera/scene changed. Produces the base
+        // colours and the primitive hit per pixel, both cached so overlay-only
+        // updates (hover/selection) can skip ray tracing entirely.
+        if (geometry_dirty)
+        {
+            const ViewportCameraData camera_data = build_viewport_camera_data(camera, resolution.x, resolution.y);
+            const ShadeParams shading{scene.getAmbientCoefficient(), scene.getDiffuseCoefficient()};
+
+            // Shared tiled work-queue: hands out TILE_SIZE tiles to a worker pool,
+            // each calling tile_fn(tile_x, tile_y). Both the trace pass and the
+            // anti-aliasing pass drive it, so the threading lives in one place.
+            const int tiles_x = (resolution.x + TILE_SIZE - 1) / TILE_SIZE;
+            const int tiles_y = (resolution.y + TILE_SIZE - 1) / TILE_SIZE;
+            const int total_tiles = tiles_x * tiles_y;
+            const size_t thread_count = std::max<size_t>(1, std::thread::hardware_concurrency());
+            auto run_tiles = [&](auto &&tile_fn)
             {
-                for (int x = start_x; x < end_x; ++x)
+                std::atomic<int> next_tile = 0;
+                auto worker = [&]
                 {
-                    if (this->_stopRequested)
-                        return;
-                    const Ray ray = viewport_primary_ray(camera_data, x, y);
-                    ViewportHit hit = ray_hit(ray, scene);
-                    const size_t idx = static_cast<size_t>(y) * static_cast<size_t>(resolution.x) + static_cast<size_t>(x);
-                    frame_buffer[idx] = hit.color;
-                    if (has_selection && hit.hit && hit.primitive && selection_set.count(hit.primitive) > 0)
-                        selection_mask[idx] = 1;
-                    else if (has_hover && hit.hit && hit.primitive == hover)
-                        hover_mask[idx] = 1;
+                    while (true)
+                    {
+                        if (this->_stopRequested)
+                            break;
+                        const int tile = next_tile++;
+                        if (tile >= total_tiles)
+                            break;
+                        tile_fn(tile % tiles_x, tile / tiles_x);
+                    }
+                };
+                std::vector<std::thread> workers;
+                workers.reserve(thread_count);
+                for (size_t i = 0; i < thread_count; ++i)
+                    workers.emplace_back(worker);
+                for (auto &worker_thread : workers)
+                    worker_thread.join();
+            };
+
+            if (quality == Quality::Aa)
+            {
+                // Edge-adaptive supersampling. Reuses the just-settled 1:1 colour
+                // and id buffers and only pays for AA_SAMPLES extra rays on
+                // silhouette / crease pixels (a 4-neighbour with a different
+                // primitive or a large colour step). Cost is ~O(perimeter), and
+                // it only ever runs while the view is idle -- so edges turn
+                // buttery-smooth without touching interaction latency.
+                std::vector<Color> base;
+                std::vector<const IPrimitive *> ids;
+                {
+                    std::lock_guard lock(_renderMutex);
+                    base = this->_baseColors;
+                    ids = this->_primitiveIds;
+                }
+                if (base.size() == pixel_count && ids.size() == pixel_count)
+                {
+                    std::vector<Color> smoothed = base;
+                    const int w = resolution.x;
+                    const int h = resolution.y;
+                    auto aa_tile = [&](int tile_x, int tile_y)
+                    {
+                        static const int dxs[4] = {-1, 1, 0, 0};
+                        static const int dys[4] = {0, 0, -1, 1};
+                        const int start_x = tile_x * TILE_SIZE;
+                        const int start_y = tile_y * TILE_SIZE;
+                        const int end_x = std::min(start_x + TILE_SIZE, w);
+                        const int end_y = std::min(start_y + TILE_SIZE, h);
+                        for (int y = start_y; y < end_y; ++y)
+                        {
+                            if (this->_stopRequested)
+                                return;
+                            const size_t row = static_cast<size_t>(y) * static_cast<size_t>(w);
+                            for (int x = start_x; x < end_x; ++x)
+                            {
+                                const size_t idx = row + static_cast<size_t>(x);
+                                const IPrimitive *id = ids[idx];
+                                bool edge = false;
+                                for (int k = 0; k < 4 && !edge; ++k)
+                                {
+                                    const int nx = x + dxs[k];
+                                    const int ny = y + dys[k];
+                                    if (nx < 0 || ny < 0 || nx >= w || ny >= h)
+                                        continue;
+                                    const size_t nidx = static_cast<size_t>(ny) * static_cast<size_t>(w) + static_cast<size_t>(nx);
+                                    if (ids[nidx] != id || color_distance(base[idx], base[nidx]) > AA_COLOR_THRESHOLD)
+                                        edge = true;
+                                }
+                                if (!edge)
+                                    continue;
+
+                                ColorF acc{0.0f, 0.0f, 0.0f};
+                                for (int s = 0; s < AA_SAMPLES; ++s)
+                                {
+                                    const Ray ray = viewport_primary_ray(camera_data,
+                                        static_cast<float>(x) + AA_OFFSETS[s].x,
+                                        static_cast<float>(y) + AA_OFFSETS[s].y);
+                                    acc = acc + ray_color(ray, scene, shading);
+                                }
+                                smoothed[idx] = (acc * (1.0f / static_cast<float>(AA_SAMPLES))).toColor();
+                            }
+                        }
+                    };
+                    run_tiles(aa_tile);
+
+                    if (!this->_stopRequested)
+                    {
+                        std::lock_guard lock(_renderMutex);
+                        this->_baseColors = std::move(smoothed);
+                    }
                 }
             }
-        };
-
-        auto worker = [&]
-        {
-            while (true)
+            else
             {
+                const int step = draft ? DRAFT_STEP : 1;
+                std::vector<Color> frame_buffer(pixel_count, Color());
+                std::vector<const IPrimitive *> id_buffer(pixel_count, nullptr);
+
+                auto render_tile = [&](int tile_x, int tile_y)
+                {
+                    const int start_x = tile_x * TILE_SIZE;
+                    const int start_y = tile_y * TILE_SIZE;
+                    const int end_x = std::min(start_x + TILE_SIZE, resolution.x);
+                    const int end_y = std::min(start_y + TILE_SIZE, resolution.y);
+
+                    // Each block traces a single ray at its centre and fills the
+                    // block; blocks are clamped to the tile so threads never write
+                    // outside their own tile. step == 1 is the exact 1:1 path.
+                    for (int by = start_y; by < end_y; by += step)
+                    {
+                        if (this->_stopRequested)
+                            return;
+                        for (int bx = start_x; bx < end_x; bx += step)
+                        {
+                            const int block_end_x = std::min(bx + step, end_x);
+                            const int block_end_y = std::min(by + step, end_y);
+                            const int sample_x = std::min(bx + step / 2, block_end_x - 1);
+                            const int sample_y = std::min(by + step / 2, block_end_y - 1);
+
+                            const Ray ray = viewport_primary_ray(camera_data, sample_x, sample_y);
+                            const ViewportHit hit = ray_hit(ray, scene, shading);
+                            const IPrimitive *id = hit.hit ? hit.primitive : nullptr;
+
+                            for (int y = by; y < block_end_y; ++y)
+                            {
+                                const size_t row = static_cast<size_t>(y) * static_cast<size_t>(resolution.x);
+                                for (int x = bx; x < block_end_x; ++x)
+                                {
+                                    frame_buffer[row + static_cast<size_t>(x)] = hit.color;
+                                    id_buffer[row + static_cast<size_t>(x)] = id;
+                                }
+                            }
+                        }
+                    }
+                };
+
+                run_tiles(render_tile);
+
                 if (this->_stopRequested)
-                    break;
-                const int tile = next_tile++;
-                if (tile >= total_tiles)
-                    break;
-                render_tile(tile % tiles_x, tile / tiles_x);
+                {
+                    this->_rendering = false;
+                    return;
+                }
+
+                std::lock_guard lock(_renderMutex);
+                this->_baseColors = std::move(frame_buffer);
+                this->_primitiveIds = std::move(id_buffer);
             }
-        };
+        }
 
-        workers.reserve(thread_count);
-        for (size_t i = 0; i < thread_count; ++i)
-            workers.emplace_back(worker);
-        for (auto &worker_thread : workers)
-            worker_thread.join();
-
-        if (this->_stopRequested)
+        // Composite pass: rebuild the overlay (outlines + gizmos) over a fresh
+        // copy of the cached base colours. Cheap enough to run every hover/select.
+        std::vector<Color> composite;
+        std::vector<const IPrimitive *> ids;
+        {
+            std::lock_guard lock(_renderMutex);
+            composite = this->_baseColors;
+            ids = this->_primitiveIds;
+        }
+        if (composite.size() != pixel_count || ids.size() != pixel_count)
         {
             this->_rendering = false;
             return;
         }
 
-        Render final_render = {resolution.x, resolution.y, std::move(frame_buffer)};
+        const std::unordered_set selection_set(selection.begin(), selection.end());
+        const bool has_selection = !selection_set.empty();
+        const bool has_hover = hover != nullptr && selection_set.count(hover) == 0;
+        std::vector<uint8_t> selection_mask(pixel_count, 0);
+        std::vector<uint8_t> hover_mask(pixel_count, 0);
+        for (size_t idx = 0; idx < pixel_count; ++idx)
+        {
+            const IPrimitive *primitive = ids[idx];
+            if (!primitive)
+                continue;
+            if (has_selection && selection_set.count(primitive) > 0)
+                selection_mask[idx] = 1;
+            else if (has_hover && primitive == hover)
+                hover_mask[idx] = 1;
+        }
+
+        Render final_render = {resolution.x, resolution.y, std::move(composite)};
 
         if (has_hover)
-            apply_outline_mask(final_render, hover_mask, HOVER_OUTLINE_COLOR);
+            apply_outline_glow(final_render, hover_mask, HOVER_OUTLINE_COLOR, HOVER_OUTLINE_THICKNESS, HOVER_OUTLINE_GLOW);
         if (has_selection)
-            apply_outline_mask(final_render, selection_mask, SELECTION_OUTLINE_COLOR);
+            apply_outline_glow(final_render, selection_mask, SELECTION_OUTLINE_COLOR, SELECTION_OUTLINE_THICKNESS, SELECTION_OUTLINE_GLOW);
 
         draw_light_gizmos(final_render, scene, camera, selection_set, hover);
 
@@ -463,6 +820,11 @@ namespace rc
             this->_lastSamplesPerPixel = camera.getSamplesPerPixel();
             this->_lastSelectionVersion = selection_version;
             this->_lastHoverVersion = hover_version;
+            // Advance the quality ladder for the next frame: a Draft schedules a
+            // Full refine, a Full frame schedules the Aa polish, and Aa settles
+            // (both flags clear) so the next idle frame early-returns.
+            this->_pendingRefine = (quality == Quality::Draft);
+            this->_pendingAA = (quality == Quality::Full);
         }
 
         this->_rendering = false;
