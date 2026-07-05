@@ -248,12 +248,7 @@ namespace rc
 
     IScene &Core::loadNewScene(const std::string &scene_path)
     {
-        IScene *scene = this->_sceneParser.parseScene(scene_path);
-
-        for (auto &primitive : scene->getPrimitives())
-            this->_scene->addPrimitive(primitive);
-
-        return *scene;
+        return *this->_sceneParser.parseScene(scene_path);
     }
 
     IScene *Core::getScene() const
