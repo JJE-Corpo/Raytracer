@@ -792,6 +792,7 @@ namespace rc
         if (this->_viewMode == ViewMode::VIEWPORT)
         {
             this->drawEditOverlay(window);
+            this->drawMoveGizmo(window);
             this->drawMarker(window);
             this->drawAxisGizmo(window);
         }
@@ -993,6 +994,22 @@ namespace rc
             }
         }
 
+        // Move gizmo: keep driving an in-progress axis-arrow drag and end it on
+        // release, handled before component routing (same as the vertex drag).
+        if (this->_axisDragActive)
+        {
+            if (event.type == sf::Event::MouseMoved)
+            {
+                this->applyAxisDrag(mouse);
+                return;
+            }
+            if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left)
+            {
+                this->endAxisDrag();
+                return;
+            }
+        }
+
         // Object move: keep driving an in-progress object drag and end it on
         // release, handled before component routing (same as the vertex drag).
         if (this->_objectDragActive)
@@ -1076,6 +1093,13 @@ namespace rc
                         this->_selectedVertex = -1;
                         this->syncVertexEditorField();
                     }
+                }
+                else if (int gizmoAxis = this->pickGizmoAxis(mouse); gizmoAxis >= 0)
+                {
+                    // Clicking a move-gizmo arrow grabs that axis: the current
+                    // selection is kept and the object slides along the axis only.
+                    // (pickGizmoAxis only returns >= 0 for a single selection.)
+                    this->beginAxisDrag(this->singleSelectedObject(), gizmoAxis, mouse);
                 }
                 else
                 {
@@ -1230,7 +1254,8 @@ namespace rc
         // typing into a focused field or panel never drives the camera.
         if (event.type == sf::Event::KeyReleased)
             this->setFlyKey(event.key.code, false);
-        else if (event.type == sf::Event::KeyPressed && !this->_vertexDragActive && !this->_objectDragActive &&
+        else if (event.type == sf::Event::KeyPressed && !this->_vertexDragActive && !this->_objectDragActive
+                 && !this->_axisDragActive &&
                  (this->_rightMouseHeld || this->isViewportCaptured(mouse)))
             this->setFlyKey(event.key.code, true);
     }
@@ -1696,6 +1721,245 @@ namespace rc
             this->forceViewportRetrace();
         }
         this->_objectDragTarget = nullptr;
+    }
+
+    namespace
+    {
+        Vector3f axisVector(int axis)
+        {
+            if (axis == 0)
+                return {1.0f, 0.0f, 0.0f};
+            if (axis == 1)
+                return {0.0f, 1.0f, 0.0f};
+            return {0.0f, 0.0f, 1.0f};
+        }
+
+        // Shortest distance from point p to the segment [a, b], in 2D.
+        float segmentDistance(const sf::Vector2f &p, const sf::Vector2f &a, const sf::Vector2f &b)
+        {
+            const sf::Vector2f ab(b.x - a.x, b.y - a.y);
+            const sf::Vector2f ap(p.x - a.x, p.y - a.y);
+            const float len2 = ab.x * ab.x + ab.y * ab.y;
+            float t = (len2 > 1e-6f) ? (ap.x * ab.x + ap.y * ab.y) / len2 : 0.0f;
+            t = std::max(0.0f, std::min(1.0f, t));
+            const sf::Vector2f proj(a.x + ab.x * t, a.y + ab.y * t);
+            const sf::Vector2f d(p.x - proj.x, p.y - proj.y);
+            return std::sqrt(d.x * d.x + d.y * d.y);
+        }
+    }
+
+    ISceneObject *DefaultScreen::singleSelectedObject() const
+    {
+        const std::vector<const ISceneObject *> &selection = this->_hierarchyPanel.getSelection();
+        if (selection.size() != 1 || !selection[0])
+            return (nullptr);
+        return (const_cast<ISceneObject *>(selection[0]));
+    }
+
+    bool DefaultScreen::projectToViewport(const Vector3f &point, sf::Vector2f &out) const
+    {
+        IScene *scene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+        if (!scene)
+            return (false);
+        const ICamera &camera = scene->getCamera();
+        const Vector2i resolution = camera.getResolution();
+        if (resolution.x <= 0 || resolution.y <= 0)
+            return (false);
+
+        const Vector3f forward = camera.getForward();
+        const Vector3f right = camera.getRight();
+        const Vector3f up = right.cross(forward).unit_vector();
+        const Vector3f toPoint = point - camera.getPosition();
+        const float z = dot(toPoint, forward);
+        if (z <= 0.001f) // behind the camera
+            return (false);
+
+        constexpr float PI = 3.14159265358979323846f;
+        const float theta = static_cast<float>(camera.getFov()) * (PI / 180.0f);
+        const float viewportHeight = 2.0f * std::tan(theta / 2.0f);
+        const float viewportWidth = viewportHeight
+            * (static_cast<float>(resolution.x) / static_cast<float>(resolution.y));
+        const float ndcX = (dot(toPoint, right) / z) / (viewportWidth / 2.0f);
+        const float ndcY = (dot(toPoint, up) / z) / (viewportHeight / 2.0f);
+        // No NDC clamp (unlike ViewportHelper::projectToPixel), so an arrow whose
+        // tip leaves the viewport edge still projects and draws.
+        const float px = (ndcX * 0.5f + 0.5f) * static_cast<float>(resolution.x - 1);
+        const float py = (-ndcY * 0.5f + 0.5f) * static_cast<float>(resolution.y - 1);
+
+        const sf::IntRect &bounds = this->_rendererPanel.viewportBounds;
+        const float scale = this->_rendererPanel.viewportScale;
+        out.x = static_cast<float>(bounds.left) + px * scale;
+        out.y = static_cast<float>(bounds.top) + py * scale;
+        return (true);
+    }
+
+    bool DefaultScreen::gizmoArrow(int axis, sf::Vector2f &origin, sf::Vector2f &tip) const
+    {
+        ISceneObject *object = this->singleSelectedObject();
+        if (!object || !this->_coreAccess)
+            return (false);
+        IScene *scene = this->_coreAccess->getScene();
+        if (!scene)
+            return (false);
+        const Vector3f objPos = object->getPosition();
+        // World length chosen so the arrow keeps a roughly constant on-screen size
+        // regardless of the object's distance to the camera.
+        const Vector3f toCam = objPos - scene->getCamera().getPosition();
+        float length = std::sqrt(dot(toCam, toCam)) * 0.16f;
+        if (length < 1e-4f)
+            length = 1.0f;
+        if (!this->projectToViewport(objPos, origin))
+            return (false);
+        if (!this->projectToViewport(objPos + axisVector(axis) * length, tip))
+            return (false);
+        return (true);
+    }
+
+    int DefaultScreen::pickGizmoAxis(const sf::Vector2i &mouse) const
+    {
+        if (this->_editMode || !this->singleSelectedObject())
+            return (-1);
+        if (!this->_rendererPanel.viewportBounds.contains(mouse))
+            return (-1);
+        const sf::Vector2f m(static_cast<float>(mouse.x), static_cast<float>(mouse.y));
+        int best = -1;
+        float bestDistance = 8.0f; // pick radius in pixels
+        for (int axis = 0; axis < 3; ++axis)
+        {
+            sf::Vector2f origin;
+            sf::Vector2f tip;
+            if (!this->gizmoArrow(axis, origin, tip))
+                continue;
+            const float d = segmentDistance(m, origin, tip);
+            if (d < bestDistance)
+            {
+                bestDistance = d;
+                best = axis;
+            }
+        }
+        return (best);
+    }
+
+    void DefaultScreen::drawMoveGizmo(sf::RenderWindow &window) const
+    {
+        if (this->_editMode || !this->singleSelectedObject())
+            return;
+        constexpr float PI = 3.14159265358979323846f;
+        const sf::Color colors[3] = {sf::Color(235, 80, 80), sf::Color(95, 205, 100), sf::Color(95, 160, 245)};
+        bool centerDrawn = false;
+        sf::Vector2f center;
+        for (int axis = 0; axis < 3; ++axis)
+        {
+            sf::Vector2f origin;
+            sf::Vector2f tip;
+            if (!this->gizmoArrow(axis, origin, tip))
+                continue;
+            center = origin;
+            centerDrawn = true;
+            const sf::Vector2f d(tip.x - origin.x, tip.y - origin.y);
+            const float len = std::sqrt(d.x * d.x + d.y * d.y);
+            if (len < 1.0f)
+                continue;
+            const float angle = std::atan2(d.y, d.x) * 180.0f / PI;
+
+            const bool active = this->_axisDragActive && this->_axisDragAxis == axis;
+            const sf::Color color = active ? sf::Color(255, 235, 90) : colors[axis];
+
+            sf::RectangleShape shaft({len - 6.0f, active ? 4.0f : 3.0f});
+            shaft.setOrigin(0.0f, (active ? 4.0f : 3.0f) / 2.0f);
+            shaft.setPosition(origin);
+            shaft.setRotation(angle);
+            shaft.setFillColor(color);
+            window.draw(shaft);
+
+            sf::CircleShape head(6.5f, 3);
+            head.setOrigin(6.5f, 6.5f);
+            head.setPosition(tip);
+            head.setRotation(angle + 90.0f);
+            head.setFillColor(color);
+            window.draw(head);
+        }
+        if (centerDrawn)
+        {
+            sf::CircleShape hub(3.5f);
+            hub.setOrigin(3.5f, 3.5f);
+            hub.setPosition(center);
+            hub.setFillColor(sf::Color(240, 240, 240));
+            window.draw(hub);
+        }
+    }
+
+    bool DefaultScreen::axisParamFromMouse(const sf::Vector2i &mouse, const Vector3f &axisOrigin,
+        const Vector3f &axisDir, float &t) const
+    {
+        IScene *scene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+        if (!scene)
+            return (false);
+        sf::Vector2i pixel;
+        if (!this->_rendererPanel.getViewportPixel(mouse, pixel))
+            return (false);
+        const ICamera &camera = scene->getCamera();
+        const Vector2i resolution = camera.getResolution();
+        const Ray ray = ViewportHelper::rayThroughPixel(camera, pixel.x, pixel.y, resolution.x, resolution.y);
+        const Vector3f o = ray.origin;
+        const Vector3f r = ray.direction.unit_vector();
+
+        // Closest point on the axis line (axisOrigin + t*axisDir, axisDir unit) to
+        // the mouse ray (o + s*r, r unit): with a = c = 1, t = (b*e - d) / (1 - b^2).
+        const Vector3f w0 = axisOrigin - o;
+        const float b = dot(axisDir, r);
+        const float d = dot(axisDir, w0);
+        const float e = dot(r, w0);
+        const float denom = 1.0f - b * b;
+        if (std::fabs(denom) < 1e-6f) // ray nearly parallel to the axis: ill-defined
+            return (false);
+        t = (b * e - d) / denom;
+        return (true);
+    }
+
+    void DefaultScreen::beginAxisDrag(ISceneObject *object, int axis, const sf::Vector2i &mouse)
+    {
+        if (!object)
+            return;
+        this->_axisDragActive = true;
+        this->_axisDragMoved = false;
+        this->_axisDragTarget = object;
+        this->_axisDragAxis = axis;
+        this->_axisDragObjStart = object->getPosition();
+        this->_axisDragDir = axisVector(axis);
+        float t = 0.0f;
+        this->_axisDragGrabT =
+            this->axisParamFromMouse(mouse, this->_axisDragObjStart, this->_axisDragDir, t) ? t : 0.0f;
+    }
+
+    void DefaultScreen::applyAxisDrag(const sf::Vector2i &mouse)
+    {
+        if (!this->_axisDragTarget)
+            return;
+        float t = 0.0f;
+        if (!this->axisParamFromMouse(mouse, this->_axisDragObjStart, this->_axisDragDir, t))
+            return;
+        const Vector3f newPos = this->_axisDragObjStart + this->_axisDragDir * (t - this->_axisDragGrabT);
+        this->_axisDragTarget->setLocalPosition(newPos);
+        this->_axisDragMoved = true;
+        this->markViewportBvhDirty();
+        this->forceViewportRetrace();
+    }
+
+    void DefaultScreen::endAxisDrag()
+    {
+        if (!this->_axisDragActive)
+            return;
+        this->_axisDragActive = false;
+        if (this->_axisDragMoved && this->_axisDragTarget)
+        {
+            this->_objectPanel.rebuild(this->_axisDragTarget);
+            this->markViewportBvhDirty();
+            this->forceViewportRetrace();
+        }
+        this->_axisDragMoved = false;
+        this->_axisDragTarget = nullptr;
+        this->_axisDragAxis = -1;
     }
 
     bool DefaultScreen::computeMarker(const sf::Vector2i &mouse, Vector3f &out)

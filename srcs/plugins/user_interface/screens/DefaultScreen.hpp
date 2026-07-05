@@ -103,6 +103,18 @@ namespace rc
         void addPrimitiveAtMarker(const std::string &type);
         // Small X/Y/Z orientation compass drawn in the viewport's top-right.
         void drawAxisGizmo(sf::RenderWindow &window) const;
+        // Move gizmo: three axis arrows on the selected object; dragging one
+        // slides the object along that single world axis.
+        ISceneObject *singleSelectedObject() const;
+        bool projectToViewport(const Vector3f &point, sf::Vector2f &out) const;
+        bool gizmoArrow(int axis, sf::Vector2f &origin, sf::Vector2f &tip) const;
+        int pickGizmoAxis(const sf::Vector2i &mouse) const;
+        void drawMoveGizmo(sf::RenderWindow &window) const;
+        bool axisParamFromMouse(const sf::Vector2i &mouse, const Vector3f &axisOrigin,
+            const Vector3f &axisDir, float &t) const;
+        void beginAxisDrag(ISceneObject *object, int axis, const sf::Vector2i &mouse);
+        void applyAxisDrag(const sf::Vector2i &mouse);
+        void endAxisDrag();
         void drawEditOverlay(sf::RenderWindow &window);
         void applyImport();
         void updateViewportCamera(sf::RenderWindow &window);
@@ -184,6 +196,17 @@ namespace rc
         // primitives spawn there instead of at the origin.
         bool _markerActive = false;
         Vector3f _markerPos = {0.0f, 0.0f, 0.0f};
+
+        // Move-gizmo drag: an axis arrow was grabbed; the object slides along
+        // _axisDragDir by the change in the closest-point parameter of the mouse
+        // ray relative to that axis line (see applyAxisDrag).
+        bool _axisDragActive = false;
+        bool _axisDragMoved = false;
+        ISceneObject *_axisDragTarget = nullptr;
+        int _axisDragAxis = -1;
+        Vector3f _axisDragObjStart = {0.0f, 0.0f, 0.0f};
+        Vector3f _axisDragDir = {0.0f, 0.0f, 0.0f};
+        float _axisDragGrabT = 0.0f;
 
         // viewport
         sf::Vector2i _lastMouse;
