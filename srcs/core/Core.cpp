@@ -256,6 +256,101 @@ namespace rc
         return (this->_scene);
     }
 
+    nlohmann::json Core::snapshotScene() const
+    {
+        return (SceneRegister::serializeScene(this->_scene));
+    }
+
+    std::string Core::historySignature(const nlohmann::json &snapshot)
+    {
+        // Compare scenes without their camera so panning/orbiting/flying the
+        // camera does not register as an editable change.
+        nlohmann::json cameraless = snapshot;
+
+        cameraless.erase("camera");
+        return (cameraless.dump());
+    }
+
+    void Core::restoreSnapshot(const nlohmann::json &snapshot)
+    {
+        // Keep the live camera across the swap: the snapshot carries whatever
+        // camera it was taken with (needed so the parser accepts it), but the
+        // user's current viewpoint should not jump when undoing an edit.
+        ICamera &current = this->_scene->getCamera();
+        const Vector3f position = current.getPosition();
+        const Vector3f rotation = current.getRotation();
+        const double fov = current.getFov();
+        const Vector2i resolution = current.getResolution();
+        const int samples = current.getSamplesPerPixel();
+
+        IScene *restored = this->_sceneParser.parseScene(snapshot);
+
+        delete (this->_scene);
+        this->_scene = restored;
+
+        ICamera &camera = this->_scene->getCamera();
+        camera.setPosition(position);
+        camera.setRotation(rotation);
+        camera.setFov(fov);
+        camera.setResolution(resolution);
+        camera.setSamplesPerPixel(samples);
+    }
+
+    void Core::historyReset()
+    {
+        this->_history.clear();
+        this->_historyIndex = -1;
+        if (!this->_scene)
+            return;
+        this->_history.push_back(this->snapshotScene());
+        this->_historyIndex = 0;
+    }
+
+    bool Core::historyCapture()
+    {
+        if (!this->_scene)
+            return (false);
+        if (this->_historyIndex < 0)
+        {
+            this->historyReset();
+            return (true);
+        }
+
+        nlohmann::json snapshot = this->snapshotScene();
+        if (historySignature(snapshot) == historySignature(this->_history[this->_historyIndex]))
+            return (false);
+
+        // Drop any redo tail, then append the new state as the current step.
+        if (this->_historyIndex + 1 < static_cast<int>(this->_history.size()))
+            this->_history.erase(this->_history.begin() + this->_historyIndex + 1, this->_history.end());
+        this->_history.push_back(std::move(snapshot));
+
+        // Bound memory: forget the oldest states once the cap is hit.
+        if (this->_history.size() > HISTORY_LIMIT)
+            this->_history.erase(this->_history.begin(), this->_history.begin() + (this->_history.size() - HISTORY_LIMIT));
+        this->_historyIndex = static_cast<int>(this->_history.size()) - 1;
+        return (true);
+    }
+
+    bool Core::historyUndo()
+    {
+        if (!this->_scene || this->_historyIndex <= 0)
+            return (false);
+        this->restoreSnapshot(this->_history[this->_historyIndex - 1]);
+        this->_historyIndex -= 1;
+        return (true);
+    }
+
+    bool Core::historyRedo()
+    {
+        if (!this->_scene || this->_historyIndex < 0
+            || this->_historyIndex + 1 >= static_cast<int>(this->_history.size()))
+            return (false);
+        this->restoreSnapshot(this->_history[this->_historyIndex + 1]);
+        this->_historyIndex += 1;
+        return (true);
+    }
+
     ISceneRenderer *Core::getRenderer() const
     {
         if (this->_clusterModule && this->_clusterModule->getClusterMode() == ClusterMode::SERVER)
