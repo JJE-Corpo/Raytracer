@@ -509,6 +509,8 @@ namespace rc
         const Vector2i resolution = camera.getResolution();
 
         std::lock_guard<std::mutex> lock(_cacheMutex);
+        if (this->_sceneDirty)
+            return (true);
         if (this->_lastScene != &scene)
             return (true);
         if (this->_lastResolution.x != resolution.x || this->_lastResolution.y != resolution.y)
@@ -812,6 +814,7 @@ namespace rc
 
         {
             std::lock_guard lock(_cacheMutex);
+            this->_sceneDirty = false;
             this->_lastScene = &scene;
             this->_lastResolution = resolution;
             this->_lastCameraPosition = camera.getPosition();
@@ -841,6 +844,12 @@ namespace rc
         if (x < 0 || y < 0 || x >= this->_render.size_x || y >= this->_render.size_y)
             return;
         this->_render.pixels[y * this->_render.size_x + x] = color;
+    }
+
+    void ViewportRenderer::markSceneDirty()
+    {
+        std::lock_guard lock(this->_cacheMutex);
+        this->_sceneDirty = true;
     }
 
     void ViewportRenderer::setSelection(const std::vector<const ISceneObject *> &selection)
