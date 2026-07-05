@@ -1237,6 +1237,9 @@ namespace rc
             if (this->_viewportBvhDirty)
             {
                 this->_coreAccess->getScene()->buildBvh();
+                // The BVH being dirty means the scene contents changed; tell the
+                // viewport renderer to drop its cached frame so the edit shows up.
+                this->_activeRenderer->markSceneDirty();
                 this->_viewportBvhDirty = false;
             }
             this->_activeRenderer->renderScene(*this->_coreAccess->getScene());
