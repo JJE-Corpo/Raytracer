@@ -28,6 +28,13 @@ namespace rc
             bool isPrimitive = false;
             std::function<void()> onSceneMutated;
 
+            // Vertex edit mode: when shown, a coordinate field for the vertex
+            // currently selected in the viewport. onVertexEdit applies a
+            // keyboard edit (world coordinate) back onto that vertex; the screen
+            // keeps the displayed value in sync with the live drag.
+            std::function<bool(Axis axis, float value)> onVertexEdit;
+            void setVertexEditor(bool visible, const Vector3f &value);
+
             void setFont(sf::Font &font) override;
             void layout(float x, float y, float width);
             void setScene(IScene *scene);
@@ -64,6 +71,9 @@ namespace rc
             VectorField _positionField;
             VectorField _rotationField;
             VectorField _scaleField;
+
+            VectorField _vertexField;
+            bool _showVertexEditor = false;
 
             sf::Font _font;
     };
