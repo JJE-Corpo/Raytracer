@@ -19,6 +19,9 @@
 #include <atomic>
 #include <thread>
 #include <iostream>
+#include <vector>
+#include <cstdio>
+#include <algorithm>
 #include <SFML/Graphics.hpp>
 
 #include "../../../common/scene/IScene.hpp"
@@ -39,8 +42,8 @@ namespace rc
         Button saveButton;
         Separator separator1;
         Separator separator2;
+        Separator separator3;
 
-        // Checkboxes for current scene state
         Checkbox cameraCheckbox;
         Checkbox cameraPositionCheckbox;
         Checkbox cameraResolutionCheckbox;
@@ -51,7 +54,6 @@ namespace rc
         Checkbox lightAmbientCheckbox;
         Checkbox lightDiffuseCheckbox;
 
-        // Checkboxes for load scene
         Checkbox loadCameraCheckbox;
         Checkbox loadCameraPositionCheckbox;
         Checkbox loadCameraResolutionCheckbox;
@@ -64,32 +66,42 @@ namespace rc
 
         unsigned int calculateWindowHeight()
         {
-            unsigned int height = 150; // top + bottom margins
+            unsigned int height = 84;
 
-            height += 40;
-            height += 30;
+            height += 26;
+            height += 3 * 24;
+            height += 22;
+
+            height += 24;
             height += 30;
 
             if (scene->getCamera().getPosition() != loadedScene->getCamera().getPosition())
-                height += 80;
+                height += 26 + 3 * 20;
             if (scene->getCamera().getResolution() != loadedScene->getCamera().getResolution())
-                height += 70;
+                height += 26 + 2 * 20;
             if (scene->getCamera().getRotation() != loadedScene->getCamera().getRotation())
-                height += 80;
+                height += 26 + 3 * 20;
             if (scene->getCamera().getFov() != loadedScene->getCamera().getFov())
-                height += 50;
+                height += 26 + 20;
             if (scene->getCamera().getSamplesPerPixel() != loadedScene->getCamera().getSamplesPerPixel())
-                height += 50;
+                height += 26 + 20;
+
+            height += 28;
 
             height += 30;
-            height += 30;
-
             if (scene->getAmbientCoefficient() != loadedScene->getAmbientCoefficient())
-                height += 50;
+                height += 26 + 20;
             if (scene->getDiffuseCoefficient() != loadedScene->getDiffuseCoefficient())
-                height += 50;
+                height += 26 + 20;
 
-            height += 100;
+            height += 28;
+
+            height += 26;
+            std::size_t matRows = std::max(scene->getMaterials().size(),
+                                           loadedScene->getMaterials().size());
+            height += static_cast<unsigned int>(matRows) * 52;
+
+            height += 150;
 
             return height;
         }
@@ -101,14 +113,14 @@ namespace rc
             loadedScene = &ls;
 
             windowHeight = calculateWindowHeight();
-            windowWidth = 540;
-            windowTitle = "Load scene";
+            windowWidth = 620;
+            windowTitle = "Import scene";
 
             running = true;
             thread = std::thread(&LoadWindow::loop, this);
 
             saveButton.setFont(*font);
-            saveButton.setLabel("Save scene");
+            saveButton.setLabel("Import selected");
             saveButton.onClick = [&]
             {
                 if (loadCameraPositionCheckbox.checked)
@@ -325,44 +337,115 @@ namespace rc
             };
         }
 
+
+        static std::string fmt(float v)
+        {
+            char buf[32];
+            std::snprintf(buf, sizeof(buf), "%.2f", v);
+            return std::string(buf);
+        }
+
+        void drawColoredText(const std::string &text, float x, float y,
+                             unsigned int size, const sf::Color &color)
+        {
+            sf::Text t;
+            t.setFont(*font);
+            t.setString(text);
+            t.setCharacterSize(size);
+            t.setFillColor(color);
+            t.setPosition({x, y});
+            window.draw(t);
+        }
+
+        void drawRect(float x, float y, float w, float h, const sf::Color &fill,
+                      float outline = 0.f, const sf::Color &outlineColor = theme::OUTLINE)
+        {
+            sf::RectangleShape r;
+            r.setPosition({x, y});
+            r.setSize({w, h});
+            r.setFillColor(fill);
+            if (outline > 0.f)
+            {
+                r.setOutlineThickness(outline);
+                r.setOutlineColor(outlineColor);
+            }
+            window.draw(r);
+        }
+
+        void drawSectionHeader(const std::string &text, float x, float y)
+        {
+            drawRect(x, y + 1.f, 3.f, 16.f, theme::ACCENT);
+            drawColoredText(text, x + 12.f, y, 15, theme::TEXT_SUBTLE);
+        }
+
+        std::string materialProps(const Material &m)
+        {
+            if (m.model == MaterialModel::PBR)
+                return "metallic " + fmt(m.metallic) + "   roughness " + fmt(m.roughness) +
+                       "   ior " + fmt(m.ior);
+            return "shininess " + fmt(m.shininess) + "   refl " + fmt(m.reflectivity) +
+                   "   transp " + fmt(m.transparency);
+        }
+
+        void drawMaterialEntry(const Material &m, float x, float y)
+        {
+            Color c = m.getBaseColor().toColor();
+
+            drawRect(x, y, 20.f, 20.f, sf::Color(c.r, c.g, c.b), 1.f, theme::OUTLINE_MID);
+
+            drawColoredText(m.getName(), x + 30.f, y - 1.f, 15, theme::TEXT_MAIN);
+
+            std::string model = m.getModelName();
+            std::transform(model.begin(), model.end(), model.begin(), ::toupper);
+            drawColoredText(model, x + SPACE_WIDTH - 62.f, y + 1.f, 12, theme::ACCENT);
+
+            drawColoredText(materialProps(m), x + 30.f, y + 19.f, 12, theme::TEXT_DIM);
+        }
+
+        void drawStatRow(const std::string &label, std::size_t current,
+                         std::size_t loaded, float x, float y)
+        {
+            drawColoredText(label, x, y, 14, theme::TEXT_SUBTLE);
+
+            sf::Color loadedColor = (current != loaded) ? theme::ACCENT : theme::TEXT_MAIN;
+            drawColoredText(std::to_string(current), x + 170.f, y, 14, theme::TEXT_MAIN);
+            drawColoredText("->", x + 210.f, y, 14, theme::TEXT_DIM);
+            drawColoredText(std::to_string(loaded), x + 245.f, y, 14, loadedColor);
+        }
+
         void drawUi()
         {
-            LayoutPen layout{20.f, 20.f, 16.f};
+            const float contentWidth = static_cast<float>(windowWidth) - 40.f;
 
-            // === HEADER SECTION ===
-            sf::Text headerText;
-            headerText.setFont(*font);
-            headerText.setString("Scene Comparison");
-            headerText.setCharacterSize(22);
-            headerText.setFillColor(theme::ACCENT);
-            headerText.setPosition({layout.x, layout.y});
-            window.draw(headerText);
-            layout.next(28);
+            drawRect(0.f, 0.f, static_cast<float>(windowWidth), 64.f, theme::BG_BAR);
+            drawRect(0.f, 64.f, static_cast<float>(windowWidth), 2.f, theme::ACCENT);
+            drawColoredText("Import Scene", 20.f, 16.f, 24, theme::TEXT_WHITE);
+            drawColoredText("Review the differences and choose what to keep",
+                            20.f, 44.f, 13, theme::TEXT_DIM);
 
-            // Visual separator
-            separator1.layout(layout.x, layout.y, 500.f);
+            LayoutPen layout{20.f, 84.f, 6.f};
+
+            drawSectionHeader("OVERVIEW", layout.x, layout.y);
+            layout.next(20);
+
+            drawStatRow("Objects", scene->getPrimitives().size(),
+                        loadedScene->getPrimitives().size(), layout.x, layout.y);
+            layout.next(18);
+            drawStatRow("Lights", scene->getLights().size(),
+                        loadedScene->getLights().size(), layout.x, layout.y);
+            layout.next(18);
+            drawStatRow("Materials", scene->getMaterials().size(),
+                        loadedScene->getMaterials().size(), layout.x, layout.y);
+            layout.next(20);
+
+            separator1.layout(layout.x, layout.y, contentWidth);
             window.draw(separator1);
-            layout.next(8);
+            layout.next(10);
 
-            // === COLUMNS HEADER ===
-            sf::Text currentHeader;
-            currentHeader.setFont(*font);
-            currentHeader.setString("CURRENT SCENE");
-            currentHeader.setCharacterSize(14);
-            currentHeader.setFillColor(theme::TEXT_SUBTLE);
-            currentHeader.setPosition({layout.x, layout.y});
-            window.draw(currentHeader);
-
-            sf::Text loadHeader;
-            loadHeader.setFont(*font);
-            loadHeader.setString("LOAD SCENE");
-            loadHeader.setCharacterSize(14);
-            loadHeader.setFillColor(theme::TEXT_SUBTLE);
-            loadHeader.setPosition({layout.x + SPACE_WIDTH, layout.y});
-            window.draw(loadHeader);
+            drawColoredText("CURRENT SCENE", layout.x, layout.y, 14, theme::TEXT_SUBTLE);
+            drawColoredText("LOAD SCENE", layout.x + SPACE_WIDTH, layout.y, 14, theme::TEXT_SUBTLE);
             layout.next(24);
 
-            // === CAMERA SECTION ===
             cameraCheckbox.layout(layout.x, layout.y);
             window.draw(cameraCheckbox);
             loadCameraCheckbox.layout(layout.x + SPACE_WIDTH, layout.y);
@@ -479,12 +562,10 @@ namespace rc
             layout.x -= 20.f;
             layout.next(12);
 
-            // Visual separator
-            separator2.layout(layout.x, layout.y, 500.f);
+            separator2.layout(layout.x, layout.y, contentWidth);
             window.draw(separator2);
             layout.next(12);
 
-            // === LIGHTS SECTION ===
             lightsCheckbox.layout(layout.x, layout.y);
             window.draw(lightsCheckbox);
             loadLightsCheckbox.layout(layout.x + SPACE_WIDTH, layout.y);
@@ -531,9 +612,56 @@ namespace rc
 
             layout.next(12);
 
-            // === ACTION BUTTON ===
-            saveButton.layout(layout.x, layout.y, 500.f, 50);
+            separator3.layout(layout.x, layout.y, contentWidth);
+            window.draw(separator3);
+            layout.next(12);
+
+            drawSectionHeader("MATERIALS", layout.x, layout.y);
+            layout.next(24);
+
+            const auto &currentMaterials = scene->getMaterials();
+            const auto &loadMaterials = loadedScene->getMaterials();
+
+            std::vector<const Material *> currentList;
+            std::vector<const Material *> loadList;
+            for (const auto &pair : currentMaterials)
+                currentList.push_back(&pair.second);
+            for (const auto &pair : loadMaterials)
+                loadList.push_back(&pair.second);
+
+            std::size_t rows = std::max(currentList.size(), loadList.size());
+            if (rows == 0)
+            {
+                drawColoredText("No materials defined.", layout.x, layout.y, 13, theme::TEXT_DIM);
+                layout.next(20);
+            }
+            for (std::size_t i = 0; i < rows; ++i)
+            {
+                if (i < currentList.size())
+                    drawMaterialEntry(*currentList[i], layout.x, layout.y);
+                if (i < loadList.size())
+                    drawMaterialEntry(*loadList[i], layout.x + SPACE_WIDTH, layout.y);
+                layout.next(40);
+            }
+
+            layout.next(12);
+
+            saveButton.layout(layout.x, layout.y, contentWidth, 50);
             window.draw(saveButton);
+
+            fitHeightToContent(layout.y + 50.f + 20.f);
+        }
+
+        void fitHeightToContent(float contentBottom)
+        {
+            unsigned int needed = static_cast<unsigned int>(contentBottom);
+
+            if (needed == windowHeight)
+                return;
+            windowHeight = needed;
+            window.setSize({windowWidth, windowHeight});
+            window.setView(sf::View(sf::FloatRect(0.f, 0.f,
+                static_cast<float>(windowWidth), static_cast<float>(windowHeight))));
         }
 
         void updateUi()
