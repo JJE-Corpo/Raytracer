@@ -55,6 +55,12 @@ namespace rc
             void applyViewportSelection(const std::vector<const ISceneObject *> &selection);
             bool consumeSelectionChanged();
 
+            // A right-click on a row records the object here; the screen polls
+            // this after routing an event (like consumeSelectionChanged) and
+            // opens the context menu at the cursor. Returns nullptr when no
+            // request is pending, clearing it in the process.
+            const ISceneObject *consumeContextMenuRequest();
+
             void setOnItemHideRequest(std::function<void(const ISceneObject *)> cb)
             {
                 this->_onItemHideRequest = cb;
@@ -176,6 +182,9 @@ namespace rc
             std::vector<const ISceneObject *> _selection;
             bool _cameraSelected = false;
             bool _selectionChanged = false;
+            // Object the user right-clicked, awaiting the screen to open the
+            // context menu for it (see consumeContextMenuRequest).
+            const ISceneObject *_contextMenuRequest = nullptr;
             // Range-selection pivot: _selectionAnchor is the fixed end of a
             // Shift range; _selectionLead is its moving end (the last row a
             // click or arrow landed on). Both null when nothing anchors a range.
