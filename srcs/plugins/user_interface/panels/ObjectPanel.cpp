@@ -50,6 +50,17 @@ namespace rc
         this->_scaleField.setLabel("Scale");
         this->_scaleField.setFont(font);
 
+        this->_vertexNavLabel.setFont(font);
+        this->_vertexNavLabel.setCharacterSize(12);
+        this->_vertexNavLabel.setFillColor(theme::TEXT_WHITE);
+        this->_vertexNavLabel.setString("Point 1");
+        this->_vertexPrevButton.setFont(font);
+        this->_vertexPrevButton.setLabel("<");
+        this->_vertexPrevButton.onClick = [this]() { if (this->onVertexNavigate) this->onVertexNavigate(-1); };
+        this->_vertexNextButton.setFont(font);
+        this->_vertexNextButton.setLabel(">");
+        this->_vertexNextButton.onClick = [this]() { if (this->onVertexNavigate) this->onVertexNavigate(1); };
+
         this->_scaleStepLabel.setFont(font);
         this->_scaleStepLabel.setCharacterSize(12);
         this->_scaleStepLabel.setFillColor(theme::TEXT_DIM);
@@ -115,6 +126,18 @@ namespace rc
         this->_scaleField.layout(layout.x, layout.y, width);
         layout.next(32);
 
+        // Vertex navigator row (< Point N / total >), just above the size row.
+        if (this->_showVertexNav)
+        {
+            const float navBtnW = 26.0f;
+            const float navBtnH = 22.0f;
+            const float navGap = 6.0f;
+            this->_vertexNavLabel.setPosition(layout.x, layout.y + 3.0f);
+            this->_vertexPrevButton.layout(layout.x + width - 2.0f * navBtnW - navGap, layout.y, navBtnW, navBtnH);
+            this->_vertexNextButton.layout(layout.x + width - navBtnW, layout.y, navBtnW, navBtnH);
+            layout.next(28);
+        }
+
         // Uniform grow / shrink row (right-aligned -/+ buttons).
         const float stepBtnH = 22.0f;
         const float stepBtnW = 34.0f;
@@ -132,6 +155,13 @@ namespace rc
         this->_showVertexEditor = visible;
         if (visible)
             this->_vertexField.setValue(value);
+    }
+
+    void ObjectPanel::setVertexNavigator(bool visible, int index, int count)
+    {
+        this->_showVertexNav = visible;
+        if (visible)
+            this->_vertexNavLabel.setString("Point " + std::to_string(index + 1) + " / " + std::to_string(count));
     }
 
     void ObjectPanel::update(sf::Vector2i mouse)
@@ -152,6 +182,11 @@ namespace rc
         this->_positionField.update(mouse);
         this->_rotationField.update(mouse);
         this->_scaleField.update(mouse);
+        if (this->_showVertexNav)
+        {
+            this->_vertexPrevButton.update(mouse);
+            this->_vertexNextButton.update(mouse);
+        }
         this->_scaleDownButton.update(mouse);
         this->_scaleUpButton.update(mouse);
     }
@@ -381,6 +416,11 @@ namespace rc
         children.push_back(&this->_positionField);
         children.push_back(&this->_rotationField);
         children.push_back(&this->_scaleField);
+        if (this->_showVertexNav)
+        {
+            children.push_back(&this->_vertexPrevButton);
+            children.push_back(&this->_vertexNextButton);
+        }
         children.push_back(&this->_scaleDownButton);
         children.push_back(&this->_scaleUpButton);
 
@@ -405,6 +445,12 @@ namespace rc
         target.draw(this->_positionField, states);
         target.draw(this->_rotationField, states);
         target.draw(this->_scaleField, states);
+        if (this->_showVertexNav)
+        {
+            target.draw(this->_vertexNavLabel, states);
+            target.draw(this->_vertexPrevButton, states);
+            target.draw(this->_vertexNextButton, states);
+        }
         target.draw(this->_scaleStepLabel, states);
         target.draw(this->_scaleDownButton, states);
         target.draw(this->_scaleUpButton, states);
@@ -468,6 +514,11 @@ namespace rc
 
         std::vector<Component *> fields = {&this->_positionField, &this->_rotationField, &this->_scaleField,
             &this->_scaleDownButton, &this->_scaleUpButton};
+        if (this->_showVertexNav)
+        {
+            fields.push_back(&this->_vertexPrevButton);
+            fields.push_back(&this->_vertexNextButton);
+        }
         if (this->_showVertexEditor)
             fields.push_back(&this->_vertexField);
 

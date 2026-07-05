@@ -641,6 +641,11 @@ namespace rc
             this->syncVertexEditorField();
             return (true);
         };
+        // Object-panel arrows: step to the previous / next vertex of the shape.
+        this->_objectPanel.onVertexNavigate = [this](int direction)
+        {
+            this->navigateVertex(direction);
+        };
         this->_materialPanel.setFont(*this->_font);
 
         this->_sidebarResize.onResize = [this](float width)
@@ -810,6 +815,7 @@ namespace rc
             this->_objectPanel.setScene(this->_coreAccess->getScene());
         if (this->_hierarchyPanel.tryCast<const ISceneObject>())
            this->_objectPanel.rebuild(this->_hierarchyPanel.tryCast<const ISceneObject>());
+        this->syncVertexNavigator();
         if (this->_hierarchyPanel.isCameraSelected())
         {
             this->_cameraPanel.rebuild(&this->_coreAccess->getScene()->getCamera());
@@ -1350,6 +1356,7 @@ namespace rc
         this->resetFlyKeys();
         this->clearHover();
         this->_objectPanel.setVertexEditor(false, {0.0f, 0.0f, 0.0f});
+        this->syncVertexNavigator();
         const std::string name = object ? object->getName() : "object";
         this->_toastManager.push("Edit mode — " + name, "Drag a handle to move a vertex. X/Y/Z locks an axis. Tab/Esc to exit.", ToastType::INFO);
     }
@@ -1366,6 +1373,7 @@ namespace rc
         this->_hoverVertex = -1;
         this->_vertexDragActive = false;
         this->_objectPanel.setVertexEditor(false, {0.0f, 0.0f, 0.0f});
+        this->syncVertexNavigator();
         if (wasEditing)
             this->_toastManager.push("Edit mode off", "Back to object mode.", ToastType::INFO);
     }
@@ -1507,6 +1515,45 @@ namespace rc
             this->_objectPanel.setVertexEditor(true, this->_editTarget->getVertex(static_cast<std::size_t>(this->_selectedVertex)));
         else
             this->_objectPanel.setVertexEditor(false, {0.0f, 0.0f, 0.0f});
+        this->syncVertexNavigator();
+    }
+
+    void DefaultScreen::syncVertexNavigator()
+    {
+        // The navigator is available whenever the selected object has vertices,
+        // even before entering edit mode, so it doubles as the entry point.
+        IEditablePrimitive *editable = this->_editMode ? this->_editTarget : this->editableFromSelection();
+        if (editable && editable->getVertexCount() > 0)
+        {
+            const int count = static_cast<int>(editable->getVertexCount());
+            const int index = (this->_editMode && this->_selectedVertex >= 0) ? this->_selectedVertex : 0;
+            this->_objectPanel.setVertexNavigator(true, index, count);
+        }
+        else
+        {
+            this->_objectPanel.setVertexNavigator(false, 0, 0);
+        }
+    }
+
+    void DefaultScreen::navigateVertex(int direction)
+    {
+        IEditablePrimitive *editable = this->_editMode ? this->_editTarget : this->editableFromSelection();
+        if (!editable)
+            return;
+        if (!this->_editMode)
+        {
+            const ISceneObject *object = const_cast<HierarchyPanel &>(this->_hierarchyPanel).tryCast<const ISceneObject>();
+            this->enterEditMode(object, editable);
+        }
+        const int count = static_cast<int>(this->_editTarget->getVertexCount());
+        if (count == 0)
+            return;
+        if (this->_selectedVertex < 0)
+            this->_selectedVertex = (direction >= 0) ? 0 : count - 1;
+        else
+            this->_selectedVertex = ((this->_selectedVertex + direction) % count + count) % count;
+        this->syncVertexEditorField();
+        this->forceViewportRetrace();
     }
 
     void DefaultScreen::drawEditOverlay(sf::RenderWindow &window)

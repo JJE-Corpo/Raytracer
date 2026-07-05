@@ -40,6 +40,13 @@ namespace rc
             std::function<bool(float factor)> onVertexScale;
             void setVertexEditor(bool visible, const Vector3f &value);
 
+            // Small "< Point N / total >" navigator shown above the -/+ buttons
+            // when the selected object is editable, to step through its vertices
+            // without aiming at the on-screen handles. onVertexNavigate(dir) is
+            // called with -1 / +1; the owner updates the label via this setter.
+            std::function<void(int direction)> onVertexNavigate;
+            void setVertexNavigator(bool visible, int index, int count);
+
             void setFont(sf::Font &font) override;
             void layout(float x, float y, float width);
             void setScene(IScene *scene);
@@ -76,6 +83,12 @@ namespace rc
             VectorField _positionField;
             VectorField _rotationField;
             VectorField _scaleField;
+
+            // Vertex navigator (< Point N / total >), shown above the size row.
+            sf::Text _vertexNavLabel;
+            Button _vertexPrevButton;
+            Button _vertexNextButton;
+            bool _showVertexNav = false;
 
             // One-click uniform grow/shrink of the selected object's scale.
             sf::Text _scaleStepLabel;

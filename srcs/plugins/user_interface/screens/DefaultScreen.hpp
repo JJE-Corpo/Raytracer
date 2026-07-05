@@ -81,6 +81,11 @@ namespace rc
         // UI signals "the scene changed, re-trace" after an edit.
         void forceViewportRetrace();
         void syncVertexEditorField();
+        // Step the selected vertex to the previous/next one (Object-panel arrows),
+        // entering edit mode first if needed; syncVertexNavigator refreshes the
+        // "< Point N / total >" label from the current selection.
+        void navigateVertex(int direction);
+        void syncVertexNavigator();
         void drawEditOverlay(sf::RenderWindow &window);
         void applyImport();
         void updateViewportCamera(sf::RenderWindow &window);
