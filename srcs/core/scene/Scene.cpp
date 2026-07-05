@@ -162,6 +162,79 @@ namespace rc
         this->_mutex.unlock();
     }
 
+    bool Scene::isOwned(const ISceneObject *object) const
+    {
+        if (!object)
+            return (false);
+        // Up-cast each owning pointer to the shared base to compare identity;
+        // ISceneObject is a virtual base, so a downcast of `object` is not
+        // available here and would be undefined for an already-freed pointer.
+        for (const IPrimitive *primitive : this->_primitives)
+            if (static_cast<const ISceneObject *>(primitive) == object)
+                return (true);
+        for (const ILight *light : this->_lights)
+            if (static_cast<const ISceneObject *>(light) == object)
+                return (true);
+        for (const Group *group : this->_groups)
+            if (static_cast<const ISceneObject *>(group) == object)
+                return (true);
+        return (false);
+    }
+
+    void Scene::destroyObjectSubtree(ISceneObject *object)
+    {
+        if (!object)
+            return;
+        // Snapshot the children before recursing: the recursive delete frees
+        // them but leaves this node's own child vector untouched, so a copy is
+        // safe either way.
+        const std::vector<ISceneObject *> children = object->getChildren();
+        for (ISceneObject *child : children)
+            this->destroyObjectSubtree(child);
+
+        switch (object->getObjectType())
+        {
+            case ObjectType::PRIMITIVE:
+                for (auto it = this->_primitives.begin(); it != this->_primitives.end(); ++it)
+                    if (static_cast<ISceneObject *>(*it) == object) { this->_primitives.erase(it); break; }
+                // Infinite primitives (e.g. planes) also live in this cache until
+                // the next buildBvh(); drop the pointer now so nothing dangles.
+                for (auto it = this->_infinitePrimitives.begin(); it != this->_infinitePrimitives.end(); ++it)
+                    if (static_cast<ISceneObject *>(*it) == object) { this->_infinitePrimitives.erase(it); break; }
+                break;
+            case ObjectType::LIGHT:
+                for (auto it = this->_lights.begin(); it != this->_lights.end(); ++it)
+                    if (static_cast<ISceneObject *>(*it) == object) { this->_lights.erase(it); break; }
+                break;
+            case ObjectType::GROUP:
+                for (auto it = this->_groups.begin(); it != this->_groups.end(); ++it)
+                    if (static_cast<ISceneObject *>(*it) == object) { this->_groups.erase(it); break; }
+                break;
+        }
+        delete object;
+    }
+
+    void Scene::removeObject(ISceneObject *object)
+    {
+        if (!object)
+            return;
+        this->_mutex.lock();
+        // Guard against a double removal (e.g. a group and one of its
+        // descendants both queued for deletion): once the group's subtree is
+        // freed the descendant is no longer owned, so skip it rather than touch
+        // freed memory.
+        if (this->isOwned(object))
+        {
+            ISceneObject *parent = object->getParent();
+            if (parent)
+                parent->removeChild(object);
+            else
+                this->removeRoot(object);
+            this->destroyObjectSubtree(object);
+        }
+        this->_mutex.unlock();
+    }
+
     void Scene::addDefaultPrimitive(std::string type)
     {
         IPrimitive *primitive = PrimitiveFactory::createPrimitive(type);

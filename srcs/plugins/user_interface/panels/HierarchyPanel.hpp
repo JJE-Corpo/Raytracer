@@ -60,6 +60,20 @@ namespace rc
                 this->_onItemHideRequest = cb;
             }
 
+            // Fired once per object the user asks to delete (row button or the
+            // Delete key). The scene owns the actual removal; the panel only
+            // signals intent and then drops the freed objects from its state.
+            void setOnItemDeleteRequest(std::function<void(const ISceneObject *)> cb)
+            {
+                this->_onItemDeleteRequest = cb;
+            }
+
+            // Delete the current object selection (the camera row is never part
+            // of it, so it is safe from here). Used by the Delete/Suppr key,
+            // including the screen-level fallback when the cursor is outside the
+            // panel and the key never reaches handleEvent().
+            void deleteSelection();
+
             // Fired when the user drops a row onto a group (nest), between rows
             // (reorder) or past the list (move to root):
             // (child, newParent, index) with newParent == nullptr for the top
@@ -104,6 +118,7 @@ namespace rc
                 bool expandable = false;
                 bool expanded = true;
                 sf::FloatRect buttonBounds;
+                sf::FloatRect deleteButtonBounds;
                 sf::FloatRect toggleBounds;
                 sf::FloatRect bounds;
             };
@@ -138,6 +153,13 @@ namespace rc
             // Shift+click.
             void moveSelection(int direction, bool ctrlPressed, bool shiftPressed);
 
+            // Fire the delete callback for `objects`, then wipe every transient
+            // pointer into the scene (selection, anchors, drag, rename): a group
+            // delete frees its subtree, so nested references may now dangle.
+            // Objects covered by an ancestor already in the batch are skipped so
+            // the callback never runs on freed memory.
+            void deleteObjects(const std::vector<const ISceneObject *> &objects);
+
             void beginRename(const Item &item);
             void commitRename(const std::string &value);
             void cancelRename();
@@ -161,6 +183,7 @@ namespace rc
             const ISceneObject *_selectionLead = nullptr;
             sf::Vector2i _lastMouse{-100000, -100000};
             std::function<void(const ISceneObject *)> _onItemHideRequest;
+            std::function<void(const ISceneObject *)> _onItemDeleteRequest;
             std::function<void(const ISceneObject *, const ISceneObject *, int)> _onReparentRequest;
 
             // Groups collapsed by the user (default is expanded).
