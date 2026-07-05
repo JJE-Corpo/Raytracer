@@ -75,6 +75,17 @@ namespace rc
         this->_convertToMeshButton.setLabel("Convert to Mesh");
         this->_convertToMeshButton.onClick = [this]() { if (this->onConvertToMesh) this->onConvertToMesh(); };
 
+        this->_gizmoMoveButton.setFont(font);
+        this->_gizmoMoveButton.setLabel("Move");
+        this->_gizmoMoveButton.active = true;
+        this->_gizmoMoveButton.onClick = [this]() { if (this->onGizmoModeChanged) this->onGizmoModeChanged(0); };
+        this->_gizmoRotateButton.setFont(font);
+        this->_gizmoRotateButton.setLabel("Rotate");
+        this->_gizmoRotateButton.onClick = [this]() { if (this->onGizmoModeChanged) this->onGizmoModeChanged(1); };
+        this->_gizmoScaleButton.setFont(font);
+        this->_gizmoScaleButton.setLabel("Scale");
+        this->_gizmoScaleButton.onClick = [this]() { if (this->onGizmoModeChanged) this->onGizmoModeChanged(2); };
+
         this->_materialLabel.setFont(font);
         this->_materialLabel.setCharacterSize(12);
         this->_materialLabel.setFillColor(theme::TEXT_WHITE);
@@ -92,6 +103,17 @@ namespace rc
 
         // this->_title.setPosition({layout.x, layout.y});
         // layout.next(24);
+
+        // Gizmo tool selector (Move / Rotate / Scale) across the top.
+        {
+            const float toolH = 22.0f;
+            const float toolGap = 4.0f;
+            const float toolW = (width - 2.0f * toolGap) / 3.0f;
+            this->_gizmoMoveButton.layout(layout.x, layout.y, toolW, toolH);
+            this->_gizmoRotateButton.layout(layout.x + toolW + toolGap, layout.y, toolW, toolH);
+            this->_gizmoScaleButton.layout(layout.x + 2.0f * (toolW + toolGap), layout.y, toolW, toolH);
+            layout.next(28);
+        }
 
         if (this->_showVertexEditor)
         {
@@ -161,6 +183,13 @@ namespace rc
         this->height = layout.y - y;
     }
 
+    void ObjectPanel::setGizmoMode(int mode)
+    {
+        this->_gizmoMoveButton.active = (mode == 0);
+        this->_gizmoRotateButton.active = (mode == 1);
+        this->_gizmoScaleButton.active = (mode == 2);
+    }
+
     void ObjectPanel::setVertexEditor(bool visible, const Vector3f &value)
     {
         this->_showVertexEditor = visible;
@@ -190,6 +219,9 @@ namespace rc
         {
             slider.update(mouse);
         }
+        this->_gizmoMoveButton.update(mouse);
+        this->_gizmoRotateButton.update(mouse);
+        this->_gizmoScaleButton.update(mouse);
         this->_positionField.update(mouse);
         this->_rotationField.update(mouse);
         this->_scaleField.update(mouse);
@@ -430,6 +462,9 @@ namespace rc
             children.push_back(&this->_materialDropdown);
         for (auto &slider : this->_objectSliders)
             children.push_back(&slider);
+        children.push_back(&this->_gizmoMoveButton);
+        children.push_back(&this->_gizmoRotateButton);
+        children.push_back(&this->_gizmoScaleButton);
         children.push_back(&this->_positionField);
         children.push_back(&this->_rotationField);
         children.push_back(&this->_scaleField);
@@ -461,6 +496,9 @@ namespace rc
             target.draw(slider, states);
         }
 
+        target.draw(this->_gizmoMoveButton, states);
+        target.draw(this->_gizmoRotateButton, states);
+        target.draw(this->_gizmoScaleButton, states);
         target.draw(this->_positionField, states);
         target.draw(this->_rotationField, states);
         target.draw(this->_scaleField, states);
@@ -533,7 +571,8 @@ namespace rc
             }
         }
 
-        std::vector<Component *> fields = {&this->_positionField, &this->_rotationField, &this->_scaleField,
+        std::vector<Component *> fields = {&this->_gizmoMoveButton, &this->_gizmoRotateButton,
+            &this->_gizmoScaleButton, &this->_positionField, &this->_rotationField, &this->_scaleField,
             &this->_scaleDownButton, &this->_scaleUpButton};
         if (this->_showConvertToMesh)
             fields.push_back(&this->_convertToMeshButton);

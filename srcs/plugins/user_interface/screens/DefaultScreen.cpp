@@ -652,6 +652,12 @@ namespace rc
         {
             this->convertSelectionToMesh();
         };
+        this->_objectPanel.onGizmoModeChanged = [this](int mode)
+        {
+            this->_gizmoMode = static_cast<GizmoMode>(mode);
+            this->_objectPanel.setGizmoMode(mode);
+        };
+        this->_objectPanel.setGizmoMode(static_cast<int>(this->_gizmoMode));
         this->_materialPanel.setFont(*this->_font);
 
         this->_sidebarResize.onResize = [this](float width)
@@ -792,8 +798,12 @@ namespace rc
         if (this->_viewMode == ViewMode::VIEWPORT)
         {
             this->drawEditOverlay(window);
-            this->drawRotationRings(window);
-            this->drawMoveGizmo(window);
+            switch (this->_gizmoMode)
+            {
+                case GizmoMode::MOVE: this->drawMoveGizmo(window); break;
+                case GizmoMode::ROTATE: this->drawRotationRings(window); break;
+                case GizmoMode::SCALE: this->drawScaleGizmo(window); break;
+            }
             this->drawMarker(window);
             this->drawAxisGizmo(window);
         }
@@ -1027,6 +1037,22 @@ namespace rc
             }
         }
 
+        // Scale gizmo: keep driving an in-progress scale-arrow drag and end it on
+        // release, handled before component routing (same as the vertex drag).
+        if (this->_scaleDragActive)
+        {
+            if (event.type == sf::Event::MouseMoved)
+            {
+                this->applyScaleDrag(mouse);
+                return;
+            }
+            if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left)
+            {
+                this->endScaleDrag();
+                return;
+            }
+        }
+
         // Object move: keep driving an in-progress object drag and end it on
         // release, handled before component routing (same as the vertex drag).
         if (this->_objectDragActive)
@@ -1111,18 +1137,26 @@ namespace rc
                         this->syncVertexEditorField();
                     }
                 }
-                else if (int gizmoAxis = this->pickGizmoAxis(mouse); gizmoAxis >= 0)
+                else if (int axis = (this->_gizmoMode == GizmoMode::MOVE) ? this->pickGizmoAxis(mouse) : -1;
+                         axis >= 0)
                 {
                     // Clicking a move-gizmo arrow grabs that axis: the current
                     // selection is kept and the object slides along the axis only.
-                    // (pickGizmoAxis only returns >= 0 for a single selection.)
-                    this->beginAxisDrag(this->singleSelectedObject(), gizmoAxis, mouse);
+                    this->beginAxisDrag(this->singleSelectedObject(), axis, mouse);
                 }
-                else if (int rotAxis = this->pickRotationRing(mouse); rotAxis >= 0)
+                else if (int axis = (this->_gizmoMode == GizmoMode::ROTATE) ? this->pickRotationRing(mouse) : -1;
+                         axis >= 0)
                 {
                     // Clicking a rotation ring grabs that axis: the object rotates
                     // around it while the selection is kept.
-                    this->beginRotationDrag(this->singleSelectedObject(), rotAxis, mouse);
+                    this->beginRotationDrag(this->singleSelectedObject(), axis, mouse);
+                }
+                else if (int axis = (this->_gizmoMode == GizmoMode::SCALE) ? this->pickGizmoAxis(mouse) : -1;
+                         axis >= 0)
+                {
+                    // Clicking a scale-gizmo arrow grabs that axis: the object is
+                    // scaled along it while the selection is kept.
+                    this->beginScaleDrag(this->singleSelectedObject(), axis, mouse);
                 }
                 else
                 {
@@ -1278,7 +1312,7 @@ namespace rc
         if (event.type == sf::Event::KeyReleased)
             this->setFlyKey(event.key.code, false);
         else if (event.type == sf::Event::KeyPressed && !this->_vertexDragActive && !this->_objectDragActive
-                 && !this->_axisDragActive && !this->_rotDragActive &&
+                 && !this->_axisDragActive && !this->_rotDragActive && !this->_scaleDragActive &&
                  (this->_rightMouseHeld || this->isViewportCaptured(mouse)))
             this->setFlyKey(event.key.code, true);
     }
@@ -2201,6 +2235,110 @@ namespace rc
         this->_rotDragValid = false;
         this->_rotDragTarget = nullptr;
         this->_rotDragAxis = -1;
+    }
+
+    void DefaultScreen::drawScaleGizmo(sf::RenderWindow &window) const
+    {
+        if (this->_editMode || !this->singleSelectedObject())
+            return;
+        constexpr float PI = 3.14159265358979323846f;
+        const sf::Color colors[3] = {sf::Color(235, 80, 80), sf::Color(95, 205, 100), sf::Color(95, 160, 245)};
+        bool centerDrawn = false;
+        sf::Vector2f center;
+        for (int axis = 0; axis < 3; ++axis)
+        {
+            sf::Vector2f origin;
+            sf::Vector2f tip;
+            if (!this->gizmoArrow(axis, origin, tip))
+                continue;
+            center = origin;
+            centerDrawn = true;
+            const sf::Vector2f d(tip.x - origin.x, tip.y - origin.y);
+            const float len = std::sqrt(d.x * d.x + d.y * d.y);
+            if (len < 1.0f)
+                continue;
+            const float angle = std::atan2(d.y, d.x) * 180.0f / PI;
+            const bool active = this->_scaleDragActive && this->_scaleDragAxis == axis;
+            const sf::Color color = active ? sf::Color(255, 235, 90) : colors[axis];
+
+            sf::RectangleShape shaft({len - 6.0f, active ? 4.0f : 3.0f});
+            shaft.setOrigin(0.0f, (active ? 4.0f : 3.0f) / 2.0f);
+            shaft.setPosition(origin);
+            shaft.setRotation(angle);
+            shaft.setFillColor(color);
+            window.draw(shaft);
+
+            // A cube (square) tip distinguishes the scale gizmo from the move one.
+            sf::RectangleShape box({9.0f, 9.0f});
+            box.setOrigin(4.5f, 4.5f);
+            box.setPosition(tip);
+            box.setRotation(angle);
+            box.setFillColor(color);
+            window.draw(box);
+        }
+        if (centerDrawn)
+        {
+            sf::CircleShape hub(3.5f);
+            hub.setOrigin(3.5f, 3.5f);
+            hub.setPosition(center);
+            hub.setFillColor(sf::Color(240, 240, 240));
+            window.draw(hub);
+        }
+    }
+
+    void DefaultScreen::beginScaleDrag(ISceneObject *object, int axis, const sf::Vector2i &mouse)
+    {
+        if (!object)
+            return;
+        this->_scaleDragActive = true;
+        this->_scaleDragMoved = false;
+        this->_scaleDragTarget = object;
+        this->_scaleDragAxis = axis;
+        this->_scaleDragStartScale = object->getLocalScale();
+        this->_scaleDragObjStart = object->getPosition();
+        this->_scaleDragDir = axisVector(axis);
+        float t = 0.0f;
+        this->_scaleDragGrabT =
+            this->axisParamFromMouse(mouse, this->_scaleDragObjStart, this->_scaleDragDir, t) ? t : 0.0f;
+    }
+
+    void DefaultScreen::applyScaleDrag(const sf::Vector2i &mouse)
+    {
+        if (!this->_scaleDragTarget)
+            return;
+        if (std::fabs(this->_scaleDragGrabT) < 1e-4f) // grabbed at the centre: ill-defined
+            return;
+        float t = 0.0f;
+        if (!this->axisParamFromMouse(mouse, this->_scaleDragObjStart, this->_scaleDragDir, t))
+            return;
+        const float factor = t / this->_scaleDragGrabT;
+        Vector3f scale = this->_scaleDragStartScale;
+        if (this->_scaleDragAxis == 0)
+            scale.x = std::max(0.001f, this->_scaleDragStartScale.x * factor);
+        else if (this->_scaleDragAxis == 1)
+            scale.y = std::max(0.001f, this->_scaleDragStartScale.y * factor);
+        else
+            scale.z = std::max(0.001f, this->_scaleDragStartScale.z * factor);
+        this->_scaleDragTarget->setLocalScale(scale);
+        this->_scaleDragMoved = true;
+        this->markViewportBvhDirty();
+        this->forceViewportRetrace();
+    }
+
+    void DefaultScreen::endScaleDrag()
+    {
+        if (!this->_scaleDragActive)
+            return;
+        this->_scaleDragActive = false;
+        if (this->_scaleDragMoved && this->_scaleDragTarget)
+        {
+            this->_objectPanel.rebuild(this->_scaleDragTarget);
+            this->markViewportBvhDirty();
+            this->forceViewportRetrace();
+        }
+        this->_scaleDragMoved = false;
+        this->_scaleDragTarget = nullptr;
+        this->_scaleDragAxis = -1;
     }
 
     bool DefaultScreen::computeMarker(const sf::Vector2i &mouse, Vector3f &out)
