@@ -30,6 +30,7 @@ namespace rc
             float _power = 8.0f;
             int _iterations = 8;
             Axis _axis = Axis::Z;
+            std::string _file;
             const Material *_material = nullptr;
         public:
             PrimitiveBuilder() = default;
@@ -47,6 +48,7 @@ namespace rc
             PrimitiveBuilder &withHeight(float height);
             PrimitiveBuilder &withAxis(const Axis &axis);
             PrimitiveBuilder &withSize(float size);
+            PrimitiveBuilder &withFile(const std::string &file);
             PrimitiveBuilder &withMaterial(const Material *material);
             PrimitiveBuilder &withPower(float power);
             PrimitiveBuilder &withIterations(int iterations);
