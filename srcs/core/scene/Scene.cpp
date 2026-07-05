@@ -17,6 +17,7 @@
 #include "factory/PrimitiveFactory.hpp"
 #include "factory/LightFactory.hpp"
 #include "../../plugins/primitive/mesh/Mesh.hpp"
+#include "../../plugins/primitive/Cube.hpp"
 
 namespace rc
 {
@@ -315,6 +316,27 @@ namespace rc
             return (!out.faces.empty());
         }
 
+        // Exact 8-vertex / 12-triangle tessellation of a cube (flat faces), so a
+        // converted cube stays a proper box you can edit corner by corner instead
+        // of a dense generic sampling.
+        bool tessellateCube(const Cube *cube, TessMesh &out)
+        {
+            Vector3f corners[8];
+            cube->getWorldCorners(corners);
+            out.verts.assign(corners, corners + 8);
+            out.normals.clear(); // flat shading -> hard cube edges
+            static const int FACE[6][4] = {
+                {0, 1, 2, 3}, {4, 5, 6, 7}, {0, 1, 6, 5},
+                {1, 2, 7, 6}, {2, 3, 4, 7}, {0, 3, 4, 5},
+            };
+            for (int f = 0; f < 6; ++f)
+            {
+                out.faces.push_back({FACE[f][0], FACE[f][1], FACE[f][2]});
+                out.faces.push_back({FACE[f][0], FACE[f][2], FACE[f][3]});
+            }
+            return (true);
+        }
+
         std::string sanitizeName(std::string name)
         {
             for (char &c : name)
@@ -335,10 +357,18 @@ namespace rc
                 file << "v " << v.x << " " << v.y << " " << v.z << "\n";
             for (const Vector3f &n : m.normals)
                 file << "vn " << n.x << " " << n.y << " " << n.z << "\n";
+            // With per-vertex normals the faces reference them (smooth shading);
+            // without, plain "f a b c" leaves the faces flat (hard edges, e.g. a cube).
+            const bool smooth = !m.normals.empty();
             for (const std::array<int, 3> &t : m.faces)
-                file << "f " << t[0] + 1 << "//" << t[0] + 1 << " "
-                     << t[1] + 1 << "//" << t[1] + 1 << " "
-                     << t[2] + 1 << "//" << t[2] + 1 << "\n";
+            {
+                if (smooth)
+                    file << "f " << t[0] + 1 << "//" << t[0] + 1 << " "
+                         << t[1] + 1 << "//" << t[1] + 1 << " "
+                         << t[2] + 1 << "//" << t[2] + 1 << "\n";
+                else
+                    file << "f " << t[0] + 1 << " " << t[1] + 1 << " " << t[2] + 1 << "\n";
+            }
             return (true);
         }
     }
@@ -352,8 +382,16 @@ namespace rc
             return (nullptr);
 
         TessMesh tess;
-        if (!tessellatePrimitive(primitive, 32, 48, tess))
+        // A cube has an exact 8-corner form; everything else is sampled generically.
+        if (const Cube *cube = dynamic_cast<const Cube *>(primitive))
+        {
+            if (!tessellateCube(cube, tess))
+                return (nullptr);
+        }
+        else if (!tessellatePrimitive(primitive, 32, 48, tess))
+        {
             return (nullptr);
+        }
 
         Vector3f mn = tess.verts[0], mx = tess.verts[0];
         for (const Vector3f &v : tess.verts)
