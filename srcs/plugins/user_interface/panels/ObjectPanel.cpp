@@ -50,6 +50,15 @@ namespace rc
         this->_scaleField.setLabel("Scale");
         this->_scaleField.setFont(font);
 
+        this->_scaleStepLabel.setFont(font);
+        this->_scaleStepLabel.setCharacterSize(12);
+        this->_scaleStepLabel.setFillColor(theme::TEXT_DIM);
+        this->_scaleStepLabel.setString("Size");
+        this->_scaleDownButton.setFont(font);
+        this->_scaleDownButton.setLabel("-");
+        this->_scaleUpButton.setFont(font);
+        this->_scaleUpButton.setLabel("+");
+
         this->_materialLabel.setFont(font);
         this->_materialLabel.setCharacterSize(12);
         this->_materialLabel.setFillColor(theme::TEXT_WHITE);
@@ -106,6 +115,15 @@ namespace rc
         this->_scaleField.layout(layout.x, layout.y, width);
         layout.next(32);
 
+        // Uniform grow / shrink row (right-aligned -/+ buttons).
+        const float stepBtnH = 22.0f;
+        const float stepBtnW = 34.0f;
+        const float stepGap = 6.0f;
+        this->_scaleStepLabel.setPosition(layout.x, layout.y + 3.0f);
+        this->_scaleDownButton.layout(layout.x + width - 2.0f * stepBtnW - stepGap, layout.y, stepBtnW, stepBtnH);
+        this->_scaleUpButton.layout(layout.x + width - stepBtnW, layout.y, stepBtnW, stepBtnH);
+        layout.next(28);
+
         this->height = layout.y - y;
     }
 
@@ -134,6 +152,8 @@ namespace rc
         this->_positionField.update(mouse);
         this->_rotationField.update(mouse);
         this->_scaleField.update(mouse);
+        this->_scaleDownButton.update(mouse);
+        this->_scaleUpButton.update(mouse);
     }
 
     void ObjectPanel::rebuild(const ISceneObject *currentObject)
@@ -296,6 +316,21 @@ namespace rc
                 this->onSceneMutated();
             return (true);
         };
+
+        // -/+ apply a uniform multiplicative step to the current scale, going
+        // through the same setLocalScale + onSceneMutated path as the field so
+        // meshes rebuild their geometry/BVH and the viewport re-traces.
+        this->_scaleDownButton.onClick = [this, obj]() { this->applyScaleStep(obj, 1.0f / 1.1f); };
+        this->_scaleUpButton.onClick = [this, obj]() { this->applyScaleStep(obj, 1.1f); };
+    }
+
+    void ObjectPanel::applyScaleStep(ISceneObject *object, float factor)
+    {
+        Vector3f scale = object->getLocalScale() * factor;
+        object->setLocalScale(scale);
+        this->_scaleField.setValue(scale);
+        if (this->onSceneMutated)
+            this->onSceneMutated();
     }
 
     bool ObjectPanel::isCapturing() const
@@ -332,6 +367,8 @@ namespace rc
         children.push_back(&this->_positionField);
         children.push_back(&this->_rotationField);
         children.push_back(&this->_scaleField);
+        children.push_back(&this->_scaleDownButton);
+        children.push_back(&this->_scaleUpButton);
 
         // Open pop-ups (color picker, material dropdown) capture events and
         // are served first, so their clicks no longer leak to the sliders
@@ -354,6 +391,9 @@ namespace rc
         target.draw(this->_positionField, states);
         target.draw(this->_rotationField, states);
         target.draw(this->_scaleField, states);
+        target.draw(this->_scaleStepLabel, states);
+        target.draw(this->_scaleDownButton, states);
+        target.draw(this->_scaleUpButton, states);
 
         if (this->isLight)
         {
@@ -412,7 +452,8 @@ namespace rc
             }
         }
 
-        std::vector<Component *> fields = {&this->_positionField, &this->_rotationField, &this->_scaleField};
+        std::vector<Component *> fields = {&this->_positionField, &this->_rotationField, &this->_scaleField,
+            &this->_scaleDownButton, &this->_scaleUpButton};
         if (this->_showVertexEditor)
             fields.push_back(&this->_vertexField);
 

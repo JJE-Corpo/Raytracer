@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "../Component.hpp"
+#include "../components/Button.hpp"
 #include "../components/ColorPicker.hpp"
 #include "../components/Dropdown.hpp"
 #include "../components/VectorField.hpp"
@@ -72,8 +73,16 @@ namespace rc
             VectorField _rotationField;
             VectorField _scaleField;
 
+            // One-click uniform grow/shrink of the selected object's scale.
+            sf::Text _scaleStepLabel;
+            Button _scaleDownButton;
+            Button _scaleUpButton;
+
             VectorField _vertexField;
             bool _showVertexEditor = false;
+
+            // Multiplies the object's local scale uniformly (used by the -/+ buttons).
+            void applyScaleStep(ISceneObject *object, float factor);
 
             sf::Font _font;
     };
