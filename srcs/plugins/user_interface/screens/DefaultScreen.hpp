@@ -95,6 +95,12 @@ namespace rc
         void beginObjectDrag(ISceneObject *object, const sf::Vector2i &mouse);
         void applyObjectDrag(const sf::Vector2i &mouse);
         void endObjectDrag();
+        // Placement marker (Shift+right-click) helpers.
+        bool computeMarker(const sf::Vector2i &mouse, Vector3f &out);
+        void placeMarker(const sf::Vector2i &mouse);
+        bool markerWindowPos(sf::Vector2f &out) const;
+        void drawMarker(sf::RenderWindow &window) const;
+        void addPrimitiveAtMarker(const std::string &type);
         void drawEditOverlay(sf::RenderWindow &window);
         void applyImport();
         void updateViewportCamera(sf::RenderWindow &window);
@@ -171,6 +177,11 @@ namespace rc
         ISceneObject *_objectDragTarget = nullptr;
         Vector3f _objectDragPlaneOrigin = {0.0f, 0.0f, 0.0f};
         Vector3f _objectDragOffset = {0.0f, 0.0f, 0.0f};
+
+        // Placement marker: Shift+right-click drops a 3D point; newly added
+        // primitives spawn there instead of at the origin.
+        bool _markerActive = false;
+        Vector3f _markerPos = {0.0f, 0.0f, 0.0f};
 
         // viewport
         sf::Vector2i _lastMouse;
