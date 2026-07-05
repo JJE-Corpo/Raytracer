@@ -16,6 +16,7 @@
 #define PRIMITIVE_TANGLECUBE "tanglecube"
 #define PRIMITIVE_FRACTAL "fractal"
 #define PRIMITIVE_TORUS "torus"
+#define PRIMITIVE_MESH "mesh"
 
 namespace rc
 {
@@ -44,6 +45,7 @@ namespace rc
             SceneObjectBuilder &withHeight(float height);
             SceneObjectBuilder &withAxis(const Axis &axis);
             SceneObjectBuilder &withSize(float size);
+            SceneObjectBuilder &withFile(const std::string &file);
             SceneObjectBuilder &withMaterial(const Material *material);
             SceneObjectBuilder &withPower(float power);
             SceneObjectBuilder &withIterations(int iterations);

@@ -327,6 +327,7 @@ namespace rc
             {"radius",     [](SceneObjectBuilder &b, const json &v) { b.withRadius(asFloat(v, "radius")); }},
             {"height",     [](SceneObjectBuilder &b, const json &v) { b.withHeight(asFloat(v, "height")); }},
             {"size",       [](SceneObjectBuilder &b, const json &v) { b.withSize(asFloat(v, "size")); }},
+            {"file",       [](SceneObjectBuilder &b, const json &v) { b.withFile(asString(v, "file")); }},
             {"power",      [](SceneObjectBuilder &b, const json &v) { b.withPower(asFloat(v, "power")); }},
             {"threshold",  [](SceneObjectBuilder &b, const json &v) { b.withThreshold(asFloat(v, "threshold")); }},
             {"intensity",  [](SceneObjectBuilder &b, const json &v) { b.withIntensity(asFloat(v, "intensity")); }},

@@ -142,9 +142,33 @@ void rc::ObjParser::parseFace(const std::string &line, std::size_t line_number)
     v1 = v1 + this->_position;
     v2 = v2 + this->_position;
 
+    // Record the raw triangle (with vertex normals when the file provides them).
+    // Normals only rotate: uniform scale and translation leave them unchanged.
+    ObjTriangle raw;
+    raw.v0 = v0;
+    raw.v1 = v1;
+    raw.v2 = v2;
+
+    int normalIndex0 = std::get<2>(vertices[0]);
+    int normalIndex1 = std::get<2>(vertices[1]);
+    int normalIndex2 = std::get<2>(vertices[2]);
+    const int normalCount = static_cast<int>(this->_normals.size());
+    if (normalIndex0 >= 0 && normalIndex1 >= 0 && normalIndex2 >= 0
+        && normalIndex0 < normalCount && normalIndex1 < normalCount && normalIndex2 < normalCount)
+    {
+        raw.smooth = true;
+        raw.n0 = (rotation * this->_normals[normalIndex0]).unit_vector();
+        raw.n1 = (rotation * this->_normals[normalIndex1]).unit_vector();
+        raw.n2 = (rotation * this->_normals[normalIndex2]).unit_vector();
+    }
+    this->_rawTriangles.push_back(raw);
+
+    if (!this->_emitObjects)
+        return;
+
     // Create a triangle primitive and add it to the scene
     SceneObjectBuilder builder;
-    
+
     builder.withType(PRIMITIVE_TRIANGLE)
            .withName("Triangle #" + std::to_string(this->_triangleNumber))
            .withVertex0(v0)
@@ -171,4 +195,14 @@ void rc::ObjParser::withRotation(const Vector3f &rotation)
 void rc::ObjParser::withSize(float size)
 {
     this->_size = size;
+}
+
+void rc::ObjParser::setEmitObjects(bool emit)
+{
+    this->_emitObjects = emit;
+}
+
+const std::vector<rc::ObjTriangle> &rc::ObjParser::getTriangles() const
+{
+    return this->_rawTriangles;
 }
