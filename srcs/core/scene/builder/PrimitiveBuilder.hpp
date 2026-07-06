@@ -1,6 +1,9 @@
 #ifndef PRIMITIVEBUILDER_HPP
 #define PRIMITIVEBUILDER_HPP
 
+#include <utility>
+#include <vector>
+
 #include "../../../common/Axis.hpp"
 #include "../../../common/Color.hpp"
 #include "../../../common/scene/IPrimitive.hpp"
@@ -31,6 +34,7 @@ namespace rc
             int _iterations = 8;
             Axis _axis = Axis::Z;
             std::string _file;
+            std::vector<std::pair<int, Vector3f>> _vertexOverrides;
             const Material *_material = nullptr;
         public:
             PrimitiveBuilder() = default;
@@ -49,6 +53,7 @@ namespace rc
             PrimitiveBuilder &withAxis(const Axis &axis);
             PrimitiveBuilder &withSize(float size);
             PrimitiveBuilder &withFile(const std::string &file);
+            PrimitiveBuilder &withVertexOverrides(const std::vector<std::pair<int, Vector3f>> &overrides);
             PrimitiveBuilder &withMaterial(const Material *material);
             PrimitiveBuilder &withPower(float power);
             PrimitiveBuilder &withIterations(int iterations);

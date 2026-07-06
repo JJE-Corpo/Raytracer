@@ -192,6 +192,27 @@ bool rc::Cube::intersect(const Ray &ray, float tMin, float tMax, Intersection &h
     return true;
 }
 
+void rc::Cube::getWorldCorners(Vector3f corners[8]) const
+{
+    const float s = this->_size / 2.0f;
+    Vec4 a[8] = {
+        Vec4(+s, +s, -s, 1), Vec4(+s, +s, +s, 1), Vec4(+s, -s, +s, 1), Vec4(+s, -s, -s, 1),
+        Vec4(-s, -s, -s, 1), Vec4(-s, +s, -s, 1), Vec4(-s, +s, +s, 1), Vec4(-s, -s, +s, 1),
+    };
+    // Same transform as intersect() (scale is applied twice, historically).
+    Matrix<4> transform = Matrix<4>::translation(this->_center.x, this->_center.y, this->_center.z)
+                    * Matrix<4>::rotation_z(this->_rotation.z * M_PI / 180.0f)
+                    * Matrix<4>::rotation_y(this->_rotation.y * M_PI / 180.0f)
+                    * Matrix<4>::rotation_x(this->_rotation.x * M_PI / 180.0f);
+    transform = transform * Matrix<4>::scaling(this->_scale.x, this->_scale.y, this->_scale.z);
+    transform = transform * Matrix<4>::scaling(this->_scale.x, this->_scale.y, this->_scale.z);
+    for (int i = 0; i < 8; ++i)
+    {
+        Vec4 c = a[i] * transform;
+        corners[i] = Vector3f(c.x, c.y, c.z);
+    }
+}
+
 bool rc::Cube::isFinite() const
 {
     return (true);

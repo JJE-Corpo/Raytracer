@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "../Component.hpp"
+#include "../components/Button.hpp"
 #include "../components/ColorPicker.hpp"
 #include "../components/Dropdown.hpp"
 #include "../components/VectorField.hpp"
@@ -27,6 +28,34 @@ namespace rc
             bool isLight = false;
             bool isPrimitive = false;
             std::function<void()> onSceneMutated;
+
+            // Vertex edit mode: when shown, a coordinate field for the vertex
+            // currently selected in the viewport. onVertexEdit applies a
+            // keyboard edit (world coordinate) back onto that vertex; the screen
+            // keeps the displayed value in sync with the live drag.
+            std::function<bool(Axis axis, float value)> onVertexEdit;
+            // When a vertex is selected (the vertex editor is visible), the -/+
+            // buttons grow/shrink THAT vertex relative to the shape centre
+            // instead of scaling the whole object. Returns true if handled.
+            std::function<bool(float factor)> onVertexScale;
+            void setVertexEditor(bool visible, const Vector3f &value);
+
+            // Small "< Point N / total >" navigator shown above the -/+ buttons
+            // when the selected object is editable, to step through its vertices
+            // without aiming at the on-screen handles. onVertexNavigate(dir) is
+            // called with -1 / +1; the owner updates the label via this setter.
+            std::function<void(int direction)> onVertexNavigate;
+            void setVertexNavigator(bool visible, int index, int count);
+
+            // "Convert to Mesh": shown for analytic primitives (not already
+            // vertex-editable) so they can be turned into an editable triangle mesh.
+            std::function<void()> onConvertToMesh;
+
+            // Gizmo tool selector (Move / Rotate / Scale). onGizmoModeChanged is
+            // called with 0 = move, 1 = rotate, 2 = scale; setGizmoMode reflects
+            // the owner's current mode by highlighting the matching button.
+            std::function<void(int mode)> onGizmoModeChanged;
+            void setGizmoMode(int mode);
 
             void setFont(sf::Font &font) override;
             void layout(float x, float y, float width);
@@ -64,6 +93,32 @@ namespace rc
             VectorField _positionField;
             VectorField _rotationField;
             VectorField _scaleField;
+
+            // Gizmo tool selector row (Move / Rotate / Scale) at the top.
+            Button _gizmoMoveButton;
+            Button _gizmoRotateButton;
+            Button _gizmoScaleButton;
+
+            // Vertex navigator (< Point N / total >), shown above the size row.
+            sf::Text _vertexNavLabel;
+            Button _vertexPrevButton;
+            Button _vertexNextButton;
+            bool _showVertexNav = false;
+
+            // One-click uniform grow/shrink of the selected object's scale.
+            sf::Text _scaleStepLabel;
+            Button _scaleDownButton;
+            Button _scaleUpButton;
+
+            // "Convert to Mesh" button, shown for non-editable primitives.
+            Button _convertToMeshButton;
+            bool _showConvertToMesh = false;
+
+            VectorField _vertexField;
+            bool _showVertexEditor = false;
+
+            // Multiplies the object's local scale uniformly (used by the -/+ buttons).
+            void applyScaleStep(ISceneObject *object, float factor);
 
             sf::Font _font;
     };
