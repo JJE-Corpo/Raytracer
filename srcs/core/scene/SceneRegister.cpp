@@ -4,6 +4,7 @@
 #include <iostream>
 
 #include "../../common/scene/IEditablePrimitive.hpp"
+#include "../../common/MaterialLibrary.hpp"
 
 namespace rc
 {
@@ -203,17 +204,7 @@ namespace rc
 
     json SceneRegister::materialJson(const Material *material)
     {
-        json object;
-
-        object["name"] = material->getName();
-        object["model"] = material->getModelName();
-
-        for (const auto &property : material->getProperties())
-            object[property.first] = property.second;
-
-        object["base_color"] = colorJson(material->getBaseColor().toColor());
-        object["specular"] = colorJson(material->getSpecular().toColor());
-        return object;
+        return MaterialLibrary::toJson(*material);
     }
 
     json SceneRegister::serializeScene(IScene *scene)
