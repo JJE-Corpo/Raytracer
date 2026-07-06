@@ -18,18 +18,9 @@
 namespace
 {
     constexpr int TILE_SIZE = 32;
-    // Block size for the coarse draft pass rendered while the camera is moving.
-    // One primary ray fills a DRAFT_STEP x DRAFT_STEP block, cutting ray/intersect
-    // count ~DRAFT_STEP^2x during navigation; the frame refines to 1:1 on settle.
     constexpr int DRAFT_STEP = 2;
 
     // --- Viewport studio lighting -------------------------------------------
-    // A fixed, view-independent three-point rig plus a sky/ground ambient
-    // hemisphere. Keeping the lights in world space (instead of deriving them
-    // from the scene's own lights) means the preview always reads as solid,
-    // shaped geometry no matter how -- or whether -- the scene is lit, which is
-    // the whole point of a viewport. The warm key / cool fill contrast plus the
-    // hemisphere gradient are what pull the image out of the old flat wash.
     const rc::Vector3f KEY_DIR  = rc::normalize(rc::Vector3f(-0.35f, 0.75f, 0.55f));
     const rc::Vector3f FILL_DIR = rc::normalize(rc::Vector3f(0.72f, 0.10f, 0.30f));
     const rc::Vector3f BACK_DIR = rc::normalize(rc::Vector3f(0.20f, 0.35f, -0.90f));
@@ -99,8 +90,6 @@ namespace
         return {origin, pixel00, pixel_delta_u, pixel_delta_v};
     }
 
-    // Sub-pixel coordinates are accepted so the anti-aliasing pass can jitter
-    // samples within a pixel; integer callers convert implicitly.
     rc::Ray viewport_primary_ray(const ViewportCameraData &camera_data, float x, float y)
     {
         const rc::Vector3f pixel_sample = camera_data.pixel00
@@ -120,9 +109,6 @@ namespace
         return a * (1.0f - t) + b * t;
     }
 
-    // Narkowicz ACES filmic tone curve. Rolls off highlights gracefully and adds
-    // contrast through the mid-tones, so lit surfaces gain punch instead of
-    // washing out to flat pastels once several light terms are summed.
     inline float aces(float x)
     {
         const float a = 2.51f, b = 0.03f, c = 2.43f, d = 0.59f, e = 0.14f;
@@ -134,17 +120,11 @@ namespace
         return {aces(c.r), aces(c.g), aces(c.b)};
     }
 
-    // Rotated-grid sub-pixel offsets for the edge anti-aliasing pass. Eight taps
-    // spread over both axes; fixed (no RNG) so a settled frame is stable and
-    // reproducible.
     constexpr int AA_SAMPLES = 8;
     const rc::Vector2f AA_OFFSETS[AA_SAMPLES] = {
         {-0.375f, -0.125f}, {0.125f, -0.375f}, {0.375f, 0.125f}, {-0.125f, 0.375f},
         {-0.375f, 0.375f}, {0.375f, -0.375f}, {-0.125f, -0.125f}, {0.125f, 0.125f}
     };
-    // Two neighbouring pixels whose colours differ by more than this (0..1 per
-    // channel, summed) are treated as an edge worth supersampling -- catches
-    // shading creases and highlights that share a primitive id.
     constexpr float AA_COLOR_THRESHOLD = 0.10f;
 
     inline float color_distance(const rc::Color &a, const rc::Color &b)
@@ -152,8 +132,6 @@ namespace
         return (std::abs(a.r - b.r) + std::abs(a.g - b.g) + std::abs(a.b - b.b)) / 255.0f;
     }
 
-    // Shading coefficients read once per frame so the hot per-pixel path never
-    // pays for the scene's virtual getters.
     struct ShadeParams
     {
         float ambient;
@@ -162,11 +140,6 @@ namespace
 
     rc::ColorF viewport_background(const rc::Ray &ray)
     {
-        // Primary rays are already unit length (see viewport_primary_ray), so we
-        // skip re-normalizing here -- one fewer sqrt for every sky pixel. A
-        // three-stop vertical gradient (nadir -> bright horizon -> zenith) plus a
-        // soft bloom toward the key light give the backdrop depth instead of a
-        // flat two-colour wash, which also keeps silhouettes reading clearly.
         const float t = saturate(0.5f * (ray.direction.y + 1.0f));
         rc::ColorF sky = (t < 0.5f)
             ? lerp(SKY_NADIR, SKY_HORIZON, t * 2.0f)
@@ -176,9 +149,6 @@ namespace
         return sky + KEY_COLOR * (0.18f * std::pow(sun, 8.0f));
     }
 
-    // Full shading for one surface hit. `view_dir` is the unit primary-ray
-    // direction (points away from the eye). Everything is evaluated in a small
-    // fixed lighting rig and pushed through a filmic tone curve.
     rc::ColorF viewport_shade(const rc::Intersection &hit, const rc::Vector3f &view_dir, const ShadeParams &shading)
     {
         const rc::Vector3f &N = hit.normal;
@@ -186,16 +156,9 @@ namespace
         const rc::Material &mat = hit.material;
         const rc::ColorF albedo = mat.baseColor;
 
-        // Sky/ground hemisphere ambient -- the single biggest cure for flatness.
-        // Up-facing surfaces catch cool sky light, down-facing ones fall into a
-        // warm shadow, so even an otherwise unlit sphere shows a top-to-bottom
-        // gradient rather than one constant grey.
         const float up = 0.5f * (N.y + 1.0f);
         const rc::ColorF ambient = lerp(GROUND_AMBIENT, SKY_AMBIENT, up);
 
-        // Three-point diffuse. The fill is half-Lambert (wrapped) so it lifts the
-        // shadow side smoothly with no hard terminator; the back light rakes the
-        // far edge for separation.
         const float key_d  = std::max(0.0f, rc::dot(N, KEY_DIR));
         const float fill_d = 0.5f * rc::dot(N, FILL_DIR) + 0.5f;
         const float back_d = std::max(0.0f, rc::dot(N, BACK_DIR));
@@ -203,8 +166,6 @@ namespace
                                  + FILL_COLOR * (fill_d * fill_d * 0.7f)
                                  + RIM_COLOR * (back_d * 0.15f);
 
-        // Blinn-Phong specular from the key light, shaped by the material. Metals
-        // tint the highlight with their base colour; dielectrics keep it white.
         const float ndv = std::max(0.0f, rc::dot(N, V));
         float spec = 0.0f;
         if (key_d > 0.0f)
@@ -212,21 +173,15 @@ namespace
             const rc::Vector3f H = rc::normalize(KEY_DIR + V);
             const float ndh = std::max(0.0f, rc::dot(N, H));
             const float gloss = std::clamp(mat.shininess, 8.0f, 400.0f);
-            const float energy = std::min(6.0f, 1.0f + gloss * 0.04f); // tight highlights stay bright
+            const float energy = std::min(6.0f, 1.0f + gloss * 0.04f);
             spec = std::pow(ndh, gloss) * energy * key_d;
         }
         const float spec_k = saturate(mat.specular_level * (1.0f - 0.7f * mat.roughness) + mat.metallic);
         const rc::ColorF spec_color = lerp(rc::ColorF{1.0f, 1.0f, 1.0f}, albedo, mat.metallic) * (spec * spec_k);
 
-        // Fresnel rim: brightest at grazing angles, biased toward the top so it
-        // reads like sky light wrapping the silhouette and peels it off the
-        // background.
         const float fresnel = std::pow(1.0f - ndv, 3.0f);
         const rc::ColorF rim = RIM_COLOR * (fresnel * (0.25f + 0.35f * up));
 
-        // Compose. The scene's ambient/diffuse coefficients still steer the
-        // balance, but are floored so the preview never collapses to a flat
-        // silhouette when a scene ships with low coefficients.
         const float amb_k = 0.30f + 0.70f * saturate(shading.ambient);
         const float dif_k = 0.40f + 0.60f * saturate(shading.diffuse);
         rc::ColorF lit = albedo * (ambient * amb_k + diffuse * dif_k) + spec_color + rim;
@@ -262,15 +217,6 @@ namespace
         dst.b = static_cast<uint8_t>(std::lround(dst.b * inv + src.b * alpha));
     }
 
-    // Draws a smooth outline hugging every silhouette flagged in `mask`. Pixels
-    // within `thickness` of the edge get the solid outline color; beyond that a
-    // quadratic falloff yields an anti-aliased glow out to `glow_radius`.
-    //
-    // The outline only ever appears next to a silhouette edge, so rather than
-    // scanning a full kernel around every pixel (O(pixels * kernel)), we find the
-    // boundary pixels once and scatter the glow outward from them only
-    // (O(pixels + perimeter * kernel)). This keeps the pass cheap enough to run
-    // on every hover change.
     void apply_outline_glow(rc::Render &render, const std::vector<uint8_t> &mask, rc::Color color, int thickness, int glow_radius)
     {
         if (render.size_x <= 0 || render.size_y <= 0)
@@ -286,7 +232,6 @@ namespace
         const float core = static_cast<float>(thickness);
         const float falloff = std::max(1.0f, static_cast<float>(glow_radius) - core);
 
-        // Per-pixel outline intensity; kept as the max (nearest edge) contribution.
         std::vector<float> alpha(expected, 0.0f);
         bool has_edge = false;
 
@@ -536,8 +481,6 @@ namespace rc
 
         const size_t pixel_count = static_cast<size_t>(resolution.x) * static_cast<size_t>(resolution.y);
 
-        // Snapshot the current overlay state (selection + hover) and figure out
-        // whether the expensive geometry pass has to run at all.
         std::vector<const ISceneObject *> selection;
         size_t selection_version = 0;
         const ISceneObject *hover = nullptr;
@@ -554,12 +497,6 @@ namespace rc
             hover_changed = this->_lastHoverVersion != hover_version;
         }
 
-        // A selection change can accompany a scene mutation -- the UI piggybacks
-        // show/hide toggles onto setSelection -- so it forces a full geometry
-        // pass to stay correct. A hover change only ever tweaks the overlay, so
-        // hover-only updates skip ray tracing and re-composite from the cached
-        // buffers. Hover fires on every mouse-move across the viewport, so this
-        // is the hot path the optimization targets.
         const bool camera_moved = this->needsGeometryRefresh(scene);
         bool base_stale = false;
         bool pending_refine = false;
@@ -578,14 +515,6 @@ namespace rc
         if (!geometry_dirty && !hover_changed)
             return;
 
-        // Progressive quality ladder, one rung per frame:
-        //   Draft -> coarse block trace while the camera is moving (responsive)
-        //   Full  -> exact 1:1 trace once the camera settles (crisp)
-        //   Aa    -> edge-adaptive supersample once the full frame is up (smooth)
-        // A selection change or the first frame skips straight to Full (those are
-        // not navigation and must be crisp immediately) and then still refine on
-        // to Aa. Aa only runs when nothing else forces a re-trace, so it always
-        // operates on the fresh full-resolution buffers left by a Full pass.
         enum class Quality { Draft, Full, Aa };
         Quality quality;
         if (camera_moved && !base_stale)
@@ -599,17 +528,11 @@ namespace rc
         this->_rendering = true;
         this->_stopRequested = false;
 
-        // Geometry pass: only when the camera/scene changed. Produces the base
-        // colours and the primitive hit per pixel, both cached so overlay-only
-        // updates (hover/selection) can skip ray tracing entirely.
         if (geometry_dirty)
         {
             const ViewportCameraData camera_data = build_viewport_camera_data(camera, resolution.x, resolution.y);
             const ShadeParams shading{scene.getAmbientCoefficient(), scene.getDiffuseCoefficient()};
 
-            // Shared tiled work-queue: hands out TILE_SIZE tiles to a worker pool,
-            // each calling tile_fn(tile_x, tile_y). Both the trace pass and the
-            // anti-aliasing pass drive it, so the threading lives in one place.
             const int tiles_x = (resolution.x + TILE_SIZE - 1) / TILE_SIZE;
             const int tiles_y = (resolution.y + TILE_SIZE - 1) / TILE_SIZE;
             const int total_tiles = tiles_x * tiles_y;
@@ -639,12 +562,6 @@ namespace rc
 
             if (quality == Quality::Aa)
             {
-                // Edge-adaptive supersampling. Reuses the just-settled 1:1 colour
-                // and id buffers and only pays for AA_SAMPLES extra rays on
-                // silhouette / crease pixels (a 4-neighbour with a different
-                // primitive or a large colour step). Cost is ~O(perimeter), and
-                // it only ever runs while the view is idle -- so edges turn
-                // buttery-smooth without touching interaction latency.
                 std::vector<Color> base;
                 std::vector<const IPrimitive *> ids;
                 {
@@ -722,9 +639,6 @@ namespace rc
                     const int end_x = std::min(start_x + TILE_SIZE, resolution.x);
                     const int end_y = std::min(start_y + TILE_SIZE, resolution.y);
 
-                    // Each block traces a single ray at its centre and fills the
-                    // block; blocks are clamped to the tile so threads never write
-                    // outside their own tile. step == 1 is the exact 1:1 path.
                     for (int by = start_y; by < end_y; by += step)
                     {
                         if (this->_stopRequested)
@@ -767,8 +681,6 @@ namespace rc
             }
         }
 
-        // Composite pass: rebuild the overlay (outlines + gizmos) over a fresh
-        // copy of the cached base colours. Cheap enough to run every hover/select.
         std::vector<Color> composite;
         std::vector<const IPrimitive *> ids;
         {
@@ -823,9 +735,6 @@ namespace rc
             this->_lastSamplesPerPixel = camera.getSamplesPerPixel();
             this->_lastSelectionVersion = selection_version;
             this->_lastHoverVersion = hover_version;
-            // Advance the quality ladder for the next frame: a Draft schedules a
-            // Full refine, a Full frame schedules the Aa polish, and Aa settles
-            // (both flags clear) so the next idle frame early-returns.
             this->_pendingRefine = (quality == Quality::Draft);
             this->_pendingAA = (quality == Quality::Full);
         }

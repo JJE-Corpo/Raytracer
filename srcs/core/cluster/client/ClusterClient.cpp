@@ -207,8 +207,6 @@ namespace rc
 
             this->_readBuffer.data.erase(this->_readBuffer.data.begin(), this->_readBuffer.data.begin() + 6 + payloadSize);
 
-            // Length-prefixed framing lets us drop a single bad packet without
-            // tearing down the connection or crashing the read thread.
             try
             {
                 auto packet = PacketFactory::createPacket(static_cast<PacketID>(packetId), payload);

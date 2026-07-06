@@ -23,8 +23,6 @@ namespace rc
             void layout(float x, float y, float width, float height);
             void updateRender(const Render &render);
 
-            // Converts a window-space mouse position into a render pixel, false if
-            // it falls outside the currently laid-out viewport.
             bool getViewportPixel(const sf::Vector2i &mouse, sf::Vector2i &pixel) const;
 
             void update(sf::Vector2i mouse) override;

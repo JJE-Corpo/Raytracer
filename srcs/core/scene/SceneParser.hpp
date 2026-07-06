@@ -30,8 +30,6 @@ namespace rc
 
             static Camera *parseCamera(const nlohmann::json &object);
             std::vector<ISceneObject *> parseObjects(const nlohmann::json &array);
-            // Parse one object (leaf, obj mesh, or group) and append it plus any
-            // descendants to result, linking them under parent (nullptr = root).
             void parseObjectInto(const nlohmann::json &object, std::vector<ISceneObject *> &result, ISceneObject *parent);
             std::vector<Material *> parseMaterials(const nlohmann::json &array);
 

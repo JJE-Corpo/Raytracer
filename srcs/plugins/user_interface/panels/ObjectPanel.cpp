@@ -242,8 +242,6 @@ namespace rc
 
         this->isLight = false;
         this->isPrimitive = false;
-        // Offer "Convert to Mesh" only for primitives that are not already
-        // vertex-editable (mesh / triangle already have movable vertices).
         this->_showConvertToMesh = dynamic_cast<const IPrimitive *>(currentObject) != nullptr
             && dynamic_cast<const IEditablePrimitive *>(currentObject) == nullptr;
 
@@ -365,10 +363,6 @@ namespace rc
                 this->_objectSliders.push_back(slider);
             }
         }
-        // The editor works on the LOCAL (parent-relative) transform. For a
-        // top-level object local == world, so un-grouped editing is unchanged;
-        // for a child this edits its offset within the group and the flatten
-        // pass (triggered by onSceneMutated) recomputes its world transform.
         auto *obj = const_cast<ISceneObject *>(currentObject);
         this->_positionField.setValue(currentObject->getLocalPosition());
         this->_positionField.onValidate = [this, obj](Axis axis, float value)
@@ -407,11 +401,6 @@ namespace rc
             return (true);
         };
 
-        // -/+ : when a vertex is selected, grow/shrink that single vertex
-        // (onVertexScale); otherwise apply a uniform multiplicative step to the
-        // whole object's scale through the same setLocalScale + onSceneMutated
-        // path as the field, so meshes rebuild their geometry/BVH and the
-        // viewport re-traces.
         this->_scaleDownButton.onClick = [this, obj]()
         {
             if (this->_showVertexEditor && this->onVertexScale)
@@ -484,9 +473,6 @@ namespace rc
         if (this->_showConvertToMesh)
             children.push_back(&this->_convertToMeshButton);
 
-        // Open pop-ups (color picker, material dropdown) capture events and
-        // are served first, so their clicks no longer leak to the sliders
-        // or fields they overlap.
         return (EventRouter::route(children, event, mouse) != nullptr);
     }
 

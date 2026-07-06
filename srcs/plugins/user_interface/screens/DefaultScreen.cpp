@@ -25,8 +25,6 @@ namespace rc
     constexpr float MENU_HEIGHT = 28.0f;
     constexpr float SIDEBAR_MIN = 220.0f;   // narrowest the sidebar may be dragged
     constexpr float VIEWPORT_MIN = 360.0f;  // space always kept for the viewport
-    // Pixels a right-press may travel before it counts as a camera-rotate drag
-    // rather than a click that opens the context menu.
     constexpr float RIGHT_CLICK_DRAG = 5.0f;
 
     void DefaultScreen::setCoreAccess(ICoreAccess *coreAccess)
@@ -553,9 +551,6 @@ namespace rc
 
             if (!scene || !payload)
                 return;
-            // Read the name before removeObject() frees the object. The panel
-            // skips descendants covered by a deleted ancestor, so `payload` is
-            // always still alive here.
             const std::string name = payload->getName();
             scene->removeObject(const_cast<ISceneObject *>(payload));
             this->markViewportBvhDirty();
@@ -566,16 +561,9 @@ namespace rc
         this->_objectPanel.setFont(*this->_font);
         this->_objectPanel.onSceneMutated = [this]
         {
-            // Rebuild the scene BVH AND force the viewport to re-trace: the
-            // renderer only re-runs its geometry pass on a camera/selection
-            // change, so without this a transform edit (position/rotation/scale,
-            // incl. the -/+ size buttons) would rebuild the BVH but keep showing
-            // the cached shape until the camera moved.
             this->markViewportBvhDirty();
             this->forceViewportRetrace();
         };
-        // Keyboard edit of the selected vertex's world coordinates, kept in sync
-        // with dragging. Applies straight onto the editable primitive.
         this->_objectPanel.onVertexEdit = [this](Axis axis, float value) -> bool
         {
             if (!this->_editMode || !this->_editTarget || this->_selectedVertex < 0)
@@ -590,9 +578,6 @@ namespace rc
             this->forceViewportRetrace();
             return (true);
         };
-        // -/+ buttons while a vertex is selected: move only that vertex, away
-        // from (factor > 1) or toward (factor < 1) the shape's centroid, so the
-        // selected point grows/shrinks while the rest of the geometry stays put.
         this->_objectPanel.onVertexScale = [this](float factor) -> bool
         {
             if (!this->_editMode || !this->_editTarget || this->_selectedVertex < 0)
@@ -614,13 +599,10 @@ namespace rc
             this->syncVertexEditorField();
             return (true);
         };
-        // Object-panel arrows: step to the previous / next vertex of the shape.
         this->_objectPanel.onVertexNavigate = [this](int direction)
         {
             this->navigateVertex(direction);
         };
-        // "Convert to Mesh": bake the selected analytic primitive into an
-        // editable triangle mesh and select the result.
         this->_objectPanel.onConvertToMesh = [this]
         {
             this->convertSelectionToMesh();
@@ -670,10 +652,6 @@ namespace rc
         sf::Vector2i mouse = sf::Mouse::getPosition(window);
         CursorType cursorType = this->_menuBar.getCursor();
 
-        // Pull in any material the user added from the market window (threaded),
-        // applying it to the scene here on the main thread. Done every frame,
-        // before the modal-window guards below, so it lands live while the
-        // market window stays open.
         this->applyMarketAdditions();
 
         if (this->_exploratorJustClosed && !this->_exploratorWindow.running)
@@ -700,8 +678,6 @@ namespace rc
         if (this->_marketWindow.running)
             return;
 
-        // Keep the context menu's hover highlight live; it sits above the menu
-        // bar and panels, so refresh it before the menu-bar early-return below.
         this->_contextMenu.update(mouse);
 
         this->_menuBar.update(mouse);
@@ -716,8 +692,6 @@ namespace rc
         if (cursorType == CursorType::ARROW && this->_rendererPanel.getCursor() != CursorType::ARROW)
             cursorType = this->_rendererPanel.getCursor();
 
-        // The cluster HUD floats on top of the viewport/render, so its move/hand
-        // cursor wins over everything below wherever the pointer is over it.
         const CursorType clusterCursor = this->clusterOverlayCursor();
         if (clusterCursor != CursorType::ARROW)
             cursorType = clusterCursor;
@@ -732,10 +706,6 @@ namespace rc
 
         this->layoutSidebarResize(window);
 
-        // Detect a scene replaced outside our own undo/redo (startup, Open, a
-        // config reload). Drop selection/hover that pointed into the old scene
-        // and start a fresh undo baseline on the new one. onSceneRestored keeps
-        // _lastHistoryScene in step for our swaps, so those don't reach here.
         IScene *liveScene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
         if (liveScene != this->_lastHistoryScene)
         {
@@ -749,9 +719,6 @@ namespace rc
 
         this->_hierarchyPanel.setScene(this->_coreAccess ? this->_coreAccess->getScene() : nullptr);
 
-        // Leave edit mode if the selection changed away from the edited object
-        // (hierarchy reselection, deletion, multi-select). Guards against acting
-        // on a stale/freed _editTarget.
         if (this->_editMode && this->editableFromSelection() != this->_editTarget)
             this->exitEditMode();
 
@@ -767,14 +734,10 @@ namespace rc
         if (inViewport)
             cursorType = CursorType::CROSS;
 
-        // The sidebar splitter takes precedence over the viewport cross so that
-        // grabbing the edge always shows the resize cursor.
         this->_sidebarResize.update(mouse);
         if (this->_sidebarResize.getCursor() != CursorType::ARROW)
             cursorType = this->_sidebarResize.getCursor();
 
-        // Re-assert the HUD cursor last so it wins over the viewport cross and the
-        // sidebar splitter if the panel was dragged over them.
         if (clusterCursor != CursorType::ARROW)
             cursorType = clusterCursor;
 
@@ -827,8 +790,6 @@ namespace rc
         this->_menuBar.layout(static_cast<float>(window.getSize().x));
         window.draw(this->_menuBar);
 
-        // Drawn after the menu bar so the popup sits on top of every panel; it
-        // no-ops while closed.
         window.draw(this->_contextMenu);
 
         this->_toastManager.draw(window);
@@ -859,8 +820,6 @@ namespace rc
         const bool rendering = renderer != nullptr && renderer->isRendering();
         const int sample = renderer != nullptr ? renderer->getCurrentSample() : -1;
 
-        // leftBound = sidebar's right edge, so the HUD stays over the viewport /
-        // render pane and never slides onto the sidebar.
         this->_clusterServerPanel.draw(window, server, rendering, sample,
             static_cast<float>(window.getSize().x), MENU_HEIGHT + 10.f, this->_sidebarWidth);
     }
@@ -904,9 +863,6 @@ namespace rc
         label.setCharacterSize(13);
         label.setFillColor(theme::TEXT_WHITE);
 
-        // Badge geometry: a fixed height keeps the text and status dot vertically
-        // centred (SFML text bounds carry a baseline offset), and the width grows
-        // to fit the label.
         const float padX = 12.0f;
         const float dot = 8.0f;
         const float gap = 8.0f;
@@ -914,8 +870,6 @@ namespace rc
         const float badgeW = padX + dot + gap + label.getLocalBounds().width + padX;
         const float margin = 14.0f;
 
-        // Anchor to the bottom-left of the viewport (right of the sidebar, above
-        // the window's bottom edge) - a conventional, unobtrusive HUD corner.
         const sf::Vector2u size = window.getSize();
         const float x = this->_sidebarWidth + margin;
         const float y = static_cast<float>(size.y) - margin - badgeH;
@@ -1086,20 +1040,14 @@ namespace rc
 
         std::vector<std::pair<std::string, std::function<void()>>> entries;
 
-        // Only leaves carry a visibility toggle, matching the eye button the
-        // hierarchy shows for primitives and lights (groups just get Delete).
         const ObjectType type = object->getObjectType();
         if (type == ObjectType::PRIMITIVE || type == ObjectType::LIGHT)
         {
             const std::string hideLabel = object->isHidden() ? "Show" : "Hide";
             entries.emplace_back(hideLabel, [this]() { this->hideSelection(); });
         }
-        // Grouping only makes sense for a real multi-selection: gather the
-        // selected objects under one new group.
         if (this->_hierarchyPanel.getSelection().size() >= 2)
             entries.emplace_back("Group selection", [this]() { this->groupSelection(); });
-        // Delete reuses the hierarchy's Delete path (selection-wide, with the
-        // safe pointer cleanup and the "Object deleted" toast).
         entries.emplace_back("Delete", [this]() { this->_hierarchyPanel.deleteSelection(); });
 
         this->_contextMenu.openAt(static_cast<float>(mouse.x), static_cast<float>(mouse.y), entries);
@@ -1127,15 +1075,10 @@ namespace rc
         if (!scene)
             return;
 
-        // Snapshot the selection: reparenting mutates the scene graph.
         const std::vector<const ISceneObject *> selection = this->_hierarchyPanel.getSelection();
         if (selection.size() < 2)
             return;
 
-        // Only move the "roots" of the selection. An object whose selected
-        // ancestor is also in the batch already travels with that ancestor's
-        // subtree, so moving it too would tear it out of its parent. This mirrors
-        // the skip rule HierarchyPanel::deleteObjects uses.
         std::vector<ISceneObject *> toGroup;
         for (const ISceneObject *object : selection)
         {
@@ -1155,8 +1098,6 @@ namespace rc
         if (toGroup.empty())
             return;
 
-        // Created only once there is something to hold, so no empty group is
-        // left behind. reparent preserves each object's world transform.
         ISceneObject *group = scene->addGroup();
         for (ISceneObject *object : toGroup)
             scene->reparent(object, group, -1);
@@ -1183,23 +1124,12 @@ namespace rc
         if (this->_marketWindow.running)
             return;
 
-        // The cluster HUD's minimize toggle claims its own click before anything
-        // else, so collapsing/expanding it never selects an object underneath.
         if (this->handleClusterOverlayEvent(window, event))
             return;
 
-        // Global keyboard shortcuts (save / undo / redo) run before any routing
-        // so they win over the viewport and panels. handleShortcut returns true
-        // once it has consumed the event; an undo/redo may have swapped the scene
-        // object, so nothing below must touch the now-stale local state.
         if (this->handleShortcut(event))
             return;
 
-        // Right mouse over the viewport is overloaded: a drag rotates the camera
-        // (independently of the component routing below), while a plain click
-        // (released without dragging past the threshold) opens the object
-        // context menu. A right-press on a panel must not grab the camera, and
-        // is handled by the hierarchy panel via consumeContextMenuRequest below.
         if (event.type == sf::Event::MouseButtonPressed &&
             event.mouseButton.button == sf::Mouse::Right)
         {
@@ -1215,8 +1145,6 @@ namespace rc
 
         if (event.type == sf::Event::MouseMoved && this->_rightMouseHeld && !this->_rightDragged)
         {
-            // Shift + right-click drops a 3D marker under the cursor instead of
-            // orbiting; the next primitive added from the menu spawns there.
             if (sf::Keyboard::isKeyPressed(sf::Keyboard::LShift)
                 || sf::Keyboard::isKeyPressed(sf::Keyboard::RShift))
             {
@@ -1252,24 +1180,15 @@ namespace rc
             }
         }
 
-        // 'M' toggles movement mode, which gates all camera controls (the
-        // right-drag look and the ZQSD fly keys). Only fires in the viewport and
-        // never while a text field / menu owns the keyboard, so typing 'm' into a
-        // field can't flip the mode.
         if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::M
             && !event.key.control && this->_viewMode == ViewMode::VIEWPORT
             && !this->isKeyboardCaptured())
             this->toggleMovementMode();
 
-        // Latch fly-camera keys here, while the event is fresh and before the
-        // frame's (possibly slow) render, so presses/releases are never missed.
         this->trackFlyKeys(event, mouse);
 
         const bool viewportMode = this->_viewMode == ViewMode::VIEWPORT;
 
-        // Vertex edit mode: keep driving an in-progress drag no matter what the
-        // cursor is now over, and end it on release. Handled before component
-        // routing so a fast drag that strays onto a panel is never dropped.
         if (this->_vertexDragActive)
         {
             if (event.type == sf::Event::MouseMoved)
@@ -1284,8 +1203,6 @@ namespace rc
             }
         }
 
-        // Move gizmo: keep driving an in-progress axis-arrow drag and end it on
-        // release, handled before component routing (same as the vertex drag).
         if (this->_axisDragActive)
         {
             if (event.type == sf::Event::MouseMoved)
@@ -1300,8 +1217,6 @@ namespace rc
             }
         }
 
-        // Rotation gizmo: keep driving an in-progress ring drag and end it on
-        // release, handled before component routing (same as the vertex drag).
         if (this->_rotDragActive)
         {
             if (event.type == sf::Event::MouseMoved)
@@ -1316,8 +1231,6 @@ namespace rc
             }
         }
 
-        // Scale gizmo: keep driving an in-progress scale-arrow drag and end it on
-        // release, handled before component routing (same as the vertex drag).
         if (this->_scaleDragActive)
         {
             if (event.type == sf::Event::MouseMoved)
@@ -1332,8 +1245,6 @@ namespace rc
             }
         }
 
-        // Object move: keep driving an in-progress object drag and end it on
-        // release, handled before component routing (same as the vertex drag).
         if (this->_objectDragActive)
         {
             if (event.type == sf::Event::MouseMoved)
@@ -1348,8 +1259,6 @@ namespace rc
             }
         }
 
-        // Tab toggles vertex edit mode for a selected editable primitive;
-        // Escape leaves it. Suppressed while a field/pop-up owns the input.
         if (viewportMode && event.type == sf::Event::KeyPressed && !this->anyUiCapturing())
         {
             if (event.key.code == sf::Keyboard::Tab)
@@ -1364,9 +1273,6 @@ namespace rc
             }
         }
 
-        // Build the set of top-level components that are live in the current view
-        // mode, then let the router pick the single best one for this event
-        // (menu bar and open pop-ups win over the panels and the viewport).
         std::vector<Component *> candidates = {&this->_contextMenu, &this->_menuBar, &this->_rendererPanel};
 
         if (viewportMode)
@@ -1378,12 +1284,6 @@ namespace rc
 
         const Component *consumer = EventRouter::route(candidates, event, mouse);
 
-        // Delete / Suppr with the cursor outside the hierarchy panel: the key
-        // never reaches the panel (its ScrollView only forwards keys while
-        // hovered), so fall back to deleting the current selection here - the
-        // same shape as the unclaimed-left-click viewport fallback below. A live
-        // text field or the hovered panel consumes the key first (consumer set),
-        // which keeps Delete editing text / handled once.
         if (viewportMode && consumer == nullptr
             && event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Delete)
         {
@@ -1395,14 +1295,9 @@ namespace rc
             this->syncSelectionToRenderer();
         }
 
-        // A right-click on a hierarchy row asks for the context menu; open it at
-        // the (window-space) cursor. The viewport right-click is handled above,
-        // where the picked object is already known.
         if (const ISceneObject *ctxObject = this->_hierarchyPanel.consumeContextMenuRequest())
             this->openContextMenu(ctxObject, mouse);
 
-        // Fall back to viewport picking only when no UI component claimed the
-        // click, so clicks on panels or pop-ups no longer leak to the scene.
         if (viewportMode && consumer == nullptr &&
             event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left)
         {
@@ -1410,9 +1305,6 @@ namespace rc
             {
                 if (this->_editMode)
                 {
-                    // In edit mode a left click grabs the nearest vertex handle
-                    // (object selection is intentionally disabled); a miss just
-                    // clears the vertex selection.
                     const int vertex = this->pickVertexHandle(mouse);
                     if (vertex >= 0)
                         this->beginVertexDrag(vertex);
@@ -1425,29 +1317,22 @@ namespace rc
                 else if (int axis = (this->_gizmoMode == GizmoMode::MOVE) ? this->pickGizmoAxis(mouse) : -1;
                          axis >= 0)
                 {
-                    // Clicking a move-gizmo arrow grabs that axis: the current
-                    // selection is kept and the object slides along the axis only.
                     this->beginAxisDrag(this->singleSelectedObject(), axis, mouse);
                 }
                 else if (int axis = (this->_gizmoMode == GizmoMode::ROTATE) ? this->pickRotationRing(mouse) : -1;
                          axis >= 0)
                 {
-                    // Clicking a rotation ring grabs that axis: the object rotates
-                    // around it while the selection is kept.
                     this->beginRotationDrag(this->singleSelectedObject(), axis, mouse);
                 }
                 else if (int axis = (this->_gizmoMode == GizmoMode::SCALE) ? this->pickGizmoAxis(mouse) : -1;
                          axis >= 0)
                 {
-                    // Clicking a scale-gizmo arrow grabs that axis: the object is
-                    // scaled along it while the selection is kept.
                     this->beginScaleDrag(this->singleSelectedObject(), axis, mouse);
                 }
                 else
                 {
                     this->updateSelectionFromClick(mouse);
 
-                    // Double-click an editable primitive to jump into edit mode.
                     const IPrimitive *prim = this->_hierarchyPanel.tryCast<const IPrimitive>();
                     const ISceneObject *obj = this->_hierarchyPanel.tryCast<const ISceneObject>();
                     IEditablePrimitive *editable = prim ? dynamic_cast<IEditablePrimitive *>(const_cast<IPrimitive *>(prim)) : nullptr;
@@ -1457,9 +1342,6 @@ namespace rc
                     this->_editClickObject = obj;
                     this->_editClickClock.restart();
 
-                    // Left-drag the object just clicked to move it in space (a
-                    // plain click with no drag is still just a selection). Skipped
-                    // in edit mode and when Ctrl (multi-select) is held.
                     const bool ctrl = sf::Keyboard::isKeyPressed(sf::Keyboard::LControl)
                         || sf::Keyboard::isKeyPressed(sf::Keyboard::RControl);
                     const ISceneObject *underCursor = this->pickObjectAt(mouse);
@@ -1469,8 +1351,6 @@ namespace rc
             }
         }
 
-        // Track what's under the cursor so the viewport can highlight it. In edit
-        // mode this highlights the nearest vertex handle instead of an object.
         if (event.type == sf::Event::MouseMoved || event.type == sf::Event::MouseLeft)
         {
             if (viewportMode && consumer == nullptr && event.type == sf::Event::MouseMoved)
@@ -1491,11 +1371,6 @@ namespace rc
             }
         }
 
-        // Fold whatever this event changed into the undo history. Only commit-
-        // like events snapshot (a press for menu/context actions, a release to
-        // end a drag, a key release for typed edits), and historyCapture() is a
-        // no-op when nothing actually changed -- so a slider drag becomes a
-        // single undo step and plain selections/camera moves add none.
         if (viewportMode && this->_coreAccess
             && (event.type == sf::Event::MouseButtonPressed
                 || event.type == sf::Event::MouseButtonReleased
@@ -1512,9 +1387,6 @@ namespace rc
         if (!this->_rendererPanel.viewportBounds.contains(mouse))
             return (false);
 
-        // A menu, pop-up, in-progress drag or focused text field anywhere in the
-        // UI owns the input even when the cursor sits over the render, so the
-        // viewport must not steal keys/clicks while any of them is live.
         if (this->_menuBar.isCapturing() || this->_contextMenu.isCapturing())
             return (false);
 
@@ -1550,19 +1422,8 @@ namespace rc
             camera.setRotation(rot);
         }
 
-        // Real elapsed frame time drives the motion so speed is constant
-        // regardless of frame rate or how long the render took. The clock is
-        // restarted every frame (this runs each viewport frame), and dt is
-        // clamped so a single slow frame -- e.g. a full-resolution refine --
-        // can't fling the camera across the scene.
         const float dt = std::clamp(this->_frameClock.restart().asSeconds(), 0.0f, 0.1f);
 
-        // Which fly keys are held is latched from events (trackFlyKeys), not
-        // polled here, so a press captured over the viewport keeps moving the
-        // camera while held even if the cursor later drifts off the viewport.
-        // Reconcile each latch against the physical key so a missed key-up (a
-        // modal window stealing focus mid-hold, etc.) can never leave the camera
-        // stuck moving -- this only clears latches, it never starts a fly.
         this->_keyForward = this->_keyForward && sf::Keyboard::isKeyPressed(sf::Keyboard::Z);
         this->_keyBack = this->_keyBack && sf::Keyboard::isKeyPressed(sf::Keyboard::S);
         this->_keyLeft = this->_keyLeft && sf::Keyboard::isKeyPressed(sf::Keyboard::Q);
@@ -1597,19 +1458,11 @@ namespace rc
 
     void DefaultScreen::trackFlyKeys(const sf::Event &event, const sf::Vector2i &mouse)
     {
-        // Losing window focus (Alt-Tab, etc.) can swallow the matching key-up, so
-        // clear everything to avoid a stuck, forever-moving camera.
         if (event.type == sf::Event::LostFocus)
         {
             this->resetFlyKeys();
             return;
         }
-        // Releases always count, so a key can never stick regardless of where the
-        // cursor is; presses only start a fly while movement mode is on and the
-        // viewport owns input, so typing into a focused field or panel never
-        // drives the camera. A press with Ctrl held is a shortcut (Ctrl+S/Z), not
-        // a fly key, so ignore it - otherwise Ctrl+Z would also nudge the camera
-        // forward (Z == forward).
         if (event.type == sf::Event::KeyReleased)
             this->setFlyKey(event.key.code, false);
         else if (event.type == sf::Event::KeyPressed && !this->_vertexDragActive && !this->_objectDragActive
@@ -1645,8 +1498,6 @@ namespace rc
     void DefaultScreen::toggleMovementMode()
     {
         this->_movementMode = !this->_movementMode;
-        // Drop any keys latched while flying so releasing the mode instantly
-        // stops the camera instead of coasting until the next physical key-up.
         if (!this->_movementMode)
             this->resetFlyKeys();
         if (this->_movementMode)
@@ -1674,8 +1525,6 @@ namespace rc
             if (this->_viewportBvhDirty)
             {
                 this->_coreAccess->getScene()->buildBvh();
-                // The BVH being dirty means the scene contents changed; tell the
-                // viewport renderer to drop its cached frame so the edit shows up.
                 this->_activeRenderer->markSceneDirty();
                 this->_viewportBvhDirty = false;
             }
@@ -1686,17 +1535,11 @@ namespace rc
     void DefaultScreen::markViewportBvhDirty()
     {
         this->_viewportBvhDirty = true;
-        // A dirty BVH always means the geometry changed, so force the viewport to
-        // re-trace: the ViewportRenderer otherwise only refreshes on a camera or
-        // selection change and would keep showing the cached image (e.g. after
-        // adding or deleting an object) until the camera moved.
         this->forceViewportRetrace();
     }
 
     void DefaultScreen::triggerSave()
     {
-        // A never-saved scene has no path yet, so route to the save dialog (same
-        // flow as "Save as"); an already-saved one overwrites its file directly.
         if (this->_isNewScene)
         {
             if (this->_exploratorJustClosed == true)
@@ -1769,18 +1612,12 @@ namespace rc
         if (event.type != sf::Event::KeyPressed || !event.key.control)
             return (false);
 
-        // Ctrl+S saves regardless of focus (it never destroys work); the modal
-        // windows already return earlier in handleEvent, so this can't fire while
-        // the save/open dialog is up.
         if (event.key.code == sf::Keyboard::S)
         {
             this->triggerSave();
             return (true);
         }
 
-        // Ctrl+Z / Ctrl+Shift+Z undo/redo, but only in the editing viewport and
-        // never while a text field owns the keyboard (so typing keeps its own
-        // meaning and the scene isn't swapped from under an active edit).
         if (event.key.code == sf::Keyboard::Z
             && this->_viewMode == ViewMode::VIEWPORT && !this->isKeyboardCaptured())
         {
@@ -1823,17 +1660,12 @@ namespace rc
     {
         IScene *scene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
 
-        // The previous scene object was deleted by the swap, so every cached
-        // pointer into it (selection, hover, panels) must be dropped/rebound
-        // before anything touches it again.
         this->_hierarchyPanel.applyViewportSelection({});
         this->_hierarchyPanel.setScene(scene);
         this->clearHover();
         this->syncSelectionToRenderer();
         this->markViewportBvhDirty();
 
-        // This swap is ours, so keep the baseline tracker in step: otherwise
-        // update() would see the changed pointer and wipe the history.
         this->_lastHistoryScene = scene;
     }
 
@@ -1913,15 +1745,11 @@ namespace rc
 
         for (const Material &material : additions)
         {
-            // createMaterial returns the existing entry when the name is already
-            // taken, so re-adding a market material just refreshes its fields.
             Material *target = scene->createMaterial(material.name);
             if (target)
                 *target = material;
         }
 
-        // Refresh the object panel's material dropdown so the new entries can be
-        // assigned right away, and rebuild the BVH like any other scene edit.
         this->markViewportBvhDirty();
         this->syncSelectionToRenderer();
         this->_toastManager.push("Materials added",
@@ -1942,7 +1770,6 @@ namespace rc
 
     IEditablePrimitive *DefaultScreen::editableFromSelection() const
     {
-        // tryCast is non-const; the panel is only inspected here.
         HierarchyPanel &panel = const_cast<HierarchyPanel &>(this->_hierarchyPanel);
         const IPrimitive *primitive = panel.tryCast<const IPrimitive>();
         if (!primitive)
@@ -1985,8 +1812,6 @@ namespace rc
 
     void DefaultScreen::exitEditMode()
     {
-        // Never calls into _editTarget here: the selection may have changed
-        // because the object was deleted, so the pointer can already be stale.
         const bool wasEditing = this->_editMode;
         this->_editMode = false;
         this->_editObject = nullptr;
@@ -2042,8 +1867,6 @@ namespace rc
             if (distSq > pickRadiusSq)
                 continue;
             const float cameraDist = static_cast<float>((this->_editTarget->getVertex(i) - cameraPos).length());
-            // Nearest to the cursor wins; ties (overlapping handles) go to the
-            // vertex closest to the camera.
             if (best == -1 || distSq < bestDistSq - 0.5f
                 || (std::fabs(distSq - bestDistSq) <= 0.5f && cameraDist < bestCameraDist))
             {
@@ -2079,8 +1902,6 @@ namespace rc
         const Vector2i resolution = camera.getResolution();
         const Ray ray = ViewportHelper::rayThroughPixel(camera, pixel.x, pixel.y, resolution.x, resolution.y);
 
-        // Drag in the plane through the vertex's start position, parallel to the
-        // image plane (normal = camera forward) -- the intuitive default.
         const Vector3f normal = camera.getForward();
         const float denom = dot(ray.direction, normal);
         if (std::fabs(denom) < 1e-6f)
@@ -2161,7 +1982,6 @@ namespace rc
         }
         this->markViewportBvhDirty();
         this->forceViewportRetrace();
-        // Refresh the hierarchy and select the new mesh so it is ready to edit.
         this->_hierarchyPanel.setScene(scene);
         const ISceneObject *asObject = dynamic_cast<const ISceneObject *>(mesh);
         if (asObject)
@@ -2235,8 +2055,6 @@ namespace rc
             return;
         Vector3f newPos = grab + this->_objectDragOffset;
 
-        // Hold X, Y or Z to constrain the move to that world axis, measured from
-        // the object's position at the start of the drag.
         Vector3f axis = {0.0f, 0.0f, 0.0f};
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::X))
             axis = {1.0f, 0.0f, 0.0f};
@@ -2261,8 +2079,6 @@ namespace rc
         if (!this->_objectDragActive)
             return;
         this->_objectDragActive = false;
-        // A pure click (no movement) leaves the object where it was; only refresh
-        // the Object panel's position field when the object actually moved.
         if (this->_objectDragMoved && this->_objectDragTarget)
         {
             this->_objectPanel.rebuild(this->_objectDragTarget);
@@ -2330,8 +2146,6 @@ namespace rc
             * (static_cast<float>(resolution.x) / static_cast<float>(resolution.y));
         const float ndcX = (dot(toPoint, right) / z) / (viewportWidth / 2.0f);
         const float ndcY = (dot(toPoint, up) / z) / (viewportHeight / 2.0f);
-        // No NDC clamp (unlike ViewportHelper::projectToPixel), so an arrow whose
-        // tip leaves the viewport edge still projects and draws.
         const float px = (ndcX * 0.5f + 0.5f) * static_cast<float>(resolution.x - 1);
         const float py = (-ndcY * 0.5f + 0.5f) * static_cast<float>(resolution.y - 1);
 
@@ -2351,8 +2165,6 @@ namespace rc
         if (!scene)
             return (false);
         const Vector3f objPos = object->getPosition();
-        // World length chosen so the arrow keeps a roughly constant on-screen size
-        // regardless of the object's distance to the camera.
         const Vector3f toCam = objPos - scene->getCamera().getPosition();
         float length = std::sqrt(dot(toCam, toCam)) * 0.16f;
         if (length < 1e-4f)
@@ -2513,8 +2325,6 @@ namespace rc
 
     namespace
     {
-        // Two orthonormal vectors spanning the plane perpendicular to the axis,
-        // i.e. the plane the rotation ring lives in.
         void ringBasis(int axis, Vector3f &u, Vector3f &v)
         {
             if (axis == 0) // X ring lives in the YZ plane
@@ -2760,7 +2570,6 @@ namespace rc
             shaft.setFillColor(color);
             window.draw(shaft);
 
-            // A cube (square) tip distinguishes the scale gizmo from the move one.
             sf::RectangleShape box({9.0f, 9.0f});
             box.setOrigin(4.5f, 4.5f);
             box.setPosition(tip);
@@ -2845,14 +2654,12 @@ namespace rc
         const Vector2i resolution = camera.getResolution();
         const Ray ray = ViewportHelper::rayThroughPixel(camera, pixel.x, pixel.y, resolution.x, resolution.y);
 
-        // Prefer the point on the surface under the cursor.
         Intersection hit;
         if (scene->intersect(ray, 0.001f, std::numeric_limits<float>::infinity(), hit))
         {
             out = hit.point;
             return (true);
         }
-        // Otherwise drop it on the ground plane (z = 0), or a fixed distance ahead.
         if (std::fabs(ray.direction.z) > 1e-6f)
         {
             const float t = -ray.origin.z / ray.direction.z;
@@ -2983,7 +2790,6 @@ namespace rc
         };
         for (GizmoAxis &a : axes)
             a.depth = dot(a.dir, forward);
-        // Draw far axes first (larger depth = pointing away) so near ones sit on top.
         std::sort(axes, axes + 3, [](const GizmoAxis &a, const GizmoAxis &b) { return a.depth > b.depth; });
 
         for (const GizmoAxis &a : axes)
@@ -3021,8 +2827,6 @@ namespace rc
 
     void DefaultScreen::syncVertexNavigator()
     {
-        // The navigator is available whenever the selected object has vertices,
-        // even before entering edit mode, so it doubles as the entry point.
         IEditablePrimitive *editable = this->_editMode ? this->_editTarget : this->editableFromSelection();
         if (editable && editable->getVertexCount() > 0)
         {
@@ -3076,8 +2880,6 @@ namespace rc
         window.draw(bannerBg);
         window.draw(banner);
 
-        // Vertex handles. Drawing is capped so a dense mesh can't stall the UI;
-        // off-screen / behind-camera vertices are skipped by the projection.
         const sf::Color baseColor(0, 170, 255);
         const sf::Color hoverColor(255, 255, 255);
         const sf::Color selectedColor(255, 30, 30);   // bright red: the vertex being edited
@@ -3091,8 +2893,6 @@ namespace rc
                 continue;
             const bool selected = static_cast<int>(i) == this->_selectedVertex;
             const bool hovered = static_cast<int>(i) == this->_hoverVertex;
-            // The selected handle is drawn larger with a white outline so the
-            // bright-red dot stays legible over any surface colour.
             const float radius = selected ? 6.5f : 4.0f;
             sf::CircleShape dot(radius);
             dot.setOrigin(radius, radius);

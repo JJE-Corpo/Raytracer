@@ -1,18 +1,6 @@
 //
 // Created by jazema on 7/1/26.
 //
-// A scrollable, clipped viewport around a single content component.
-//
-// Clipping + scrolling is done with an sf::View: the content is laid out at
-// unscrolled absolute window coordinates, and the view slides it up by _scrollY
-// and clips it to the view rect. Because the window uses a 1:1 pixel view, the
-// mapping is exact: content at window-Y appears at screen-Y = window-Y - _scrollY.
-// Pointer events are forwarded to the content with mouse.y += _scrollY.
-//
-// Open pop-ups inside the content (color picker, dropdown) would be clipped by
-// the view, so they are NOT drawn here: the owning section draws them in an
-// unclipped overlay pass via Component::drawOverlay() (see SidebarStack).
-//
 
 #ifndef SCROLLVIEW_HPP
 #define SCROLLVIEW_HPP
@@ -28,8 +16,6 @@ namespace rc
 {
     struct ScrollView : Component
     {
-        // Content component (drawn/updated/routed to). Layout + height are supplied
-        // as callbacks because panels' layout()/height are non-virtual and vary.
         Component *content = nullptr;
         std::function<void(float x, float y, float width)> layoutContent;
         std::function<float()> contentHeight;
@@ -49,8 +35,6 @@ namespace rc
             return (this->_scrollY);
         }
 
-        // Lay the content out at unscrolled absolute coordinates and refresh the
-        // scroll bounds. Call every frame after setRect().
         void layout()
         {
             const float width = std::max(0.f, this->_rect.width - SCROLLBAR_W - SCROLLBAR_GAP);
@@ -104,8 +88,6 @@ namespace rc
                 return (true);
             }
 
-            // Forward to the content when the cursor is over the view, or while
-            // the content is capturing (open pop-up / in-progress drag off-rect).
             if (this->content && (inRect || this->content->isCapturing()))
                 return (this->content->handleEvent(event, this->toContent(mouse)));
             return (false);
@@ -138,8 +120,6 @@ namespace rc
             this->drawScrollbar(target);
         }
 
-        // Draw the content's escaping pop-ups (dropdown/color picker) unclipped,
-        // shifted by the current scroll so they line up with the scrolled control.
         void drawOverlay(sf::RenderTarget &target, sf::RenderStates states) const override
         {
             if (!this->content)
@@ -174,8 +154,6 @@ namespace rc
 
         sf::Vector2i toContent(sf::Vector2i mouse) const
         {
-            // Hand the content a far-away point when the cursor is neither over the
-            // view nor driving a capture, so it does not falsely hover/focus.
             if (!this->_rect.contains(static_cast<float>(mouse.x), static_cast<float>(mouse.y))
                 && !(this->content && this->content->isCapturing()))
                 return (sf::Vector2i(-100000, -100000));

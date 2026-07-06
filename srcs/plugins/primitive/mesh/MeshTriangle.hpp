@@ -1,19 +1,3 @@
-//
-// MeshTriangle: a single triangle of a Mesh, usable as a BVH leaf.
-//
-// It stores world-space vertices plus, when the source .obj provides them (or
-// vertex editing derives them), world-space per-corner normals for smooth
-// (barycentric) shading. Intersection uses the Moeller-Trumbore algorithm.
-// Unlike the standalone Triangle primitive, a MeshTriangle carries no material
-// of its own: the owning Mesh stamps the shared material onto the hit after the
-// local BVH resolves it.
-//
-// The corners are individually mutable (setCornerVertex / setCornerNormal) so
-// the Mesh can move a shared vertex across every incident face during vertex
-// edit mode without recreating the triangle objects (their addresses are held
-// by the local BVH).
-//
-
 #ifndef MESHTRIANGLE_HPP
     #define MESHTRIANGLE_HPP
 

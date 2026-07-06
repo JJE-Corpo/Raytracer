@@ -18,8 +18,6 @@ namespace rc
     class IClusterServer
     {
         public:
-            // A snapshot of one connected client, produced for the host UI so it
-            // can render the client list without touching live connection state.
             struct ClientInfo
             {
                 std::string name;

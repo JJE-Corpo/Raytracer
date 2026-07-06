@@ -199,7 +199,6 @@ void rc::Cube::getWorldCorners(Vector3f corners[8]) const
         Vec4(+s, +s, -s, 1), Vec4(+s, +s, +s, 1), Vec4(+s, -s, +s, 1), Vec4(+s, -s, -s, 1),
         Vec4(-s, -s, -s, 1), Vec4(-s, +s, -s, 1), Vec4(-s, +s, +s, 1), Vec4(-s, -s, +s, 1),
     };
-    // Same transform as intersect() (scale is applied twice, historically).
     Matrix<4> transform = Matrix<4>::translation(this->_center.x, this->_center.y, this->_center.z)
                     * Matrix<4>::rotation_z(this->_rotation.z * M_PI / 180.0f)
                     * Matrix<4>::rotation_y(this->_rotation.y * M_PI / 180.0f)
