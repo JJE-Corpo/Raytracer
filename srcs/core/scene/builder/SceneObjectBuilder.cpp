@@ -99,6 +99,12 @@ namespace rc
         return (*this);
     }
 
+    SceneObjectBuilder &SceneObjectBuilder::withVertexOverrides(const std::vector<std::pair<int, Vector3f>> &overrides)
+    {
+        this->_primitiveBuilder.withVertexOverrides(overrides);
+        return (*this);
+    }
+
     SceneObjectBuilder &SceneObjectBuilder::withMaterial(const Material *material)
     {
         this->_primitiveBuilder.withMaterial(material);

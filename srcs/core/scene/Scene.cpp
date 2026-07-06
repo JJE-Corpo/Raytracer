@@ -4,12 +4,20 @@
 
 #include "Scene.hpp"
 #include "../../common/Intersection.hpp"
+#include "../../common/Ray.hpp"
+#include "../../common/AABB.hpp"
+#include "../../common/scene/IEditablePrimitive.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
+#include <fstream>
+#include <filesystem>
 
 #include "factory/PrimitiveFactory.hpp"
 #include "factory/LightFactory.hpp"
+#include "../../plugins/primitive/mesh/Mesh.hpp"
+#include "../../plugins/primitive/Cube.hpp"
 
 namespace rc
 {
@@ -233,6 +241,184 @@ namespace rc
             this->destroyObjectSubtree(object);
         }
         this->_mutex.unlock();
+    }
+
+    namespace
+    {
+        struct TessMesh
+        {
+            std::vector<Vector3f> verts;
+            std::vector<Vector3f> normals;
+            std::vector<std::array<int, 3>> faces;
+        };
+
+        // Generic surface tessellation: cast rays from a UV sphere of directions
+        // toward the primitive's centre and keep the first hit. Produces standard
+        // UV-sphere topology (two poles + rings). Works for any star-shaped
+        // primitive w.r.t. its centre (cube, sphere, cone, cylinder); non-convex
+        // shapes (torus, tanglecube) are approximated. Per-vertex normals come
+        // from the surface hit, so the mesh shades smoothly.
+        bool tessellatePrimitive(const IPrimitive *prim, int stacks, int slices, TessMesh &out)
+        {
+            AABB box = prim->bounding_box();
+            Vector3f center = (box.min + box.max) * 0.5f;
+            Vector3f ext = box.max - box.min;
+            float radius = std::sqrt(ext.x * ext.x + ext.y * ext.y + ext.z * ext.z) * 0.5f + 1e-2f;
+            if (radius <= 0.0f)
+                return (false);
+
+            auto sample = [&](const Vector3f &dir, Vector3f &p, Vector3f &n)
+            {
+                Ray ray(center + dir * (radius * 2.0f), dir * -1.0f);
+                Intersection hit;
+                if (prim->intersect(ray, 1e-3f, radius * 4.0f, hit))
+                {
+                    p = hit.point;
+                    n = hit.normal;
+                }
+                else
+                {
+                    p = center + dir * radius; // fallback: bounding-sphere point
+                    n = dir;
+                }
+            };
+
+            Vector3f p, n;
+            sample(Vector3f(0.0f, 0.0f, 1.0f), p, n);
+            out.verts.push_back(p); out.normals.push_back(n);
+            for (int i = 1; i < stacks; ++i)
+            {
+                const float theta = static_cast<float>(M_PI) * i / stacks;
+                const float st = std::sin(theta), ct = std::cos(theta);
+                for (int j = 0; j < slices; ++j)
+                {
+                    const float phi = 2.0f * static_cast<float>(M_PI) * j / slices;
+                    Vector3f dir(st * std::cos(phi), st * std::sin(phi), ct);
+                    sample(dir, p, n);
+                    out.verts.push_back(p); out.normals.push_back(n);
+                }
+            }
+            sample(Vector3f(0.0f, 0.0f, -1.0f), p, n);
+            out.verts.push_back(p); out.normals.push_back(n);
+            const int south = static_cast<int>(out.verts.size()) - 1;
+
+            auto ring = [&](int i, int j) { return 1 + (i - 1) * slices + (j % slices); };
+            for (int j = 0; j < slices; ++j)
+                out.faces.push_back({0, ring(1, j), ring(1, j + 1)});
+            for (int i = 1; i < stacks - 1; ++i)
+                for (int j = 0; j < slices; ++j)
+                {
+                    out.faces.push_back({ring(i, j), ring(i, j + 1), ring(i + 1, j + 1)});
+                    out.faces.push_back({ring(i, j), ring(i + 1, j + 1), ring(i + 1, j)});
+                }
+            for (int j = 0; j < slices; ++j)
+                out.faces.push_back({south, ring(stacks - 1, j + 1), ring(stacks - 1, j)});
+            return (!out.faces.empty());
+        }
+
+        // Exact 8-vertex / 12-triangle tessellation of a cube (flat faces), so a
+        // converted cube stays a proper box you can edit corner by corner instead
+        // of a dense generic sampling.
+        bool tessellateCube(const Cube *cube, TessMesh &out)
+        {
+            Vector3f corners[8];
+            cube->getWorldCorners(corners);
+            out.verts.assign(corners, corners + 8);
+            out.normals.clear(); // flat shading -> hard cube edges
+            static const int FACE[6][4] = {
+                {0, 1, 2, 3}, {4, 5, 6, 7}, {0, 1, 6, 5},
+                {1, 2, 7, 6}, {2, 3, 4, 7}, {0, 3, 4, 5},
+            };
+            for (int f = 0; f < 6; ++f)
+            {
+                out.faces.push_back({FACE[f][0], FACE[f][1], FACE[f][2]});
+                out.faces.push_back({FACE[f][0], FACE[f][2], FACE[f][3]});
+            }
+            return (true);
+        }
+
+        std::string sanitizeName(std::string name)
+        {
+            for (char &c : name)
+                if (!std::isalnum(static_cast<unsigned char>(c)))
+                    c = '_';
+            if (name.empty())
+                name = "mesh";
+            return (name);
+        }
+
+        bool writeObjFile(const std::string &path, const TessMesh &m)
+        {
+            std::ofstream file(path);
+            if (!file.is_open())
+                return (false);
+            file << "# Generated by convert-to-mesh\n";
+            for (const Vector3f &v : m.verts)
+                file << "v " << v.x << " " << v.y << " " << v.z << "\n";
+            for (const Vector3f &n : m.normals)
+                file << "vn " << n.x << " " << n.y << " " << n.z << "\n";
+            // With per-vertex normals the faces reference them (smooth shading);
+            // without, plain "f a b c" leaves the faces flat (hard edges, e.g. a cube).
+            const bool smooth = !m.normals.empty();
+            for (const std::array<int, 3> &t : m.faces)
+            {
+                if (smooth)
+                    file << "f " << t[0] + 1 << "//" << t[0] + 1 << " "
+                         << t[1] + 1 << "//" << t[1] + 1 << " "
+                         << t[2] + 1 << "//" << t[2] + 1 << "\n";
+                else
+                    file << "f " << t[0] + 1 << " " << t[1] + 1 << " " << t[2] + 1 << "\n";
+            }
+            return (true);
+        }
+    }
+
+    IPrimitive *Scene::convertToMesh(IPrimitive *primitive)
+    {
+        if (!primitive || !primitive->isFinite())
+            return (nullptr);
+        // Already a vertex-editable primitive (mesh / triangle): nothing to do.
+        if (dynamic_cast<IEditablePrimitive *>(primitive))
+            return (nullptr);
+
+        TessMesh tess;
+        // A cube has an exact 8-corner form; everything else is sampled generically.
+        if (const Cube *cube = dynamic_cast<const Cube *>(primitive))
+        {
+            if (!tessellateCube(cube, tess))
+                return (nullptr);
+        }
+        else if (!tessellatePrimitive(primitive, 32, 48, tess))
+        {
+            return (nullptr);
+        }
+
+        Vector3f mn = tess.verts[0], mx = tess.verts[0];
+        for (const Vector3f &v : tess.verts)
+        {
+            mn.x = std::min(mn.x, v.x); mn.y = std::min(mn.y, v.y); mn.z = std::min(mn.z, v.z);
+            mx.x = std::max(mx.x, v.x); mx.y = std::max(mx.y, v.y); mx.z = std::max(mx.z, v.z);
+        }
+        const Vector3f center = (mn + mx) * 0.5f;
+
+        std::error_code ec;
+        std::filesystem::create_directories("generated_meshes", ec);
+        const std::string path = "generated_meshes/" + sanitizeName(primitive->getName())
+            + "_" + std::to_string(++this->_meshExportCounter) + ".obj";
+        if (!writeObjFile(path, tess))
+            return (nullptr);
+
+        // Read what we need before removeObject() frees the primitive.
+        const Material *material = primitive->getMaterial();
+        const std::string name = primitive->getName();
+
+        Mesh *mesh = new Mesh(name, path, center, Vector3f(0.0f, 0.0f, 0.0f), Vector3f(1.0f, 1.0f, 1.0f), material);
+        this->addPrimitive(mesh);
+        this->removeObject(primitive);
+        // Rebuild immediately so the freed primitive can never be reached through
+        // a stale BVH. The caller still refreshes the viewport.
+        this->buildBvh();
+        return (mesh);
     }
 
     void Scene::addDefaultPrimitive(std::string type)

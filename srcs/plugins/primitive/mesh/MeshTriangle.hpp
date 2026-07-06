@@ -1,11 +1,17 @@
 //
 // MeshTriangle: a single triangle of a Mesh, usable as a BVH leaf.
 //
-// It stores world-space vertices plus, when the source .obj provides them,
-// world-space vertex normals for smooth (barycentric) shading. Intersection
-// uses the Moeller-Trumbore algorithm. Unlike the standalone Triangle
-// primitive, a MeshTriangle carries no material of its own: the owning Mesh
-// stamps the shared material onto the hit after the local BVH resolves it.
+// It stores world-space vertices plus, when the source .obj provides them (or
+// vertex editing derives them), world-space per-corner normals for smooth
+// (barycentric) shading. Intersection uses the Moeller-Trumbore algorithm.
+// Unlike the standalone Triangle primitive, a MeshTriangle carries no material
+// of its own: the owning Mesh stamps the shared material onto the hit after the
+// local BVH resolves it.
+//
+// The corners are individually mutable (setCornerVertex / setCornerNormal) so
+// the Mesh can move a shared vertex across every incident face during vertex
+// edit mode without recreating the triangle objects (their addresses are held
+// by the local BVH).
 //
 
 #ifndef MESHTRIANGLE_HPP
@@ -20,15 +26,15 @@ namespace rc
     class MeshTriangle : public ASceneObject, public IPrimitive
     {
         private:
-            Vector3f _vertex0;
+            Vector3f _vertex[3];
             Vector3f _edge1;
             Vector3f _edge2;
             Vector3f _faceNormal;
 
             bool _smooth = false;
-            Vector3f _normal0;
-            Vector3f _normal1;
-            Vector3f _normal2;
+            Vector3f _normal[3];
+
+            void recomputeEdges();
 
         public:
             MeshTriangle() = default;
@@ -37,6 +43,12 @@ namespace rc
             // Smooth triangle (per-vertex normals interpolated at the hit point).
             MeshTriangle(const Vector3f &v0, const Vector3f &v1, const Vector3f &v2,
                 const Vector3f &n0, const Vector3f &n1, const Vector3f &n2);
+
+            // --- Vertex editing ------------------------------------------------
+            void setCornerVertex(int corner, const Vector3f &worldPos);
+            void setCornerNormal(int corner, const Vector3f &worldNormal);
+            Vector3f cornerVertex(int corner) const;
+            Vector3f faceNormal() const;
 
             bool intersect(const Ray &ray, float tMin, float tMax, Intersection &hit) const override;
             bool isFinite() const override;

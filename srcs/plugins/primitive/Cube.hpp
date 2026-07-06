@@ -127,6 +127,10 @@ namespace rc
             bool isFinite() const override;
             AABB bounding_box() const override;
 
+            // The 8 world-space corners, in the a1..a8 order used by intersect().
+            // Used by convert-to-mesh to bake the cube as an exact 8-vertex hull.
+            void getWorldCorners(Vector3f corners[8]) const;
+
             std::string getName() const override;
             void setName(const std::string &name) override { this->_name = name; }
             std::string getTypeName() const override;

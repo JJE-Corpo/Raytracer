@@ -19,6 +19,9 @@ namespace rc
         sf::Text label;
 
         bool pressed = false;
+        // When true the button paints in the accent colour to show it is the
+        // currently-selected option (e.g. the active gizmo tool).
+        bool active = false;
 
         std::function<void()> onClick;
 
@@ -92,6 +95,8 @@ namespace rc
                 this->shape.setFillColor(theme::BG_CONTROL_HOVER);
             else if (pressed)
                 this->shape.setFillColor(theme::BUTTON_PRESSED);
+            else if (active)
+                this->shape.setFillColor(theme::ACCENT);
             else if (hovered)
                 this->shape.setFillColor(theme::BG_CONTROL);
             else

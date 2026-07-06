@@ -3,6 +3,8 @@
 #include <fstream>
 #include <iostream>
 
+#include "../../common/scene/IEditablePrimitive.hpp"
+
 namespace rc
 {
     using json = nlohmann::json;
@@ -92,6 +94,25 @@ namespace rc
 
         for (const auto &property : primitive->getProperties())
             writeProperty(object, property.first, property.second.first, property.second.second);
+
+        // An editable primitive (Mesh, Cube, ...) persists its interactive vertex
+        // edits as object-space overrides re-applied on top of the base geometry.
+        if (const IEditablePrimitive *editable = dynamic_cast<const IEditablePrimitive *>(primitive))
+        {
+            const std::map<std::size_t, Vector3f> overrides = editable->getVertexOverrides();
+            if (!overrides.empty())
+            {
+                nlohmann::json overrideArray = nlohmann::json::array();
+                for (const auto &entry : overrides)
+                {
+                    nlohmann::json overrideEntry;
+                    overrideEntry["index"] = static_cast<int>(entry.first);
+                    overrideEntry["position"] = vector3fJson(entry.second);
+                    overrideArray.push_back(overrideEntry);
+                }
+                object["vertex_overrides"] = overrideArray;
+            }
+        }
 
         // Nested objects serialize their LOCAL transform so the hierarchy round-
         // trips. Roots keep the world values getProperties() wrote above (local ==
