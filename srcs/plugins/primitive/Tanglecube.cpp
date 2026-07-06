@@ -5,6 +5,7 @@
 #include "../../common/Intersection.hpp"
 #include "../../common/AABB.hpp"
 #include "../../common/IPlugin.hpp"
+#include "../../common/UvMapping.hpp"
 #include "../../core/scene/builder/SceneObjectBuilder.hpp"
 
 
@@ -183,6 +184,7 @@ bool rc::Tanglecube::intersect(const Ray &ray, float tMin, float tMax, Intersect
     hit.t = tCur;
     hit.point = ray.at(hit.t);
     hit.normal = normal;
+    hit.uv = uvmap::sphere(localHit);
     // hit.color = _colorF;
     if (this->_material)
         hit.material = *this->_material;

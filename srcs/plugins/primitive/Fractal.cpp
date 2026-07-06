@@ -13,6 +13,7 @@
 #include "../../common/AABB.hpp"
 #include "../../common/Material.hpp"
 #include "../../common/Vector.hpp"
+#include "../../common/UvMapping.hpp"
 #include "../../core/scene/builder/SceneObjectBuilder.hpp"
 
 rc::Fractal::Fractal(const std::string &name, const Vector3f &center, float size, float power, int iterations, const Material *material, FractalType type) :
@@ -289,6 +290,7 @@ bool rc::Fractal::intersect(const Ray &ray, float tMin, float tMax, Intersection
     hit.t = tCur;
     hit.point = worldHit;
     hit.normal = normal;
+    hit.uv = uvmap::sphere(localHit);
     if (this->_material)
         hit.material = *this->_material;
     hit.primitive = this;

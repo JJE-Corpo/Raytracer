@@ -99,6 +99,14 @@ namespace rc
             (hit.point.z - this->_center.z) / (this->_radius * sz * sz)
         );
         hit.set_face_normal(ray, normalize(outward_normal));
+
+        // Spherical UV from the direction of the hit relative to the center.
+        constexpr float PI = 3.14159265358979323846f;
+        Vector3f dir = normalize(hit.point - this->_center);
+        float phi = std::atan2(dir.z, dir.x);
+        float theta = std::asin(std::max(-1.0f, std::min(1.0f, dir.y)));
+        hit.uv = Vector2f(0.5f + phi / (2.0f * PI), 0.5f + theta / PI);
+
         // hit.color = this->_colorF;
         if (this->_material)
             hit.material = *this->_material;

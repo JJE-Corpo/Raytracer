@@ -191,6 +191,9 @@ namespace rc
                 object["normal_map_enabled"] = material.normal_map_enabled;
                 object["normal_scale"] = material.normal_scale;
                 object["normal_noise_frequency"] = material.normal_noise_frequency;
+                object["texture_map"] = material.texture_map;
+                object["texture_map_enabled"] = material.texture_map_enabled;
+                object["texture_uv_scale"] = material.texture_uv_scale;
                 return (object);
             }
 
@@ -224,11 +227,16 @@ namespace rc
                 material.alpha = readFloat(object, "alpha", material.alpha);
                 material.normal_scale = readFloat(object, "normal_scale", material.normal_scale);
                 material.normal_noise_frequency = readFloat(object, "normal_noise_frequency", material.normal_noise_frequency);
+                material.texture_uv_scale = readFloat(object, "texture_uv_scale", material.texture_uv_scale);
 
                 if (object.contains("normal_map") && object["normal_map"].is_string())
                     material.normal_map = object["normal_map"].get<std::string>();
                 if (object.contains("normal_map_enabled") && object["normal_map_enabled"].is_boolean())
                     material.normal_map_enabled = object["normal_map_enabled"].get<bool>();
+                if (object.contains("texture_map") && object["texture_map"].is_string())
+                    material.texture_map = object["texture_map"].get<std::string>();
+                if (object.contains("texture_map_enabled") && object["texture_map_enabled"].is_boolean())
+                    material.texture_map_enabled = object["texture_map_enabled"].get<bool>();
                 return (material);
             }
     };

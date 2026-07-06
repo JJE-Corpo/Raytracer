@@ -45,7 +45,11 @@ namespace rc
         bool normal_map_enabled = false;
         float normal_scale = 1.0f; // strength of the normal map effect (0..1)
         float normal_noise_frequency = 1.0f; // frequency for procedural normal noise
-    
+        // Albedo/base-color texture settings
+        std::string texture_map = ""; // path to a PNG/JPG sampled as base color
+        bool texture_map_enabled = false;
+        float texture_uv_scale = 1.0f; // UV tiling factor (repeats per unit UV)
+
         template <typename T>
         void update(const std::string &key, T value)
         {
@@ -93,6 +97,12 @@ namespace rc
                 normal_scale = value;
             else if (key == "normal_noise_frequency")
                 normal_noise_frequency = value;
+            else if (key == "texture_map")
+                texture_map = value;
+            else if (key == "texture_map_enabled")
+                texture_map_enabled = value;
+            else if (key == "texture_uv_scale")
+                texture_uv_scale = value;
         }
 
         std::string getModelName() const

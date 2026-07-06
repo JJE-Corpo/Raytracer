@@ -3,9 +3,12 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -21,6 +24,8 @@ namespace rc
     struct OnlineMaterial
     {
         enum class Thumb { None, Queued, Downloading, ImageReady, Ready, Failed };
+        // Full-res diffuse texture download pipeline (separate from the thumbnail).
+        enum class Tex { None, Queued, Downloading, Ready, Failed };
 
         std::string id;
         std::string name;
@@ -37,6 +42,10 @@ namespace rc
         ColorF avgColor = {0.6f, 0.6f, 0.6f};
 
         bool added = false;
+
+        Tex texState = Tex::None;
+        std::string texturePath;     // local file once downloaded
+        bool queuedToScene = false;  // material handed off to the scene already
     };
 
     struct OnlineMarket
@@ -84,6 +93,14 @@ namespace rc
                 if (this->fetchRequested.exchange(false))
                     this->doFetch();
 
+                // Texture downloads take priority so a clicked "Add" resolves fast.
+                int texJob = this->nextTextureJob();
+                if (texJob >= 0)
+                {
+                    this->doTexture(static_cast<std::size_t>(texJob));
+                    continue;
+                }
+
                 int job = this->nextThumbnailJob();
                 if (job < 0)
                 {
@@ -91,6 +108,55 @@ namespace rc
                     continue;
                 }
                 this->doThumbnail(static_cast<std::size_t>(job));
+            }
+        }
+
+        // Ask the worker to download the full-res texture for `index`.
+        void requestTexture(std::size_t index)
+        {
+            std::lock_guard<std::mutex> lock(this->mutex);
+            if (index < this->materials.size() && this->materials[index].texState == OnlineMaterial::Tex::None)
+                this->materials[index].texState = OnlineMaterial::Tex::Queued;
+        }
+
+        int nextTextureJob()
+        {
+            std::lock_guard<std::mutex> lock(this->mutex);
+            for (std::size_t i = 0; i < this->materials.size(); ++i)
+            {
+                if (this->materials[i].texState == OnlineMaterial::Tex::Queued)
+                {
+                    this->materials[i].texState = OnlineMaterial::Tex::Downloading;
+                    return (static_cast<int>(i));
+                }
+            }
+            return (-1);
+        }
+
+        void doTexture(std::size_t index)
+        {
+            std::string id;
+            {
+                std::lock_guard<std::mutex> lock(this->mutex);
+                if (index >= this->materials.size())
+                    return;
+                id = this->materials[index].id;
+            }
+
+            std::string path;
+            const bool ok = downloadTexture(id, path);
+
+            std::lock_guard<std::mutex> lock(this->mutex);
+            if (index >= this->materials.size() || this->materials[index].id != id)
+                return;
+            if (ok)
+            {
+                this->materials[index].texturePath = path;
+                this->materials[index].texState = OnlineMaterial::Tex::Ready;
+            }
+            else
+            {
+                this->materials[index].texState = OnlineMaterial::Tex::Failed;
             }
         }
 
@@ -234,6 +300,103 @@ namespace rc
             }
             q += "'";
             return (q);
+        }
+
+        // ~/.raytracer/textures, created on demand. "" if HOME is unusable.
+        static std::string texturesDir()
+        {
+            const char *home = std::getenv("HOME");
+            if (home == nullptr || home[0] == '\0')
+                return ("");
+
+            std::error_code ec;
+            std::filesystem::path dir = std::filesystem::path(home) / ".raytracer" / "textures";
+            std::filesystem::create_directories(dir, ec);
+            if (ec)
+                return ("");
+            return (dir.string());
+        }
+
+        // Pick a sane resolution node from a Poly Haven map entry: prefer 1k/2k
+        // so downloads stay small, else fall back to whatever exists.
+        static const nlohmann::json *pickResolution(const nlohmann::json &mapNode)
+        {
+            if (!mapNode.is_object())
+                return (nullptr);
+            for (const char *pref : {"1k", "2k", "4k"})
+                if (mapNode.contains(pref) && mapNode[pref].is_object())
+                    return (&mapNode[pref]);
+            for (auto it = mapNode.begin(); it != mapNode.end(); ++it)
+                if (it.value().is_object())
+                    return (&it.value());
+            return (nullptr);
+        }
+
+        // Fetch the asset's file listing, locate the diffuse/albedo map, download
+        // it to ~/.raytracer/textures and return the saved path in `outPath`.
+        static bool downloadTexture(const std::string &id, std::string &outPath)
+        {
+            std::string listing;
+            if (!curlFetch("https://api.polyhaven.com/files/" + id, listing, 20))
+                return (false);
+
+            std::string url;
+            std::string ext;
+            try
+            {
+                nlohmann::json root = nlohmann::json::parse(listing);
+                const nlohmann::json *diffuse = nullptr;
+                for (auto it = root.begin(); it != root.end(); ++it)
+                {
+                    std::string key = it.key();
+                    std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) {
+                        return static_cast<char>(std::tolower(c));
+                    });
+                    if (key.find("diff") != std::string::npos || key.find("albedo") != std::string::npos
+                        || key == "col")
+                    {
+                        diffuse = &it.value();
+                        break;
+                    }
+                }
+                if (diffuse == nullptr)
+                    return (false);
+
+                const nlohmann::json *res = pickResolution(*diffuse);
+                if (res == nullptr)
+                    return (false);
+
+                for (const char *fmt : {"png", "jpg"})
+                {
+                    if (res->contains(fmt) && (*res)[fmt].is_object() && (*res)[fmt].contains("url")
+                        && (*res)[fmt]["url"].is_string())
+                    {
+                        url = (*res)[fmt]["url"].get<std::string>();
+                        ext = fmt;
+                        break;
+                    }
+                }
+                if (url.empty())
+                    return (false);
+            }
+            catch (const std::exception &)
+            {
+                return (false);
+            }
+
+            std::string body;
+            if (!curlFetch(url, body, 60))
+                return (false);
+
+            const std::string dir = texturesDir();
+            if (dir.empty())
+                return (false);
+            outPath = dir + "/" + id + "." + ext;
+            std::ofstream file(outPath, std::ios::binary);
+            if (!file.is_open())
+                return (false);
+            file.write(body.data(), static_cast<std::streamsize>(body.size()));
+            return (file.good());
         }
 
         static std::string joinStrings(const nlohmann::json &arr, const std::string &sep, std::size_t maxCount)
