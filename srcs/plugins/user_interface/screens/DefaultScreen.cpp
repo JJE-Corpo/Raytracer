@@ -47,6 +47,7 @@ namespace rc
         this->_exploratorWindow.setSelectedEntry({".json"});
 
         this->_rendererPanel.setFont(*this->_font);
+        this->_clusterServerPanel.setFont(*this->_font);
         this->_rendererPanel.closeRenderCallback = [this]
         {
             if (this->_coreAccess && this->_coreAccess->getRenderer()->isRendering())
@@ -461,7 +462,7 @@ namespace rc
             try
             {
                 this->_coreAccess->getClusterModule()->startServer(this->_coreAccess->getScene());
-                this->_toastManager.push("Server started !", "Other users can join :!", ToastType::SUCCESS);
+                this->_toastManager.push("Server started !", "Clients can now join. See the cluster panel (top-right) for the port and connected clients.", ToastType::SUCCESS);
             }
             catch (std::exception &e)
             {
@@ -715,6 +716,12 @@ namespace rc
         if (cursorType == CursorType::ARROW && this->_rendererPanel.getCursor() != CursorType::ARROW)
             cursorType = this->_rendererPanel.getCursor();
 
+        // The cluster HUD floats on top of the viewport/render, so its move/hand
+        // cursor wins over everything below wherever the pointer is over it.
+        const CursorType clusterCursor = this->clusterOverlayCursor();
+        if (clusterCursor != CursorType::ARROW)
+            cursorType = clusterCursor;
+
         if (this->_viewMode == ViewMode::RENDERING)
         {
             this->applyCursor(window, cursorType);
@@ -766,6 +773,11 @@ namespace rc
         if (this->_sidebarResize.getCursor() != CursorType::ARROW)
             cursorType = this->_sidebarResize.getCursor();
 
+        // Re-assert the HUD cursor last so it wins over the viewport cross and the
+        // sidebar splitter if the panel was dragged over them.
+        if (clusterCursor != CursorType::ARROW)
+            cursorType = clusterCursor;
+
         this->applyCursor(window, cursorType);
 
         this->_toastManager.update();
@@ -810,6 +822,8 @@ namespace rc
         if (this->_movementMode && this->_viewMode == ViewMode::VIEWPORT)
             this->drawMovementIndicator(window);
 
+        this->drawClusterServerOverlay(window);
+
         this->_menuBar.layout(static_cast<float>(window.getSize().x));
         window.draw(this->_menuBar);
 
@@ -826,6 +840,57 @@ namespace rc
         this->_rendererPanel.layout(this->_sidebarWidth, MENU_HEIGHT, static_cast<float>(windowSize.x) - this->_sidebarWidth, static_cast<float>(windowSize.y) - MENU_HEIGHT);
         this->_rendererPanel.updateRender(renderer->getRender());
         window.draw(this->_rendererPanel);
+    }
+
+    void DefaultScreen::drawClusterServerOverlay(sf::RenderWindow &window)
+    {
+        if (this->_coreAccess == nullptr)
+            return;
+
+        IClusterModule *clusterModule = this->_coreAccess->getClusterModule();
+        if (clusterModule == nullptr || clusterModule->getClusterMode() != ClusterMode::SERVER)
+            return;
+
+        IClusterServer *server = clusterModule->getClusterServer();
+        if (server == nullptr)
+            return;
+
+        ISceneRenderer *renderer = this->_coreAccess->getRenderer();
+        const bool rendering = renderer != nullptr && renderer->isRendering();
+        const int sample = renderer != nullptr ? renderer->getCurrentSample() : -1;
+
+        // leftBound = sidebar's right edge, so the HUD stays over the viewport /
+        // render pane and never slides onto the sidebar.
+        this->_clusterServerPanel.draw(window, server, rendering, sample,
+            static_cast<float>(window.getSize().x), MENU_HEIGHT + 10.f, this->_sidebarWidth);
+    }
+
+    bool DefaultScreen::handleClusterOverlayEvent(sf::RenderWindow &window, const sf::Event &event)
+    {
+        if (this->_coreAccess == nullptr)
+            return (false);
+
+        IClusterModule *clusterModule = this->_coreAccess->getClusterModule();
+        if (clusterModule == nullptr || clusterModule->getClusterMode() != ClusterMode::SERVER)
+            return (false);
+        if (clusterModule->getClusterServer() == nullptr)
+            return (false);
+
+        return (this->_clusterServerPanel.handleEvent(event, sf::Mouse::getPosition(window)));
+    }
+
+    CursorType DefaultScreen::clusterOverlayCursor()
+    {
+        if (this->_coreAccess == nullptr)
+            return (CursorType::ARROW);
+
+        IClusterModule *clusterModule = this->_coreAccess->getClusterModule();
+        if (clusterModule == nullptr || clusterModule->getClusterMode() != ClusterMode::SERVER)
+            return (CursorType::ARROW);
+        if (clusterModule->getClusterServer() == nullptr)
+            return (CursorType::ARROW);
+
+        return (this->_clusterServerPanel.getCursor());
     }
 
     void DefaultScreen::drawMovementIndicator(sf::RenderWindow &window)
@@ -1116,6 +1181,11 @@ namespace rc
             return;
 
         if (this->_marketWindow.running)
+            return;
+
+        // The cluster HUD's minimize toggle claims its own click before anything
+        // else, so collapsing/expanding it never selects an object underneath.
+        if (this->handleClusterOverlayEvent(window, event))
             return;
 
         // Global keyboard shortcuts (save / undo / redo) run before any routing

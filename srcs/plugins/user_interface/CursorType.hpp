@@ -16,6 +16,7 @@ namespace rc
         NOT_ALLOWED,
         RESIZE_H,
         RESIZE_V,
+        MOVE,
     };
 }
 
