@@ -216,6 +216,26 @@ namespace rc
         return (this->_serverPort);
     }
 
+    std::vector<IClusterServer::ClientInfo> ClusterServer::getClients() const
+    {
+        std::vector<ClientInfo> clients;
+
+        std::lock_guard lock(this->_connectionsMutex);
+        clients.reserve(this->_connections.size());
+        for (const auto &connectionPtr : this->_connections)
+        {
+            if (!connectionPtr)
+                continue;
+            ClientInfo info;
+            info.name = connectionPtr->getName();
+            info.address = connectionPtr->getAddress();
+            info.state = connectionPtr->getConnectionState();
+            info.tilesRendered = connectionPtr->getTilesRendered();
+            clients.push_back(std::move(info));
+        }
+        return (clients);
+    }
+
     IScene *ClusterServer::getScene()
     {
         return (this->_scene);

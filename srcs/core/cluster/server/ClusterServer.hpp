@@ -45,7 +45,8 @@ namespace rc
             // Guards _connections. The socket thread mutates it (accept/erase)
             // while the render thread iterates it (broadcasts/dispatch), so every
             // access must hold this — except the blocking poll(), which stays out.
-            std::mutex _connectionsMutex;
+            // Mutable so the UI can take a client snapshot through a const method.
+            mutable std::mutex _connectionsMutex;
 
             void handleClientDisconnect(int connectionFd);
             void handleClients();
@@ -60,6 +61,8 @@ namespace rc
             void stop() override;
 
             uint16_t getPort() const override;
+
+            std::vector<ClientInfo> getClients() const override;
 
             IScene *getScene() override;
 

@@ -47,6 +47,7 @@ namespace rc
         this->_exploratorWindow.setSelectedEntry({".json"});
 
         this->_rendererPanel.setFont(*this->_font);
+        this->_clusterServerPanel.setFont(*this->_font);
         this->_rendererPanel.closeRenderCallback = [this]
         {
             if (this->_coreAccess && this->_coreAccess->getRenderer()->isRendering())
@@ -461,7 +462,7 @@ namespace rc
             try
             {
                 this->_coreAccess->getClusterModule()->startServer(this->_coreAccess->getScene());
-                this->_toastManager.push("Server started !", "Other users can join :!", ToastType::SUCCESS);
+                this->_toastManager.push("Server started !", "Clients can now join. See the cluster panel (top-right) for the port and connected clients.", ToastType::SUCCESS);
             }
             catch (std::exception &e)
             {
@@ -810,6 +811,8 @@ namespace rc
         if (this->_movementMode && this->_viewMode == ViewMode::VIEWPORT)
             this->drawMovementIndicator(window);
 
+        this->drawClusterServerOverlay(window);
+
         this->_menuBar.layout(static_cast<float>(window.getSize().x));
         window.draw(this->_menuBar);
 
@@ -826,6 +829,27 @@ namespace rc
         this->_rendererPanel.layout(this->_sidebarWidth, MENU_HEIGHT, static_cast<float>(windowSize.x) - this->_sidebarWidth, static_cast<float>(windowSize.y) - MENU_HEIGHT);
         this->_rendererPanel.updateRender(renderer->getRender());
         window.draw(this->_rendererPanel);
+    }
+
+    void DefaultScreen::drawClusterServerOverlay(sf::RenderWindow &window)
+    {
+        if (this->_coreAccess == nullptr)
+            return;
+
+        IClusterModule *clusterModule = this->_coreAccess->getClusterModule();
+        if (clusterModule == nullptr || clusterModule->getClusterMode() != ClusterMode::SERVER)
+            return;
+
+        IClusterServer *server = clusterModule->getClusterServer();
+        if (server == nullptr)
+            return;
+
+        ISceneRenderer *renderer = this->_coreAccess->getRenderer();
+        const bool rendering = renderer != nullptr && renderer->isRendering();
+        const int sample = renderer != nullptr ? renderer->getCurrentSample() : -1;
+
+        this->_clusterServerPanel.draw(window, server, rendering, sample,
+            static_cast<float>(window.getSize().x), MENU_HEIGHT + 10.f);
     }
 
     void DefaultScreen::drawMovementIndicator(sf::RenderWindow &window)

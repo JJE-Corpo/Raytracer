@@ -78,6 +78,7 @@ namespace rc
         auto *server = dynamic_cast<ClusterServer *>(connection.getServer());
 
         handler.log("Received tile data from client (tile " + std::to_string(this->tile_id) + ")");
+        connection.incrementTilesRendered();
         if (!server)
             return;
         server->handleClientTileData(connection.getFd(), *this);
