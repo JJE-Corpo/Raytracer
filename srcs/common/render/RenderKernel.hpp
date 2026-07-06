@@ -17,6 +17,7 @@
 #include "../scene/ICamera.hpp"
 #include "../scene/ILight.hpp"
 #include "../scene/IScene.hpp"
+#include "TextureCache.hpp"
 
 namespace rc::render_kernel
 {
@@ -324,6 +325,15 @@ namespace rc::render_kernel
 
         const Material &material = hit.material;
         ColorF baseColor = material.baseColor;
+
+        // Albedo texture: sample the PNG/JPG by the hit's UV, replacing baseColor.
+        if (material.texture_map_enabled && !material.texture_map.empty())
+        {
+            const TextureImage &tex = TextureCache::get(material.texture_map);
+            if (tex.valid)
+                baseColor = tex.sample(hit.uv.x * material.texture_uv_scale,
+                                       hit.uv.y * material.texture_uv_scale);
+        }
 
         Vector3f shaded_normal = hit.normal;
         if (material.normal_map_enabled && material.normal_map.empty())

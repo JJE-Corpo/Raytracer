@@ -18,6 +18,7 @@ namespace rc
         Vector3f point;
         Vector3f normal;
         bool front_face;
+        Vector2f uv = {0.0f, 0.0f};
         // ColorF color;
         Material material;
         const IPrimitive *primitive = nullptr;

@@ -146,29 +146,60 @@ namespace rc
             }
         }
 
+        // Clicking "Add" on an online entry kicks off a background download of the
+        // full-res diffuse texture. The material is only queued into the scene once
+        // the download settles (see finalizeOnlineAdds), so the UI never blocks.
         void queueAddOnline(std::size_t index)
         {
-            Material mat;
+            std::lock_guard<std::mutex> lock(this->onlineMarket.mutex);
+            if (index >= this->onlineMarket.materials.size())
+                return;
+            OnlineMaterial &om = this->onlineMarket.materials[index];
+            if (om.added)
+                return;
+            om.added = true;
+            om.texState = OnlineMaterial::Tex::Queued;
+        }
+
+        // Turn any online entry whose texture download has settled into a scene
+        // material (with the texture wired up when the download succeeded, or a
+        // flat average-colour fallback when it failed). Runs on the UI thread.
+        void finalizeOnlineAdds()
+        {
+            std::vector<Material> ready;
             {
                 std::lock_guard<std::mutex> lock(this->onlineMarket.mutex);
-                if (index >= this->onlineMarket.materials.size())
-                    return;
-                OnlineMaterial &om = this->onlineMarket.materials[index];
-                if (om.added)
-                    return;
-                om.added = true;
+                for (OnlineMaterial &om : this->onlineMarket.materials)
+                {
+                    if (!om.added || om.queuedToScene)
+                        continue;
+                    if (om.texState != OnlineMaterial::Tex::Ready && om.texState != OnlineMaterial::Tex::Failed)
+                        continue;
 
-                mat.model = MaterialModel::PBR;
-                mat.name = om.name;
-                mat.baseColor = om.hasAvgColor ? om.avgColor : ColorF{0.6f, 0.6f, 0.6f};
-                mat.roughness = 0.6f;
-                mat.metallic = 0.0f;
+                    Material mat;
+                    mat.model = MaterialModel::PBR;
+                    mat.name = om.name;
+                    mat.baseColor = om.hasAvgColor ? om.avgColor : ColorF{0.6f, 0.6f, 0.6f};
+                    mat.roughness = 0.6f;
+                    mat.metallic = 0.0f;
+                    if (om.texState == OnlineMaterial::Tex::Ready && !om.texturePath.empty())
+                    {
+                        mat.texture_map = om.texturePath;
+                        mat.texture_map_enabled = true;
+                    }
+                    om.queuedToScene = true;
+                    ready.push_back(mat);
+                }
             }
+
+            if (ready.empty())
+                return;
             {
                 std::lock_guard<std::mutex> lock(this->actionMutex);
-                this->pendingAdds.push_back(mat);
+                this->pendingAdds.insert(this->pendingAdds.end(), ready.begin(), ready.end());
             }
-            MaterialLibrary::save(mat);
+            for (const Material &mat : ready)
+                MaterialLibrary::save(mat);
         }
 
         static std::string toLower(const std::string &s)
@@ -493,9 +524,12 @@ namespace rc
                 drawColoredText("by " + m.author, textX, y + 42.f, 11, theme::ACCENT);
 
             const float bx = static_cast<float>(windowWidth) - 20.f - ADD_BUTTON_WIDTH;
+            const bool downloading = m.texState == OnlineMaterial::Tex::Queued
+                || m.texState == OnlineMaterial::Tex::Downloading;
+            const char *label = !m.added ? "Add" : (downloading ? "..." : "Added");
             drawRect(bx, y + 8.f, ADD_BUTTON_WIDTH, 30.f,
                 m.added ? theme::BG_CONTROL_HOVER : theme::BG_ITEM, 1.f, theme::OUTLINE_MID);
-            drawColoredText(m.added ? "Added" : "Add", bx + 30.f, y + 15.f, 14, theme::TEXT_WHITE);
+            drawColoredText(label, bx + 30.f, y + 15.f, 14, theme::TEXT_WHITE);
 
             if (expanded)
             {
@@ -584,6 +618,9 @@ namespace rc
         void updateUi() override
         {
             sf::Vector2i mouse = sf::Mouse::getPosition(window);
+
+            // Hand finished texture downloads to the scene, whatever tab is open.
+            this->finalizeOnlineAdds();
 
             searchField.update(mouse);
             refreshButton.update(mouse);
