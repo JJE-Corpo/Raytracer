@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <deque>
 #include <mutex>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace rc
@@ -28,8 +29,23 @@ namespace rc
             };
 
             void beginSample(uint32_t sample, int width, int height, int tile_size);
+            // Local worker: takes the next pending tile (including tiles that
+            // were reclaimed from a timed-out client).
             bool popJob(TileJob &job);
-            void markComplete(const TileJob &job);
+            // Remote dispatch: takes the next pending tile that has NOT already
+            // timed out once. A tile reclaimed after a timeout is left for the
+            // local worker so a dead/silent client can never re-grab it forever.
+            bool popRemoteJob(TileJob &job);
+            // Returns true only if this call is the one that newly completed the
+            // tile for the current sample, so the caller can decide whether to
+            // apply the pixels (prevents double accumulation when a tile is
+            // rendered twice after a timeout requeue).
+            bool markComplete(const TileJob &job);
+            // Moves tiles that were handed out but not completed within the
+            // timeout back into the pending queue so another worker (a client or
+            // the local render loop) can finish them. Guarantees the sample
+            // eventually completes even if a client dies mid-render.
+            void requeueTimedOut(std::chrono::milliseconds timeout);
 
             bool isActive() const;
             bool isSampleComplete() const;
@@ -44,8 +60,10 @@ namespace rc
 
             bool isSampleCompleteLocked() const;
 
-            std::deque<TileJob>               _pending;
-            std::unordered_set<uint32_t>      _completedTiles;
+            std::deque<TileJob>                    _pending;
+            std::unordered_map<uint32_t, InFlight> _inFlight;
+            std::unordered_set<uint32_t>           _completedTiles;
+            std::unordered_set<uint32_t>           _timedOut;
             size_t                            _total         = 0;
             uint32_t                          _currentSample = 0;
             bool                              _active        = false;

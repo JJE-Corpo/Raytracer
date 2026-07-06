@@ -6,6 +6,7 @@
 #define CLUSTERRENDERER_HPP
 
 #include <atomic>
+#include <chrono>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -50,6 +51,9 @@ namespace rc
             int _width = 0;
             int _height = 0;
             int _tileSize = 32;
+            // A tile handed to a client that is not returned within this window
+            // is reclaimed by the local loop so a dead client cannot stall us.
+            std::chrono::milliseconds _tileTimeout{5000};
     };
 }
 

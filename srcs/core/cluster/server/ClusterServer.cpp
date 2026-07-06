@@ -88,55 +88,63 @@ namespace rc
 
         if (!this->_running)
             return;
-        pollfds.push_back(pollfd{this->_serverFd, POLLIN, 0});
-        for (auto &connectionPtr: this->_connections)
         {
-            pollfds.push_back(pollfd{connectionPtr->getFd(), POLLIN | POLLOUT, 0});
+            std::lock_guard lock(this->_connectionsMutex);
+            pollfds.push_back(pollfd{this->_serverFd, POLLIN, 0});
+            for (auto &connectionPtr: this->_connections)
+            {
+                pollfds.push_back(pollfd{connectionPtr->getFd(), POLLIN | POLLOUT, 0});
+            }
         }
+        // poll() blocks up to 200ms; keep it out of the lock so broadcasts from
+        // the render thread are not stalled behind it.
         if (::poll(pollfds.data(), pollfds.size(), 200) == -1)
             return;
         if (pollfds.empty())
             return;
         if (!this->_running)
             return;
-        if (pollfds[0].revents & POLLIN)
         {
-            auto newConnection = std::make_unique<Connection>(this);
-            try
+            std::lock_guard lock(this->_connectionsMutex);
+            if (pollfds[0].revents & POLLIN)
             {
-                newConnection->open(this->_serverFd);
-                newConnection->log("Is pending. Waiting for connection packet..");
-                this->_connections.push_back(std::move(newConnection));
-            } catch (std::exception &) {}
-        }
-        i = 0;
-        while (i < this->_connections.size())
-        {
-            size_t pollIndex = i + 1;
-            if (pollIndex >= pollfds.size())
-                break;
-            if (pollfds[pollIndex].revents & POLLIN && !this->_connections[i]->handleRead())
-            {
-                handleClientDisconnect(this->_connections[i]->getFd());
-                this->_connections.erase(this->_connections.begin() + i);
-                pollfds.erase(pollfds.begin() + (pollIndex));
-                continue;
+                auto newConnection = std::make_unique<Connection>(this);
+                try
+                {
+                    newConnection->open(this->_serverFd);
+                    newConnection->log("Is pending. Waiting for connection packet..");
+                    this->_connections.push_back(std::move(newConnection));
+                } catch (std::exception &) {}
             }
-            if (pollfds[pollIndex].revents & POLLOUT && !this->_connections[i]->handleWrite())
+            i = 0;
+            while (i < this->_connections.size())
             {
-                handleClientDisconnect(this->_connections[i]->getFd());
-                this->_connections.erase(this->_connections.begin() + i);
-                pollfds.erase(pollfds.begin() + (pollIndex));
-                continue;
+                size_t pollIndex = i + 1;
+                if (pollIndex >= pollfds.size())
+                    break;
+                if (pollfds[pollIndex].revents & POLLIN && !this->_connections[i]->handleRead())
+                {
+                    handleClientDisconnect(this->_connections[i]->getFd());
+                    this->_connections.erase(this->_connections.begin() + i);
+                    pollfds.erase(pollfds.begin() + (pollIndex));
+                    continue;
+                }
+                if (pollfds[pollIndex].revents & POLLOUT && !this->_connections[i]->handleWrite())
+                {
+                    handleClientDisconnect(this->_connections[i]->getFd());
+                    this->_connections.erase(this->_connections.begin() + i);
+                    pollfds.erase(pollfds.begin() + (pollIndex));
+                    continue;
+                }
+                if (pollfds[pollIndex].revents & (POLLHUP | POLLERR))
+                {
+                    handleClientDisconnect(this->_connections[i]->getFd());
+                    this->_connections.erase(this->_connections.begin() + i);
+                    pollfds.erase(pollfds.begin() + (pollIndex));
+                    continue;
+                }
+                i++;
             }
-            if (pollfds[pollIndex].revents & (POLLHUP | POLLERR))
-            {
-                handleClientDisconnect(this->_connections[i]->getFd());
-                this->_connections.erase(this->_connections.begin() + i);
-                pollfds.erase(pollfds.begin() + (pollIndex));
-                continue;
-            }
-            i++;
         }
         this->dispatchRenderRequests();
     }
@@ -152,8 +160,11 @@ namespace rc
         if (!coordinator || !coordinator->isActive())
             return;
 
-        // coordinator->requeueTimedOut(std::chrono::steady_clock::now(), this->_tileTimeout);
+        // Reclaim tiles handed to clients that never returned them (slow or
+        // dead) so the sample can still complete and the render never hangs.
+        coordinator->requeueTimedOut(this->_tileTimeout);
 
+        std::lock_guard lock(this->_connectionsMutex);
         for (auto &connectionPtr : this->_connections)
         {
             if (!connectionPtr)
@@ -163,10 +174,8 @@ namespace rc
 
             ClusterRenderCoordinator::TileJob job;
 
-            if (!coordinator->popJob(job))
+            if (!coordinator->popRemoteJob(job))
                 continue;
-            // if (!coordinator->assignJob(connectionPtr->getFd(), job))
-                // continue;
 
             PacketServerRenderRequest request;
             request.tile_id = job.tile_id;
@@ -198,12 +207,33 @@ namespace rc
         if (this->_serverThread.joinable() && this->_serverThread.get_id() != std::this_thread::get_id())
             this->_serverThread.join();
 
+        std::lock_guard lock(this->_connectionsMutex);
         this->_connections.clear();
     }
 
     uint16_t ClusterServer::getPort() const
     {
         return (this->_serverPort);
+    }
+
+    std::vector<IClusterServer::ClientInfo> ClusterServer::getClients() const
+    {
+        std::vector<ClientInfo> clients;
+
+        std::lock_guard lock(this->_connectionsMutex);
+        clients.reserve(this->_connections.size());
+        for (const auto &connectionPtr : this->_connections)
+        {
+            if (!connectionPtr)
+                continue;
+            ClientInfo info;
+            info.name = connectionPtr->getName();
+            info.address = connectionPtr->getAddress();
+            info.state = connectionPtr->getConnectionState();
+            info.tilesRendered = connectionPtr->getTilesRendered();
+            clients.push_back(std::move(info));
+        }
+        return (clients);
     }
 
     IScene *ClusterServer::getScene()
@@ -246,15 +276,18 @@ namespace rc
         job.start_y = static_cast<int>(packet.start_y);
         job.end_x = static_cast<int>(packet.end_x);
         job.end_y = static_cast<int>(packet.end_y);
-
-        sink->applyTileSample(job, packet.pixels);
         (void)connection_fd;
-        coordinator->markComplete(job);
+
+        // Only accumulate the pixels if this tile actually completes the current
+        // sample for the first time (drops stale / duplicate tile submissions).
+        if (coordinator->markComplete(job))
+            sink->applyTileSample(job, packet.pixels);
     }
 
     void ClusterServer::broadcastCancelRender()
     {
         PacketServerCancelRender cancel;
+        std::lock_guard lock(this->_connectionsMutex);
         for (auto &connectionPtr : this->_connections)
         {
             if (!connectionPtr)
@@ -270,6 +303,7 @@ namespace rc
         PacketServerSceneData data;
 
         data.sceneData = SceneRegister().toString(this->_scene);
+        std::lock_guard lock(this->_connectionsMutex);
         for (auto &connectionPtr : this->_connections)
         {
             if (!connectionPtr)
@@ -285,6 +319,7 @@ namespace rc
         PacketServerRenderState packet;
 
         packet.state = static_cast<uint16_t>(state);
+        std::lock_guard lock(this->_connectionsMutex);
         for (auto &connectionPtr : this->_connections)
         {
             if (!connectionPtr)

@@ -4,6 +4,8 @@
 
 #include "PacketClientTileData.hpp"
 
+#include <stdexcept>
+
 #include "../../../common/cluster/ByteBuffer.hpp"
 #include "../../../common/cluster/PacketID.hpp"
 #include "../server/Connection.hpp"
@@ -23,13 +25,23 @@ namespace rc
         this->end_x = buffer.readUInt32();
         this->end_y = buffer.readUInt32();
 
-        const uint32_t tile_w = this->end_x - this->start_x;
-        const uint32_t tile_h = this->end_y - this->start_y;
-        const size_t count = (tile_w * tile_h);
+        // Reject bounds that would underflow (end < start) or claim more pixels
+        // than the payload actually carries, so we never reserve a bogus size or
+        // read past the buffer. Each pixel is 3 floats = 12 bytes.
+        if (this->end_x < this->start_x || this->end_y < this->start_y)
+            throw std::runtime_error("Invalid tile bounds in tile data packet");
+
+        const uint64_t tile_w = static_cast<uint64_t>(this->end_x) - this->start_x;
+        const uint64_t tile_h = static_cast<uint64_t>(this->end_y) - this->start_y;
+        const uint64_t count = tile_w * tile_h;
+        const size_t remaining = buffer.data.size() - static_cast<size_t>(buffer.pos);
+
+        if (count > remaining / (3 * sizeof(float)))
+            throw std::runtime_error("Truncated pixel data in tile data packet");
 
         this->pixels.clear();
-        this->pixels.reserve(count);
-        for (size_t i = 0; i < count; ++i)
+        this->pixels.reserve(static_cast<size_t>(count));
+        for (uint64_t i = 0; i < count; ++i)
         {
             ColorF c{};
             c.r = buffer.readFloat();
@@ -66,6 +78,7 @@ namespace rc
         auto *server = dynamic_cast<ClusterServer *>(connection.getServer());
 
         handler.log("Received tile data from client (tile " + std::to_string(this->tile_id) + ")");
+        connection.incrementTilesRendered();
         if (!server)
             return;
         server->handleClientTileData(connection.getFd(), *this);
