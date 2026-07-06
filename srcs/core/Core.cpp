@@ -205,7 +205,7 @@ namespace rc
         while (this->_running)
         {
             bool reloadScene = this->_configObserver.pollChanges();
-            if (reloadScene)
+            if (reloadScene && !this->_suppressWatcherReload)
                 this->loadScene(this->_configObserver.getFilePath());
             if (this->getClusterModule()->getClusterMode() == ClusterMode::CLIENT)
             {
@@ -243,7 +243,25 @@ namespace rc
     {
         SceneRegister registerer;
 
+        // Saving to the file we are watching is our own write, not an external
+        // edit. Suppress the watcher's reload around it and re-sync the baseline
+        // mtime afterwards; otherwise pollChanges() would hot-reload the scene
+        // (delete + reparse) while the UI/viewport thread is still using it,
+        // causing a use-after-free crash on Ctrl+S.
+        const bool watchingTarget = (scene_path == this->_configObserver.getFilePath());
+
+        if (watchingTarget)
+            this->_suppressWatcherReload = true;
+
         registerer.saveScene(scene_path, this->_scene);
+
+        if (watchingTarget)
+        {
+            // registerer.saveScene() has closed the file, so its mtime is final:
+            // adopt it as the new baseline, then re-enable the watcher.
+            this->_configObserver.reset();
+            this->_suppressWatcherReload = false;
+        }
     }
 
     IScene &Core::loadNewScene(const std::string &scene_path)
