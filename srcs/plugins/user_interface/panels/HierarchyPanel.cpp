@@ -102,6 +102,13 @@ namespace rc
         return changed;
     }
 
+    const ISceneObject *HierarchyPanel::consumeContextMenuRequest()
+    {
+        const ISceneObject *request = this->_contextMenuRequest;
+        this->_contextMenuRequest = nullptr;
+        return (request);
+    }
+
     bool HierarchyPanel::isSelected(const ISceneObject *object) const
     {
         return (std::find(this->_selection.begin(), this->_selection.end(), object) != this->_selection.end());
@@ -594,6 +601,28 @@ namespace rc
 
         if (event.type != sf::Event::MouseButtonPressed)
             return (false);
+
+        // Right-click on an object row: make it the selection (unless it is
+        // already part of a multi-selection, which is kept) and record the row
+        // so the screen opens the context menu for it. The camera row has no
+        // object and is skipped, as is empty space below the list.
+        if (event.mouseButton.button == sf::Mouse::Right)
+        {
+            for (const auto &item : this->_items)
+            {
+                if (!item.object || !item.bounds.contains(static_cast<sf::Vector2f>(mouse)))
+                    continue;
+                if (!this->isSelected(item.object))
+                {
+                    this->select(item.object, false);
+                    this->_selectionChanged = true;
+                }
+                this->_contextMenuRequest = item.object;
+                return (true);
+            }
+            return (false);
+        }
+
         if (event.mouseButton.button != sf::Mouse::Left)
             return (false);
 

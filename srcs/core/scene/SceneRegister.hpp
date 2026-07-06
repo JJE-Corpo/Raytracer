@@ -33,11 +33,14 @@ namespace rc
             // Dispatch one node to the right serializer (recurses into groups).
             static nlohmann::json serializeObject(ISceneObject *object);
             static nlohmann::json materialJson(const Material *material);
-
-            static nlohmann::json serializeScene(IScene *scene);
         public:
             SceneRegister();
             ~SceneRegister();
+
+            // Serialize a whole scene into a JSON document that SceneParser can
+            // parse back. Exposed so the undo/redo history can snapshot the scene
+            // in memory without going through a file.
+            static nlohmann::json serializeScene(IScene *scene);
 
             void saveScene(const std::string &scene_path, IScene *scene);
 

@@ -42,6 +42,10 @@ namespace rc
             // Set after a crisp full-resolution pass; schedules one edge-adaptive
             // anti-aliasing pass on the next idle frame to smooth silhouettes.
             bool _pendingAA = false;
+            // Set by markSceneDirty() when the scene contents change without a
+            // camera move; forces the next geometry pass so edits made in the
+            // object panel (transform, material, light) show up immediately.
+            bool _sceneDirty = false;
             std::vector<const ISceneObject *> _selection;
             size_t _selectionVersion = 0;
             size_t _lastSelectionVersion = 0;
@@ -52,6 +56,7 @@ namespace rc
         public:
             void renderScene(const IScene &scene) override;
             void setPixel(int x, int y, Color color) override;
+            void markSceneDirty() override;
             void setSelection(const std::vector<const ISceneObject *> &selection) override;
             void setHover(const ISceneObject *object) override;
 

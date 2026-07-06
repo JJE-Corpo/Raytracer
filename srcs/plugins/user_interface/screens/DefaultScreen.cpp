@@ -25,6 +25,9 @@ namespace rc
     constexpr float MENU_HEIGHT = 28.0f;
     constexpr float SIDEBAR_MIN = 220.0f;   // narrowest the sidebar may be dragged
     constexpr float VIEWPORT_MIN = 360.0f;  // space always kept for the viewport
+    // Pixels a right-press may travel before it counts as a camera-rotate drag
+    // rather than a click that opens the context menu.
+    constexpr float RIGHT_CLICK_DRAG = 5.0f;
 
     void DefaultScreen::setCoreAccess(ICoreAccess *coreAccess)
     {
@@ -136,58 +139,7 @@ namespace rc
         MenuItem saveItem;
         saveItem.setLabel("Save");
         saveItem.onClick = [&]() {
-            if (this->_isNewScene)
-            {
-                if (this->_exploratorJustClosed == true)
-                {
-                    this->_toastManager.push("Please close the current explorer window first", "An explorer window is already open.", ToastType::ERROR);
-                    return;
-                }
-
-                try
-                {
-                    this->_exploratorResult = "";
-                    this->_exploratorJustClosed = true;
-
-                    this->_exploratorOnClose = [&]()
-                    {
-                        if (!this->_exploratorResult.empty())
-                        {
-                            try
-                            {
-                                this->_coreAccess->saveScene(this->_exploratorResult);
-                                this->_toastManager.push("Scene saved", "Scene saved successfully.", ToastType::SUCCESS);
-                            }
-                            catch (const std::exception &e)
-                            {
-                                this->_toastManager.push("Error saving scene", e.what(), ToastType::ERROR);
-                            }
-                        }
-                        else
-                        {
-                            this->_toastManager.push("No file selected", "No file was selected.", ToastType::INFO);
-                        }
-                    };
-
-                    this->_exploratorWindow.create(*this->_font, ExploratorMode::SAVE, this->_exploratorResult);
-                }
-                catch(const std::exception& e)
-                {
-                    this->_toastManager.push("Error loading scene", e.what(), ToastType::ERROR);
-                }
-
-                return;
-            }
-
-            try
-            {
-                this->_coreAccess->saveScene(this->_coreAccess->getCurrentScenePath());
-                this->_toastManager.push("Scene saved", "Scene saved successfully.", ToastType::SUCCESS);
-            }
-            catch (const std::exception &e)
-            {
-                this->_toastManager.push("Error saving scene", e.what(), ToastType::ERROR);
-            }
+            this->triggerSave();
         };
 
         MenuItem saveAsItem;
@@ -545,6 +497,8 @@ namespace rc
         this->_menuBar.menus.push_back(clusterMenu);
         this->_menuBar.setFont(*this->_font);
 
+        this->_contextMenu.setFont(*this->_font);
+
         this->_hierarchyPanel.setFont(*this->_font);
         this->_hierarchyPanel.setOnItemHideRequest([this](const ISceneObject *payload)
         {
@@ -718,6 +672,10 @@ namespace rc
         if (this->_loadWindow.running)
             return;
 
+        // Keep the context menu's hover highlight live; it sits above the menu
+        // bar and panels, so refresh it before the menu-bar early-return below.
+        this->_contextMenu.update(mouse);
+
         this->_menuBar.update(mouse);
 
         if (this->_menuBar.isOpen())
@@ -739,6 +697,21 @@ namespace rc
         this->updateViewportCamera(window);
 
         this->layoutSidebarResize(window);
+
+        // Detect a scene replaced outside our own undo/redo (startup, Open, a
+        // config reload). Drop selection/hover that pointed into the old scene
+        // and start a fresh undo baseline on the new one. onSceneRestored keeps
+        // _lastHistoryScene in step for our swaps, so those don't reach here.
+        IScene *liveScene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+        if (liveScene != this->_lastHistoryScene)
+        {
+            this->_hierarchyPanel.applyViewportSelection({});
+            this->clearHover();
+            this->syncSelectionToRenderer();
+            if (this->_coreAccess)
+                this->_coreAccess->historyReset();
+            this->_lastHistoryScene = liveScene;
+        }
 
         this->_hierarchyPanel.setScene(this->_coreAccess ? this->_coreAccess->getScene() : nullptr);
 
@@ -807,9 +780,15 @@ namespace rc
             this->drawMarker(window);
             this->drawAxisGizmo(window);
         }
+        if (this->_movementMode && this->_viewMode == ViewMode::VIEWPORT)
+            this->drawMovementIndicator(window);
 
         this->_menuBar.layout(static_cast<float>(window.getSize().x));
         window.draw(this->_menuBar);
+
+        // Drawn after the menu bar so the popup sits on top of every panel; it
+        // no-ops while closed.
+        window.draw(this->_contextMenu);
 
         this->_toastManager.draw(window);
     }
@@ -820,6 +799,49 @@ namespace rc
         this->_rendererPanel.layout(this->_sidebarWidth, MENU_HEIGHT, static_cast<float>(windowSize.x) - this->_sidebarWidth, static_cast<float>(windowSize.y) - MENU_HEIGHT);
         this->_rendererPanel.updateRender(renderer->getRender());
         window.draw(this->_rendererPanel);
+    }
+
+    void DefaultScreen::drawMovementIndicator(sf::RenderWindow &window)
+    {
+        if (!this->_font)
+            return;
+
+        sf::Text label;
+        label.setFont(*this->_font);
+        label.setString("MOVEMENT MODE");
+        label.setCharacterSize(13);
+        label.setFillColor(theme::TEXT_WHITE);
+
+        // Badge geometry: a fixed height keeps the text and status dot vertically
+        // centred (SFML text bounds carry a baseline offset), and the width grows
+        // to fit the label.
+        const float padX = 12.0f;
+        const float dot = 8.0f;
+        const float gap = 8.0f;
+        const float badgeH = 26.0f;
+        const float badgeW = padX + dot + gap + label.getLocalBounds().width + padX;
+        const float margin = 14.0f;
+
+        // Anchor to the bottom-left of the viewport (right of the sidebar, above
+        // the window's bottom edge) - a conventional, unobtrusive HUD corner.
+        const sf::Vector2u size = window.getSize();
+        const float x = this->_sidebarWidth + margin;
+        const float y = static_cast<float>(size.y) - margin - badgeH;
+
+        sf::RectangleShape badge({badgeW, badgeH});
+        badge.setPosition(x, y);
+        badge.setFillColor(theme::withAlpha(theme::CHECKED, 235));
+        badge.setOutlineThickness(1.0f);
+        badge.setOutlineColor(theme::OUTLINE);
+        window.draw(badge);
+
+        sf::CircleShape statusDot(dot / 2.0f);
+        statusDot.setPosition(x + padX, y + (badgeH - dot) / 2.0f);
+        statusDot.setFillColor(theme::TEXT_WHITE);
+        window.draw(statusDot);
+
+        label.setPosition(x + padX + dot + gap, y + 5.0f);
+        window.draw(label);
     }
 
     void DefaultScreen::syncSelectionToRenderer()
@@ -944,6 +966,115 @@ namespace rc
         hover_renderer->setHover(hoveredObject);
     }
 
+    const ISceneObject *DefaultScreen::pickViewportObject(const sf::Vector2i &mouse)
+    {
+        IScene *scene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+        if (!scene)
+            return (nullptr);
+
+        sf::Vector2i pixel;
+        if (!this->_rendererPanel.getViewportPixel(mouse, pixel))
+            return (nullptr);
+
+        const ISceneObject *object = ViewportHelper::pickViewportLight(*scene, scene->getCamera(), pixel);
+        if (!object)
+        {
+            Intersection hit;
+            const Ray ray = scene->getCamera().generateRay(pixel.x, pixel.y);
+            if (scene->intersect(ray, 0.001f, std::numeric_limits<float>::infinity(), hit) && hit.primitive)
+                object = hit.primitive;
+        }
+        return (object);
+    }
+
+    void DefaultScreen::openContextMenu(const ISceneObject *object, const sf::Vector2i &mouse)
+    {
+        if (!object)
+            return;
+
+        std::vector<std::pair<std::string, std::function<void()>>> entries;
+
+        // Only leaves carry a visibility toggle, matching the eye button the
+        // hierarchy shows for primitives and lights (groups just get Delete).
+        const ObjectType type = object->getObjectType();
+        if (type == ObjectType::PRIMITIVE || type == ObjectType::LIGHT)
+        {
+            const std::string hideLabel = object->isHidden() ? "Show" : "Hide";
+            entries.emplace_back(hideLabel, [this]() { this->hideSelection(); });
+        }
+        // Grouping only makes sense for a real multi-selection: gather the
+        // selected objects under one new group.
+        if (this->_hierarchyPanel.getSelection().size() >= 2)
+            entries.emplace_back("Group selection", [this]() { this->groupSelection(); });
+        // Delete reuses the hierarchy's Delete path (selection-wide, with the
+        // safe pointer cleanup and the "Object deleted" toast).
+        entries.emplace_back("Delete", [this]() { this->_hierarchyPanel.deleteSelection(); });
+
+        this->_contextMenu.openAt(static_cast<float>(mouse.x), static_cast<float>(mouse.y), entries);
+    }
+
+    void DefaultScreen::hideSelection()
+    {
+        IScene *scene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+        if (!scene)
+            return;
+
+        for (const ISceneObject *selected : this->_hierarchyPanel.getSelection())
+        {
+            auto *object = const_cast<ISceneObject *>(selected);
+            if (object)
+                object->setHidden(!object->isHidden());
+        }
+        this->markViewportBvhDirty();
+        this->syncSelectionToRenderer();
+    }
+
+    void DefaultScreen::groupSelection()
+    {
+        IScene *scene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+        if (!scene)
+            return;
+
+        // Snapshot the selection: reparenting mutates the scene graph.
+        const std::vector<const ISceneObject *> selection = this->_hierarchyPanel.getSelection();
+        if (selection.size() < 2)
+            return;
+
+        // Only move the "roots" of the selection. An object whose selected
+        // ancestor is also in the batch already travels with that ancestor's
+        // subtree, so moving it too would tear it out of its parent. This mirrors
+        // the skip rule HierarchyPanel::deleteObjects uses.
+        std::vector<ISceneObject *> toGroup;
+        for (const ISceneObject *object : selection)
+        {
+            if (!object)
+                continue;
+            bool coveredByAncestor = false;
+            for (ISceneObject *ancestor = object->getParent(); ancestor && !coveredByAncestor; ancestor = ancestor->getParent())
+                for (const ISceneObject *other : selection)
+                    if (other == ancestor)
+                    {
+                        coveredByAncestor = true;
+                        break;
+                    }
+            if (!coveredByAncestor)
+                toGroup.push_back(const_cast<ISceneObject *>(object));
+        }
+        if (toGroup.empty())
+            return;
+
+        // Created only once there is something to hold, so no empty group is
+        // left behind. reparent preserves each object's world transform.
+        ISceneObject *group = scene->addGroup();
+        for (ISceneObject *object : toGroup)
+            scene->reparent(object, group, -1);
+
+        this->markViewportBvhDirty();
+        this->_hierarchyPanel.applyViewportSelection({group});
+        this->syncSelectionToRenderer();
+        this->_toastManager.push("Group created", "Grouped " + std::to_string(toGroup.size()) + " objects into a new group.", ToastType::SUCCESS);
+    }
+
     void DefaultScreen::handleEvent(sf::RenderWindow &window, sf::Event &event)
     {
         const sf::Vector2i mouse = sf::Mouse::getPosition(window);
@@ -957,12 +1088,32 @@ namespace rc
         if (this->_loadWindow.running)
             return;
 
-        // Right mouse drives the viewport camera rotation independently of the
-        // component routing below, but only when the drag begins over the
-        // viewport itself - a right-press on a panel must not grab the camera.
+        // Global keyboard shortcuts (save / undo / redo) run before any routing
+        // so they win over the viewport and panels. handleShortcut returns true
+        // once it has consumed the event; an undo/redo may have swapped the scene
+        // object, so nothing below must touch the now-stale local state.
+        if (this->handleShortcut(event))
+            return;
+
+        // Right mouse over the viewport is overloaded: a drag rotates the camera
+        // (independently of the component routing below), while a plain click
+        // (released without dragging past the threshold) opens the object
+        // context menu. A right-press on a panel must not grab the camera, and
+        // is handled by the hierarchy panel via consumeContextMenuRequest below.
         if (event.type == sf::Event::MouseButtonPressed &&
-            event.mouseButton.button == sf::Mouse::Right &&
-            this->isViewportCaptured(mouse))
+            event.mouseButton.button == sf::Mouse::Right)
+        {
+            this->_rightPressInViewport = this->isViewportCaptured(mouse);
+            this->_rightDragged = false;
+            this->_rightPressMouse = mouse;
+            if (this->_rightPressInViewport)
+            {
+                this->_rightMouseHeld = true;
+                this->_lastMouse = sf::Mouse::getPosition(window);
+            }
+        }
+
+        if (event.type == sf::Event::MouseMoved && this->_rightMouseHeld && !this->_rightDragged)
         {
             // Shift + right-click drops a 3D marker under the cursor instead of
             // orbiting; the next primitive added from the menu spawns there.
@@ -974,13 +1125,41 @@ namespace rc
             }
             this->_rightMouseHeld = true;
             this->_lastMouse = sf::Mouse::getPosition(window);
+            const int dx = mouse.x - this->_rightPressMouse.x;
+            const int dy = mouse.y - this->_rightPressMouse.y;
+            if (dx * dx + dy * dy > RIGHT_CLICK_DRAG * RIGHT_CLICK_DRAG)
+                this->_rightDragged = true;
         }
 
         if (event.type == sf::Event::MouseButtonReleased &&
             event.mouseButton.button == sf::Mouse::Right)
         {
+            const bool wasClick = this->_rightPressInViewport && !this->_rightDragged;
             this->_rightMouseHeld = false;
+            this->_rightPressInViewport = false;
+            if (wasClick)
+            {
+                const ISceneObject *object = this->pickViewportObject(mouse);
+                if (object)
+                {
+                    if (!this->_hierarchyPanel.isSelected(object))
+                    {
+                        this->_hierarchyPanel.applyViewportSelection({object});
+                        this->syncSelectionToRenderer();
+                    }
+                    this->openContextMenu(object, mouse);
+                }
+            }
         }
+
+        // 'M' toggles movement mode, which gates all camera controls (the
+        // right-drag look and the ZQSD fly keys). Only fires in the viewport and
+        // never while a text field / menu owns the keyboard, so typing 'm' into a
+        // field can't flip the mode.
+        if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::M
+            && !event.key.control && this->_viewMode == ViewMode::VIEWPORT
+            && !this->isKeyboardCaptured())
+            this->toggleMovementMode();
 
         // Latch fly-camera keys here, while the event is fresh and before the
         // frame's (possibly slow) render, so presses/releases are never missed.
@@ -1089,6 +1268,9 @@ namespace rc
         // mode, then let the router pick the single best one for this event
         // (menu bar and open pop-ups win over the panels and the viewport).
         std::vector<Component *> candidates = {&this->_menuBar, &this->_rendererPanel};
+        const bool viewportMode = this->_viewMode == ViewMode::VIEWPORT;
+
+        std::vector<Component *> candidates = {&this->_contextMenu, &this->_menuBar, &this->_rendererPanel};
 
         if (viewportMode)
         {
@@ -1115,6 +1297,12 @@ namespace rc
         {
             this->syncSelectionToRenderer();
         }
+
+        // A right-click on a hierarchy row asks for the context menu; open it at
+        // the (window-space) cursor. The viewport right-click is handled above,
+        // where the picked object is already known.
+        if (const ISceneObject *ctxObject = this->_hierarchyPanel.consumeContextMenuRequest())
+            this->openContextMenu(ctxObject, mouse);
 
         // Fall back to viewport picking only when no UI component claimed the
         // click, so clicks on panels or pop-ups no longer leak to the scene.
@@ -1205,6 +1393,19 @@ namespace rc
                 this->clearHover();
             }
         }
+
+        // Fold whatever this event changed into the undo history. Only commit-
+        // like events snapshot (a press for menu/context actions, a release to
+        // end a drag, a key release for typed edits), and historyCapture() is a
+        // no-op when nothing actually changed -- so a slider drag becomes a
+        // single undo step and plain selections/camera moves add none.
+        if (viewportMode && this->_coreAccess
+            && (event.type == sf::Event::MouseButtonPressed
+                || event.type == sf::Event::MouseButtonReleased
+                || event.type == sf::Event::KeyReleased))
+        {
+            this->_coreAccess->historyCapture();
+        }
     }
 
     bool DefaultScreen::isViewportCaptured(const sf::Vector2i &mouse)
@@ -1217,7 +1418,7 @@ namespace rc
         // A menu, pop-up, in-progress drag or focused text field anywhere in the
         // UI owns the input even when the cursor sits over the render, so the
         // viewport must not steal keys/clicks while any of them is live.
-        if (this->_menuBar.isCapturing())
+        if (this->_menuBar.isCapturing() || this->_contextMenu.isCapturing())
             return (false);
 
         std::vector<Component *> components;
@@ -1238,7 +1439,7 @@ namespace rc
         ICamera &camera = scene->getCamera();
         const sf::Vector2i mouse = sf::Mouse::getPosition(window);
 
-        if (this->_rightMouseHeld)
+        if (this->_movementMode && this->_rightMouseHeld)
         {
             sf::Vector2i delta = mouse - this->_lastMouse;
             this->_lastMouse = mouse;
@@ -1307,12 +1508,17 @@ namespace rc
             return;
         }
         // Releases always count, so a key can never stick regardless of where the
-        // cursor is; presses only start a fly while the viewport owns input, so
-        // typing into a focused field or panel never drives the camera.
+        // cursor is; presses only start a fly while movement mode is on and the
+        // viewport owns input, so typing into a focused field or panel never
+        // drives the camera. A press with Ctrl held is a shortcut (Ctrl+S/Z), not
+        // a fly key, so ignore it - otherwise Ctrl+Z would also nudge the camera
+        // forward (Z == forward).
         if (event.type == sf::Event::KeyReleased)
             this->setFlyKey(event.key.code, false);
         else if (event.type == sf::Event::KeyPressed && !this->_vertexDragActive && !this->_objectDragActive
                  && !this->_axisDragActive && !this->_rotDragActive && !this->_scaleDragActive &&
+        else if (event.type == sf::Event::KeyPressed && !event.key.control &&
+                 this->_movementMode &&
                  (this->_rightMouseHeld || this->isViewportCaptured(mouse)))
             this->setFlyKey(event.key.code, true);
     }
@@ -1341,6 +1547,21 @@ namespace rc
         this->_keyDown = false;
     }
 
+    void DefaultScreen::toggleMovementMode()
+    {
+        this->_movementMode = !this->_movementMode;
+        // Drop any keys latched while flying so releasing the mode instantly
+        // stops the camera instead of coasting until the next physical key-up.
+        if (!this->_movementMode)
+            this->resetFlyKeys();
+        if (this->_movementMode)
+            this->_toastManager.push("Movement mode on",
+                "Right-drag to look, Z/Q/S/D + Space/Shift to fly.", ToastType::INFO);
+        else
+            this->_toastManager.push("Movement mode off",
+                "Camera controls are disabled.", ToastType::INFO);
+    }
+
     void DefaultScreen::prepareFrame()
     {
         this->_activeRenderer = nullptr;
@@ -1358,6 +1579,9 @@ namespace rc
             if (this->_viewportBvhDirty)
             {
                 this->_coreAccess->getScene()->buildBvh();
+                // The BVH being dirty means the scene contents changed; tell the
+                // viewport renderer to drop its cached frame so the edit shows up.
+                this->_activeRenderer->markSceneDirty();
                 this->_viewportBvhDirty = false;
             }
             this->_activeRenderer->renderScene(*this->_coreAccess->getScene());
@@ -1372,6 +1596,150 @@ namespace rc
         // selection change and would keep showing the cached image (e.g. after
         // adding or deleting an object) until the camera moved.
         this->forceViewportRetrace();
+    }
+
+    void DefaultScreen::triggerSave()
+    {
+        // A never-saved scene has no path yet, so route to the save dialog (same
+        // flow as "Save as"); an already-saved one overwrites its file directly.
+        if (this->_isNewScene)
+        {
+            if (this->_exploratorJustClosed == true)
+            {
+                this->_toastManager.push("Please close the current explorer window first", "An explorer window is already open.", ToastType::ERROR);
+                return;
+            }
+
+            try
+            {
+                this->_exploratorResult = "";
+                this->_exploratorJustClosed = true;
+
+                this->_exploratorOnClose = [&]()
+                {
+                    if (!this->_exploratorResult.empty())
+                    {
+                        try
+                        {
+                            this->_coreAccess->saveScene(this->_exploratorResult);
+                            this->_toastManager.push("Scene saved", "Scene saved successfully.", ToastType::SUCCESS);
+                        }
+                        catch (const std::exception &e)
+                        {
+                            this->_toastManager.push("Error saving scene", e.what(), ToastType::ERROR);
+                        }
+                    }
+                    else
+                    {
+                        this->_toastManager.push("No file selected", "No file was selected.", ToastType::INFO);
+                    }
+                };
+
+                this->_exploratorWindow.create(*this->_font, ExploratorMode::SAVE, this->_exploratorResult);
+            }
+            catch(const std::exception& e)
+            {
+                this->_toastManager.push("Error loading scene", e.what(), ToastType::ERROR);
+            }
+
+            return;
+        }
+
+        try
+        {
+            this->_coreAccess->saveScene(this->_coreAccess->getCurrentScenePath());
+            this->_toastManager.push("Scene saved", "Scene saved successfully.", ToastType::SUCCESS);
+        }
+        catch (const std::exception &e)
+        {
+            this->_toastManager.push("Error saving scene", e.what(), ToastType::ERROR);
+        }
+    }
+
+    bool DefaultScreen::isKeyboardCaptured()
+    {
+        if (this->_menuBar.isCapturing() || this->_contextMenu.isCapturing())
+            return (true);
+
+        std::vector<Component *> components;
+        this->_sidebar.collectComponents(components);
+        for (Component *component : components)
+            if (component && component->isCapturing())
+                return (true);
+        return (false);
+    }
+
+    bool DefaultScreen::handleShortcut(const sf::Event &event)
+    {
+        if (event.type != sf::Event::KeyPressed || !event.key.control)
+            return (false);
+
+        // Ctrl+S saves regardless of focus (it never destroys work); the modal
+        // windows already return earlier in handleEvent, so this can't fire while
+        // the save/open dialog is up.
+        if (event.key.code == sf::Keyboard::S)
+        {
+            this->triggerSave();
+            return (true);
+        }
+
+        // Ctrl+Z / Ctrl+Shift+Z undo/redo, but only in the editing viewport and
+        // never while a text field owns the keyboard (so typing keeps its own
+        // meaning and the scene isn't swapped from under an active edit).
+        if (event.key.code == sf::Keyboard::Z
+            && this->_viewMode == ViewMode::VIEWPORT && !this->isKeyboardCaptured())
+        {
+            if (event.key.shift)
+                this->redoShortcut();
+            else
+                this->undoShortcut();
+            return (true);
+        }
+        return (false);
+    }
+
+    void DefaultScreen::undoShortcut()
+    {
+        if (!this->_coreAccess)
+            return;
+        if (!this->_coreAccess->historyUndo())
+        {
+            this->_toastManager.push("Nothing to undo", "You are at the oldest change.", ToastType::INFO);
+            return;
+        }
+        this->onSceneRestored();
+        this->_toastManager.push("Undo", "Reverted the last change.", ToastType::INFO);
+    }
+
+    void DefaultScreen::redoShortcut()
+    {
+        if (!this->_coreAccess)
+            return;
+        if (!this->_coreAccess->historyRedo())
+        {
+            this->_toastManager.push("Nothing to redo", "You are at the latest change.", ToastType::INFO);
+            return;
+        }
+        this->onSceneRestored();
+        this->_toastManager.push("Redo", "Reapplied the change.", ToastType::INFO);
+    }
+
+    void DefaultScreen::onSceneRestored()
+    {
+        IScene *scene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+
+        // The previous scene object was deleted by the swap, so every cached
+        // pointer into it (selection, hover, panels) must be dropped/rebound
+        // before anything touches it again.
+        this->_hierarchyPanel.applyViewportSelection({});
+        this->_hierarchyPanel.setScene(scene);
+        this->clearHover();
+        this->syncSelectionToRenderer();
+        this->markViewportBvhDirty();
+
+        // This swap is ours, so keep the baseline tracker in step: otherwise
+        // update() would see the changed pointer and wipe the history.
+        this->_lastHistoryScene = scene;
     }
 
     void DefaultScreen::applyImport()
