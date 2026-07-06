@@ -28,7 +28,6 @@ namespace rc
             sf::Font _font;
 
             std::thread _uiThread;
-            std::mutex _windowMutex;
             std::atomic<bool> _running;
 
             ICoreAccess *_coreAccess;
