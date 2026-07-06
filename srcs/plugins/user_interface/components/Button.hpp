@@ -19,8 +19,6 @@ namespace rc
         sf::Text label;
 
         bool pressed = false;
-        // When true the button paints in the accent colour to show it is the
-        // currently-selected option (e.g. the active gizmo tool).
         bool active = false;
 
         std::function<void()> onClick;

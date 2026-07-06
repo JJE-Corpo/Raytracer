@@ -1,7 +1,3 @@
-//
-// Shared base for scene-graph nodes.
-//
-
 #include "ASceneObject.hpp"
 
 #include <algorithm>
@@ -21,9 +17,6 @@ namespace rc
     {
         if (!child)
             return;
-        // Drop any existing slot first so a re-insert (reordering within the
-        // same parent) interprets the index against the list without a stale
-        // duplicate, then splice it back in at the requested position.
         auto existing = std::find(this->_children.begin(), this->_children.end(), child);
         if (existing != this->_children.end())
             this->_children.erase(existing);
@@ -42,9 +35,6 @@ namespace rc
             child->setParent(nullptr);
     }
 
-    // When parented, the argument is a local (parent-relative) transform. When a
-    // root, local == world, so write straight through to the world transform
-    // (dispatches to the leaf's own setter).
     void ASceneObject::setLocalPosition(const Vector3f &position)
     {
         if (this->_parent)

@@ -96,8 +96,6 @@ namespace rc
                 pollfds.push_back(pollfd{connectionPtr->getFd(), POLLIN | POLLOUT, 0});
             }
         }
-        // poll() blocks up to 200ms; keep it out of the lock so broadcasts from
-        // the render thread are not stalled behind it.
         if (::poll(pollfds.data(), pollfds.size(), 200) == -1)
             return;
         if (pollfds.empty())
@@ -160,8 +158,6 @@ namespace rc
         if (!coordinator || !coordinator->isActive())
             return;
 
-        // Reclaim tiles handed to clients that never returned them (slow or
-        // dead) so the sample can still complete and the render never hangs.
         coordinator->requeueTimedOut(this->_tileTimeout);
 
         std::lock_guard lock(this->_connectionsMutex);
@@ -278,8 +274,6 @@ namespace rc
         job.end_y = static_cast<int>(packet.end_y);
         (void)connection_fd;
 
-        // Only accumulate the pixels if this tile actually completes the current
-        // sample for the first time (drops stale / duplicate tile submissions).
         if (coordinator->markComplete(job))
             sink->applyTileSample(job, packet.pixels);
     }

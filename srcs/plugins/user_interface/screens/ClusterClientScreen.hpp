@@ -153,14 +153,12 @@ namespace rc
                     }
                 }
 
-                // Leave button sits at the bottom of the info card.
                 const float cardH = this->cardHeight();
                 this->_leaveButton.update(mouse);
                 this->_leaveButton.setLabel("Leave cluster");
                 this->_leaveButton.onClick = this->_onLeave;
                 this->_leaveButton.layout(MARGIN + 12.f, MARGIN + cardH - 34.f, CARD_W - 24.f, 24.f);
 
-                // Preview fills the area to the right of the card.
                 const float previewX = MARGIN + CARD_W + MARGIN;
                 const float availW = static_cast<float>(window.getSize().x) - previewX - MARGIN;
                 const float availH = static_cast<float>(window.getSize().y) - 2 * MARGIN;
@@ -208,8 +206,6 @@ namespace rc
                     window.draw(this->_renderSprite);
                     return;
                 }
-                // No frame to show (server is rendering, or no scene yet): a
-                // placeholder keeps the panel from looking broken.
                 if (availW <= 0 || availH <= 0)
                     return;
                 sf::RectangleShape placeholder({availW, availH});
@@ -239,8 +235,6 @@ namespace rc
                 window.draw(this->_line);
             }
 
-            // A "Label            value" row; value is right-aligned in the card,
-            // optionally preceded by a coloured status dot.
             void drawRow(const std::string &label, const std::string &value, const sf::Color &valueColor,
                 bool withDot, float cardX, float &penY, sf::RenderWindow &window)
             {

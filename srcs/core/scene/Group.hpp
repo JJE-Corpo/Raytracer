@@ -1,8 +1,3 @@
-//
-// A scene-graph group node: no geometry, owns a local transform that is
-// inherited by its children through the flatten pass.
-//
-
 #ifndef GROUP_HPP
 #define GROUP_HPP
 

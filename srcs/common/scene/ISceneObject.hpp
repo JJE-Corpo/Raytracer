@@ -25,9 +25,6 @@ namespace rc
 
             virtual ObjectType getObjectType() const = 0;
 
-            // WORLD transform: what rendering (intersect/BVH) reads. For a leaf
-            // these are its own geometry fields; the flatten pass writes them
-            // from the composed ancestor chain before each BVH build.
             virtual Vector3f getPosition() const = 0;
             virtual Vector3f getRotation() const = 0;
             virtual Vector3f getScale() const = 0;
@@ -42,19 +39,13 @@ namespace rc
             virtual void setHidden(bool hidden) = 0;
             virtual void setName(const std::string &name) = 0;
 
-            // Scene-graph links. Parents are always groups (or null for roots).
             virtual ISceneObject *getParent() const = 0;
             virtual void setParent(ISceneObject *parent) = 0;
             virtual const std::vector<ISceneObject *> &getChildren() const = 0;
             virtual void addChild(ISceneObject *child) = 0;
-            // Insert child at a specific slot among the existing children (index
-            // clamped to [0, size]). Used to reorder siblings; addChild() is the
-            // append shorthand.
             virtual void insertChild(ISceneObject *child, std::size_t index) = 0;
             virtual void removeChild(ISceneObject *child) = 0;
 
-            // LOCAL transform: parent-relative, what the editor edits and what is
-            // serialized. For a root (no parent) local == world.
             virtual Vector3f getLocalPosition() const = 0;
             virtual Vector3f getLocalRotation() const = 0;
             virtual Vector3f getLocalScale() const = 0;

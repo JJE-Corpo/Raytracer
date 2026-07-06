@@ -365,10 +365,6 @@ rc::Vector3f rc::Fractal::getScale() const
 
 void rc::Fractal::setPosition(const Vector3f &position)
 {
-    // The culling bbox is stored in world space relative to _center, so it must
-    // move with the center (e.g. when a parent group translates this fractal),
-    // otherwise intersect() culls the ray against a stale box and the fractal
-    // renders clipped or vanishes.
     const Vector3f delta = position - this->_center;
     this->_bbox = AABB{this->_bbox.min + delta, this->_bbox.max + delta};
     this->_center = position;

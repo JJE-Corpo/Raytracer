@@ -24,7 +24,6 @@ namespace rc
 {
     namespace
     {
-        // Component-wise vector product / quotient used by the transform compose.
         Vector3f compMul(const Vector3f &a, const Vector3f &b)
         {
             return {a.x * b.x, a.y * b.y, a.z * b.z};
@@ -80,7 +79,6 @@ namespace rc
     {
         this->_mutex.lock();
         this->_primitives.push_back(primitive);
-        // Nested objects (already parented by the parser/reparent) are not roots.
         if (primitive && primitive->getParent() == nullptr)
             this->addRoot(primitive);
         this->_mutex.unlock();
@@ -118,22 +116,15 @@ namespace rc
     {
         if (!child || child == newParent)
             return;
-        // Only groups may hold children.
         if (newParent && newParent->getObjectType() != ObjectType::GROUP)
             return;
-        // Reject cycles: newParent must not be child itself or a descendant of it.
         for (ISceneObject *p = newParent; p != nullptr; p = p->getParent())
             if (p == child)
                 return;
 
         ISceneObject *oldParent = child->getParent();
-        // A same-parent move only reorders siblings: world and parent are
-        // unchanged, so the local transform must be left exactly as-is (a
-        // recompute would only inject floating-point drift).
         const bool sameParent = (oldParent == newParent);
 
-        // Snapshot the current world transform so the object stays put visually
-        // across an actual reparent.
         const Vector3f wPos = child->getPosition();
         const Vector3f wRot = child->getRotation();
         const Vector3f wScale = child->getScale();
@@ -157,7 +148,6 @@ namespace rc
                 const Vector3f pRot = newParent->getRotation();
                 const Vector3f pScale = newParent->getScale();
 
-                // Inverse of the flatten compose, so world stays fixed.
                 child->setLocalScale(compDiv(wScale, pScale));
                 child->setLocalRotation(wRot - pRot);
                 child->setLocalPosition(compDiv(inverseRotate(wPos - pPos, degToRad(pRot)), pScale));
@@ -175,9 +165,6 @@ namespace rc
     {
         if (!object)
             return (false);
-        // Up-cast each owning pointer to the shared base to compare identity;
-        // ISceneObject is a virtual base, so a downcast of `object` is not
-        // available here and would be undefined for an already-freed pointer.
         for (const IPrimitive *primitive : this->_primitives)
             if (static_cast<const ISceneObject *>(primitive) == object)
                 return (true);
@@ -194,9 +181,6 @@ namespace rc
     {
         if (!object)
             return;
-        // Snapshot the children before recursing: the recursive delete frees
-        // them but leaves this node's own child vector untouched, so a copy is
-        // safe either way.
         const std::vector<ISceneObject *> children = object->getChildren();
         for (ISceneObject *child : children)
             this->destroyObjectSubtree(child);
@@ -206,8 +190,6 @@ namespace rc
             case ObjectType::PRIMITIVE:
                 for (auto it = this->_primitives.begin(); it != this->_primitives.end(); ++it)
                     if (static_cast<ISceneObject *>(*it) == object) { this->_primitives.erase(it); break; }
-                // Infinite primitives (e.g. planes) also live in this cache until
-                // the next buildBvh(); drop the pointer now so nothing dangles.
                 for (auto it = this->_infinitePrimitives.begin(); it != this->_infinitePrimitives.end(); ++it)
                     if (static_cast<ISceneObject *>(*it) == object) { this->_infinitePrimitives.erase(it); break; }
                 break;
@@ -228,10 +210,6 @@ namespace rc
         if (!object)
             return;
         this->_mutex.lock();
-        // Guard against a double removal (e.g. a group and one of its
-        // descendants both queued for deletion): once the group's subtree is
-        // freed the descendant is no longer owned, so skip it rather than touch
-        // freed memory.
         if (this->isOwned(object))
         {
             ISceneObject *parent = object->getParent();
@@ -253,12 +231,6 @@ namespace rc
             std::vector<std::array<int, 3>> faces;
         };
 
-        // Generic surface tessellation: cast rays from a UV sphere of directions
-        // toward the primitive's centre and keep the first hit. Produces standard
-        // UV-sphere topology (two poles + rings). Works for any star-shaped
-        // primitive w.r.t. its centre (cube, sphere, cone, cylinder); non-convex
-        // shapes (torus, tanglecube) are approximated. Per-vertex normals come
-        // from the surface hit, so the mesh shades smoothly.
         bool tessellatePrimitive(const IPrimitive *prim, int stacks, int slices, TessMesh &out)
         {
             AABB box = prim->bounding_box();
@@ -317,9 +289,6 @@ namespace rc
             return (!out.faces.empty());
         }
 
-        // Exact 8-vertex / 12-triangle tessellation of a cube (flat faces), so a
-        // converted cube stays a proper box you can edit corner by corner instead
-        // of a dense generic sampling.
         bool tessellateCube(const Cube *cube, TessMesh &out)
         {
             Vector3f corners[8];
@@ -358,8 +327,6 @@ namespace rc
                 file << "v " << v.x << " " << v.y << " " << v.z << "\n";
             for (const Vector3f &n : m.normals)
                 file << "vn " << n.x << " " << n.y << " " << n.z << "\n";
-            // With per-vertex normals the faces reference them (smooth shading);
-            // without, plain "f a b c" leaves the faces flat (hard edges, e.g. a cube).
             const bool smooth = !m.normals.empty();
             for (const std::array<int, 3> &t : m.faces)
             {
@@ -378,12 +345,10 @@ namespace rc
     {
         if (!primitive || !primitive->isFinite())
             return (nullptr);
-        // Already a vertex-editable primitive (mesh / triangle): nothing to do.
         if (dynamic_cast<IEditablePrimitive *>(primitive))
             return (nullptr);
 
         TessMesh tess;
-        // A cube has an exact 8-corner form; everything else is sampled generically.
         if (const Cube *cube = dynamic_cast<const Cube *>(primitive))
         {
             if (!tessellateCube(cube, tess))
@@ -409,15 +374,12 @@ namespace rc
         if (!writeObjFile(path, tess))
             return (nullptr);
 
-        // Read what we need before removeObject() frees the primitive.
         const Material *material = primitive->getMaterial();
         const std::string name = primitive->getName();
 
         Mesh *mesh = new Mesh(name, path, center, Vector3f(0.0f, 0.0f, 0.0f), Vector3f(1.0f, 1.0f, 1.0f), material);
         this->addPrimitive(mesh);
         this->removeObject(primitive);
-        // Rebuild immediately so the freed primitive can never be reached through
-        // a stale BVH. The caller still refreshes the viewport.
         this->buildBvh();
         return (mesh);
     }
@@ -451,8 +413,6 @@ namespace rc
 
         result.name = name;
         this->_materials.emplace(name, result);
-        // Every freshly created material joins the market so it can be reused
-        // from any scene later (see MaterialLibrary / the market window).
         MaterialLibrary::save(this->_materials[name]);
         return (&this->_materials[name]);
     }
@@ -526,8 +486,6 @@ namespace rc
 
         if (object->getParent() == nullptr)
         {
-            // Roots keep their existing world transform untouched, so un-grouped
-            // scenes are unchanged (the pass is a no-op for them).
             worldPos = object->getPosition();
             worldRot = object->getRotation();
             worldScale = object->getScale();
@@ -562,7 +520,6 @@ namespace rc
         this->_mutex.lock();
         std::vector<BVHBuildItem> finitePrimitives;
 
-        // Resolve world transforms from the graph before reading bounding boxes.
         this->flattenGraph();
         this->_infinitePrimitives.clear();
         for (auto *primitive : this->_primitives)

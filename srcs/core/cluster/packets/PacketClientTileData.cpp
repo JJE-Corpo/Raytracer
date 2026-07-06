@@ -25,9 +25,6 @@ namespace rc
         this->end_x = buffer.readUInt32();
         this->end_y = buffer.readUInt32();
 
-        // Reject bounds that would underflow (end < start) or claim more pixels
-        // than the payload actually carries, so we never reserve a bogus size or
-        // read past the buffer. Each pixel is 3 floats = 12 bytes.
         if (this->end_x < this->start_x || this->end_y < this->start_y)
             throw std::runtime_error("Invalid tile bounds in tile data packet");
 

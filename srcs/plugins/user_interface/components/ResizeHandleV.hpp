@@ -1,11 +1,6 @@
 //
 // Created by jazema on 7/1/26.
 //
-// Horizontal splitter: a thin, grabbable strip used to resize stacked sections
-// by dragging the divider between them up/down. Mirror of ResizeHandle (which
-// drags a vertical edge / X); this one drags a horizontal edge / Y and reports
-// the new edge position through onResize.
-//
 
 #ifndef RESIZEHANDLEV_HPP
 #define RESIZEHANDLEV_HPP
@@ -21,7 +16,6 @@ namespace rc
 {
     struct ResizeHandleV : Component
     {
-        // Called with the new edge Y (in window space) while dragging.
         std::function<void(float)> onResize;
 
         bool dragging = false;
@@ -29,7 +23,6 @@ namespace rc
         static constexpr float GRAB = 4.f;    // half-height of the interactive strip
         static constexpr float VISUAL = 1.f;  // thickness of the drawn divider line
 
-        // Place the divider at y, spanning [left, left + width].
         void setBounds(float y, float left, float width)
         {
             this->_y = y;

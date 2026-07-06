@@ -96,8 +96,6 @@ namespace rc
         for (const auto &property : primitive->getProperties())
             writeProperty(object, property.first, property.second.first, property.second.second);
 
-        // An editable primitive (Mesh, Cube, ...) persists its interactive vertex
-        // edits as object-space overrides re-applied on top of the base geometry.
         if (const IEditablePrimitive *editable = dynamic_cast<const IEditablePrimitive *>(primitive))
         {
             const std::map<std::size_t, Vector3f> overrides = editable->getVertexOverrides();
@@ -115,9 +113,6 @@ namespace rc
             }
         }
 
-        // Nested objects serialize their LOCAL transform so the hierarchy round-
-        // trips. Roots keep the world values getProperties() wrote above (local ==
-        // world for them), preserving byte-for-byte flat-scene output.
         if (primitive->getParent() != nullptr)
         {
             object["position"] = vector3fJson(primitive->getLocalPosition());
@@ -150,7 +145,6 @@ namespace rc
             default:
                 std::cerr << "Unknown light type, cannot register" << std::endl;
         }
-        // Nested lights serialize their local transform (see primitiveJson).
         if (light->getParent() != nullptr)
         {
             if (light->getKind() == LightKind::DIRECTIONAL)
@@ -217,8 +211,6 @@ namespace rc
         };
         root["camera"] = cameraJson(&scene->getCamera());
 
-        // Walk the top-level nodes; serializeObject recurses into group children.
-        // Top-level order matches load order, so flat scenes round-trip cleanly.
         root["objects"] = json::array();
         for (ISceneObject *object : scene->getRoots())
         {

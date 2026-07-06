@@ -142,8 +142,6 @@ void rc::ObjParser::parseFace(const std::string &line, std::size_t line_number)
     v1 = v1 + this->_position;
     v2 = v2 + this->_position;
 
-    // Record the raw triangle (with vertex normals when the file provides them).
-    // Normals only rotate: uniform scale and translation leave them unchanged.
     ObjTriangle raw;
     raw.v0 = v0;
     raw.v1 = v1;
