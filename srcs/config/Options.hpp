@@ -40,16 +40,16 @@ namespace rc
                 "Options:\n"
                 "  -h, --help              Show this help message and exit\n"
                 "  -v, --version           Show version information and exit\n"
-                "  -r, --render [NAME]     Headless mode: render the scene to a PPM file\n"
-                "                          without launching the UI. Optional NAME (a .ppm\n"
-                "                          file) sets the output (default: render.ppm)\n"
+                "  -r, --render [NAME]     Headless mode: render the scene to a PNG file\n"
+                "                          without launching the UI. Optional NAME (a .png\n"
+                "                          file) sets the output (default: render.png)\n"
                 "      --server [PORT]     Launch the UI and start a cluster server.\n"
                 "                          Optional PORT sets the listening port (default: auto)\n"
                 "      --connect IP PORT   Launch the UI and join the cluster server at IP:PORT\n"
                 "\n"
                 "Examples:\n"
                 "  " << program << " scenes/demo.cfg\n"
-                "  " << program << " -r output.ppm scenes/demo.cfg\n"
+                "  " << program << " -r output.png scenes/demo.cfg\n"
                 "  " << program << " --server 8080 scenes/demo.cfg\n"
                 "  " << program << " --connect 127.0.0.1 8080 scenes/demo.cfg\n";
         }
@@ -59,9 +59,9 @@ namespace rc
             return (!arg.empty() && arg[0] == '-');
         }
 
-        bool endsWithPpm(const std::string &arg)
+        bool endsWithPng(const std::string &arg)
         {
-            return (arg.size() >= 4 && arg.compare(arg.size() - 4, 4, ".ppm") == 0);
+            return (arg.size() >= 4 && arg.compare(arg.size() - 4, 4, ".png") == 0);
         }
 
         bool parsePort(const std::string &arg, size_t &out)
@@ -102,7 +102,7 @@ namespace rc
                 if (arg == "-r" || arg == "--render")
                 {
                     headless = true;
-                    if (i + 1 < args.size() && !isFlag(args[i + 1]) && endsWithPpm(args[i + 1]))
+                    if (i + 1 < args.size() && !isFlag(args[i + 1]) && endsWithPng(args[i + 1]))
                         renderOutput = args[++i];
                     continue;
                 }
