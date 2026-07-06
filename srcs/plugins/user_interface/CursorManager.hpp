@@ -30,6 +30,7 @@ namespace rc
             sf::Cursor _notAllowed;
             sf::Cursor _resizeH;
             sf::Cursor _resizeV;
+            sf::Cursor _move;
     };
 }
 

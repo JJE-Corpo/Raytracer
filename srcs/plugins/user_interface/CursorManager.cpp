@@ -15,6 +15,7 @@ namespace rc
         this->_notAllowed.loadFromSystem(sf::Cursor::NotAllowed);
         this->_resizeH.loadFromSystem(sf::Cursor::SizeHorizontal);
         this->_resizeV.loadFromSystem(sf::Cursor::SizeVertical);
+        this->_move.loadFromSystem(sf::Cursor::SizeAll);
     }
 
     void CursorManager::apply(sf::RenderWindow &window, CursorType type) const
@@ -25,6 +26,7 @@ namespace rc
                         type == CursorType::TEXT ? this->_text :
                         type == CursorType::RESIZE_H ? this->_resizeH :
                         type == CursorType::RESIZE_V ? this->_resizeV :
+                        type == CursorType::MOVE ? this->_move :
                         this->_notAllowed);
 
         window.setMouseCursor(cursor);
