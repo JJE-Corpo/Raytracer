@@ -93,7 +93,6 @@ namespace rc
                 if (this->fetchRequested.exchange(false))
                     this->doFetch();
 
-                // Texture downloads take priority so a clicked "Add" resolves fast.
                 int texJob = this->nextTextureJob();
                 if (texJob >= 0)
                 {
@@ -111,7 +110,6 @@ namespace rc
             }
         }
 
-        // Ask the worker to download the full-res texture for `index`.
         void requestTexture(std::size_t index)
         {
             std::lock_guard<std::mutex> lock(this->mutex);
@@ -317,8 +315,6 @@ namespace rc
             return (dir.string());
         }
 
-        // Pick a sane resolution node from a Poly Haven map entry: prefer 1k/2k
-        // so downloads stay small, else fall back to whatever exists.
         static const nlohmann::json *pickResolution(const nlohmann::json &mapNode)
         {
             if (!mapNode.is_object())
@@ -332,8 +328,6 @@ namespace rc
             return (nullptr);
         }
 
-        // Fetch the asset's file listing, locate the diffuse/albedo map, download
-        // it to ~/.raytracer/textures and return the saved path in `outPath`.
         static bool downloadTexture(const std::string &id, std::string &outPath)
         {
             std::string listing;

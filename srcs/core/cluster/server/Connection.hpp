@@ -48,9 +48,6 @@ namespace rc
 
             int getFd();
 
-            // Count of tile-data packets this client has sent back (a proxy for
-            // how much render work it has contributed). Cheap to read from the
-            // UI thread for the server status panel.
             uint64_t getTilesRendered() const;
             void incrementTilesRendered();
 

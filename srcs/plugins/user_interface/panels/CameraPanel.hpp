@@ -19,8 +19,6 @@ namespace rc
 
             void setFont(sf::Font &font) override;
 
-            // Loads the camera's position/rotation into the fields and wires their
-            // onValidate callbacks to write straight back into it.
             void rebuild(ICamera *camera);
 
             void layout(float x, float y, float width);

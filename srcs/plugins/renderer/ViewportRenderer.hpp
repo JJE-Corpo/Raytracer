@@ -19,9 +19,6 @@ namespace rc
     {
         private:
             Render _render = {0, 0, std::vector<Color>()};
-            // Cached geometry pass: base colors and the primitive hit at each pixel.
-            // Reused across overlay-only (selection/hover) changes so those never
-            // trigger a full re-raytrace of the scene.
             std::vector<Color> _baseColors;
             std::vector<const IPrimitive *> _primitiveIds;
             mutable std::mutex _renderMutex;
@@ -35,16 +32,8 @@ namespace rc
             Vector3f _lastCameraRotation = {0, 0, 0};
             double _lastCameraFov = 0.0;
             int _lastSamplesPerPixel = -1;
-            // Set when the last geometry pass was a coarse (draft) render done
-            // while the camera was moving; forces one full-resolution refine pass
-            // on the next frame once the camera settles.
             bool _pendingRefine = false;
-            // Set after a crisp full-resolution pass; schedules one edge-adaptive
-            // anti-aliasing pass on the next idle frame to smooth silhouettes.
             bool _pendingAA = false;
-            // Set by markSceneDirty() when the scene contents change without a
-            // camera move; forces the next geometry pass so edits made in the
-            // object panel (transform, material, light) show up immediately.
             bool _sceneDirty = false;
             std::vector<const ISceneObject *> _selection;
             size_t _selectionVersion = 0;

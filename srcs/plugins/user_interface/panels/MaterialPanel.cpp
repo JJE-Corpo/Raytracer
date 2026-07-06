@@ -17,9 +17,6 @@
 
 namespace
 {
-    // Deliberately generous double-click window, matching the hierarchy panel:
-    // a first (selection) click can stall the UI thread on a synchronous
-    // viewport re-render, inflating the measured gap between the two clicks.
     constexpr int NAME_DOUBLE_CLICK_MS = 700;
     constexpr float NAME_FIELD_HEIGHT = 18.f;
 }
@@ -50,7 +47,6 @@ namespace rc
         if (!this->_materialModelSelector.enabled)
             return;
 
-        // While the name is being edited the field owns the interaction.
         if (this->_nameField.active)
         {
             this->_nameField.update(mouse);
@@ -77,11 +73,6 @@ namespace rc
 
         this->_materialName.setPosition({layout.x, layout.y});
 
-        // Region used both to hit-test the double-click that opens the rename and
-        // to place the edit field over the label. Kept a little wider than the
-        // text so short names still offer a comfortable target.
-        // min/max rather than std::clamp: if the panel is ever narrower than the
-        // 90px minimum, clamp's lo>hi precondition would be violated (UB).
         const float textWidth = this->_materialName.getLocalBounds().width;
         const float fieldWidth = std::min(std::max(textWidth + 24.f, 90.f), width);
         this->_nameRect = sf::FloatRect(layout.x, layout.y - 2.f, fieldWidth, NAME_FIELD_HEIGHT);
@@ -114,8 +105,6 @@ namespace rc
         this->_materialModelSelector.enabled = false;
         this->_baseColorPicker.enabled = false;
 
-        // A rebuild means the shown material may have changed; abandon any inline
-        // rename in progress so it can't commit onto the wrong material.
         if (this->_nameField.active)
             this->_nameField.cancel();
         this->_namePendingClick = false;
@@ -207,12 +196,10 @@ namespace rc
 
     bool MaterialPanel::isCapturing() const
     {
-        // An open name editor must keep keyboard focus, like the hierarchy rename.
         if (this->_nameField.isCapturing())
             return (true);
         if (this->_baseColorPicker.isCapturing())
             return (true);
-        // A slider whose inline value editor is open must keep keyboard focus.
         for (const auto &slider : this->_materialSliders)
             if (slider.isCapturing())
                 return (true);
@@ -224,8 +211,6 @@ namespace rc
         if (!this->_materialModelSelector.enabled)
             return (false);
 
-        // While renaming, the editor owns the interaction: typing, Enter (commit),
-        // Escape (cancel) and a left click outside the field (commit).
         if (this->_nameField.active)
             return (this->_nameField.handleEvent(event, mouse));
 
@@ -233,13 +218,9 @@ namespace rc
         for (auto &slider : this->_materialSliders)
             children.push_back(&slider);
 
-        // The router serves the color-picker pop-up first while it is open,
-        // so it consumes clicks that overlap the sliders underneath it.
         if (EventRouter::route(children, event, mouse) != nullptr)
             return (true);
 
-        // Nothing else took the event: a double-click on the name label starts
-        // an inline rename, the same gesture used for slider values.
         if (event.type == sf::Event::MouseButtonPressed
             && event.mouseButton.button == sf::Mouse::Left
             && this->_material
@@ -279,7 +260,6 @@ namespace rc
         const size_t last = value.find_last_not_of(" \t");
         const std::string trimmed = (first == std::string::npos) ? "" : value.substr(first, last - first + 1);
 
-        // A blank name is meaningless; keep the previous one.
         if (trimmed.empty())
             return;
 
@@ -287,8 +267,6 @@ namespace rc
         this->_material->name = trimmed;
         this->_materialName.setString(trimmed);
 
-        // Rename in the market too: drop the old file before writing the new one
-        // so a renamed material does not leave a stale entry behind.
         if (previousName != trimmed)
             MaterialLibrary::remove(previousName);
         this->persistMaterial();
@@ -302,8 +280,6 @@ namespace rc
 
     void MaterialPanel::draw(sf::RenderTarget &target, sf::RenderStates states) const
     {
-        // The label and its inline editor are mutually exclusive: while renaming
-        // the field stands in for the static text.
         if (this->_nameField.active)
             target.draw(this->_nameField, states);
         else

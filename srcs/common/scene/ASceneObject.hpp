@@ -1,7 +1,3 @@
-//
-// Shared base for scene-graph nodes.
-//
-
 #ifndef ASCENEOBJECT_HPP
 #define ASCENEOBJECT_HPP
 
@@ -12,12 +8,6 @@
 
 namespace rc
 {
-    // Owns the parent link, the child list and the LOCAL transform (relative to
-    // the parent). The WORLD transform used by rendering lives in each concrete
-    // leaf's own geometry fields via their getPosition/setPosition overrides;
-    // leaves inherit only the local/parent machinery from here. A Group has no
-    // geometry, so it stores its world transform in the _world* cache below and
-    // relies on ASceneObject's own world getters/setters.
     class ASceneObject : public virtual ISceneObject
     {
         protected:
@@ -45,11 +35,6 @@ namespace rc
             void insertChild(ISceneObject *child, std::size_t index) override;
             void removeChild(ISceneObject *child) override;
 
-            // For a parented node these return the authored, parent-relative
-            // values. For a root (no parent) local == world, so they delegate to
-            // the world getters/setters — that keeps the editor and serializer,
-            // which read/write local, correct for un-grouped objects with no
-            // separate seeding step.
             Vector3f getLocalPosition() const override { return this->_parent ? this->_localPosition : this->getPosition(); }
             Vector3f getLocalRotation() const override { return this->_parent ? this->_localRotation : this->getRotation(); }
             Vector3f getLocalScale() const override { return this->_parent ? this->_localScale : this->getScale(); }
@@ -57,8 +42,6 @@ namespace rc
             void setLocalRotation(const Vector3f &rotation) override;
             void setLocalScale(const Vector3f &scale) override;
 
-            // WORLD transform defaults (used by Group). Leaves override these to
-            // read/write their own geometry fields; the leaf override dominates.
             Vector3f getPosition() const override { return this->_worldPosition; }
             Vector3f getRotation() const override { return this->_worldRotation; }
             Vector3f getScale() const override { return this->_worldScale; }

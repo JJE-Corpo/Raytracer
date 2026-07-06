@@ -1,10 +1,6 @@
 //
 // Created by jazema on 7/1/26.
 //
-// Vertical splitter: a thin, grabbable strip used to resize a panel by dragging
-// its edge. It plugs into the event router like any other component (it captures
-// the pointer while dragging and reports a horizontal-resize cursor on hover).
-//
 
 #ifndef RESIZEHANDLE_HPP
 #define RESIZEHANDLE_HPP
@@ -20,7 +16,6 @@ namespace rc
 {
     struct ResizeHandle : Component
     {
-        // Called with the new edge position (in window space) while dragging.
         std::function<void(float)> onResize;
 
         bool dragging = false;
@@ -28,14 +23,12 @@ namespace rc
         static constexpr float GRAB = 5.f;    // half-width of the interactive strip
         static constexpr float VISUAL = 1.f;  // thickness of the drawn divider line
 
-        // Place the divider at x, spanning [top, top + height].
         void setBounds(float x, float top, float height)
         {
             this->_x = x;
             this->_bounds = sf::FloatRect(x - GRAB, top, GRAB * 2.f, height);
         }
 
-        // Allowed range for the edge position (clamped on drag).
         void setRange(float lo, float hi)
         {
             this->_min = lo;

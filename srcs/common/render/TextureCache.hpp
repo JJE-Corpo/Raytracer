@@ -65,9 +65,6 @@ namespace rc
         }
     };
 
-    // Header-only, thread-safe cache of decoded textures keyed by file path.
-    // Decoding uses stb_image so it works in the render path (no SFML there).
-    // The core binary and each renderer plugin link one stb_image_impl.cpp.
     class TextureCache
     {
         public:

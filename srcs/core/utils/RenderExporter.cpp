@@ -72,9 +72,6 @@ namespace rc
             appendBigEndian32(out, crc32(typed.data(), typed.size()));
         }
 
-        // Wrap the raw scanlines in a zlib stream made only of uncompressed
-        // ("stored") DEFLATE blocks. This keeps the encoder dependency-free
-        // while still producing a spec-compliant PNG.
         std::vector<uint8_t> zlibStore(const std::vector<uint8_t> &raw)
         {
             std::vector<uint8_t> out;

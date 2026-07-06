@@ -1,13 +1,6 @@
 //
 // Created by jazema on 7/1/26.
 //
-// Owns the stack of scrollable sidebar sections and the draggable dividers
-// between them. Each frame it decides which sections are visible (from the
-// current selection), distributes the available height by per-section weight
-// (persisted across selection changes), places sections + dividers, draws them
-// (clipped bodies -> divider lines -> unclipped pop-up overlay pass) and exposes
-// its interactive components to the EventRouter.
-//
 
 #ifndef SIDEBARSTACK_HPP
 #define SIDEBARSTACK_HPP
@@ -33,7 +26,6 @@ namespace rc
             Section &section(Slot slot);
             void setVisible(Slot slot, bool visible);
 
-            // Distribute [top, bottom] over the visible sections and place dividers.
             void layout(float width, float top, float bottom);
 
             void update(sf::Vector2i mouse);

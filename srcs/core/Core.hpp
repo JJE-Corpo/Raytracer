@@ -40,10 +40,6 @@ namespace rc
 
             std::atomic<bool> _renderRequested{};
 
-            // Set while we overwrite the watched scene file ourselves (Ctrl+S).
-            // The config-watcher poll loop skips its hot-reload while this is up,
-            // so our own save is never mistaken for an external edit (which would
-            // delete + reparse the scene out from under the live UI/renderer).
             std::atomic<bool> _suppressWatcherReload{false};
 
             std::atomic<bool> _running;
@@ -52,20 +48,12 @@ namespace rc
 
             std::string _renderOutputPath = "render.png";
 
-            // Undo/redo: full-scene JSON snapshots. _historyIndex points at the
-            // snapshot matching the live scene; entries after it are the redo
-            // tail. Camera state is diffed out (see historyCapture) and re-applied
-            // on restore so camera moves never create undo steps.
             std::vector<nlohmann::json> _history;
             int _historyIndex = -1;
             static constexpr std::size_t HISTORY_LIMIT = 100;
 
-            // Serialize the current scene, then restore a snapshot by swapping the
-            // live scene for a freshly parsed one (preserving the live camera).
             nlohmann::json snapshotScene() const;
             void restoreSnapshot(const nlohmann::json &snapshot);
-            // The camera-independent part of a snapshot, used to detect whether an
-            // edit actually changed anything worth recording.
             static std::string historySignature(const nlohmann::json &snapshot);
         public:
             Core();

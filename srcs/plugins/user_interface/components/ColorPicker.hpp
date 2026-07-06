@@ -77,15 +77,10 @@ namespace rc
 
             this->hexField.setFont(font);
             this->hexField.setCharacterSize(12);
-            // Accept only an optional leading '#' followed by up to six hex
-            // digits, so the field can never hold a string that is not a prefix
-            // of a valid colour.
             this->hexField.onType = [](const std::string &text)
             {
                 return (ColorPicker::isHexInput(text));
             };
-            // Enter just drops focus; the colour is already applied live as the
-            // sixth digit is typed (see tryApplyHex).
             this->hexField.onValidate = [this](const std::string &)
             {
                 this->tryApplyHex();
@@ -164,8 +159,6 @@ namespace rc
                         return true;
                     }
 
-                    // The hex field is routed first so a click inside it takes
-                    // focus and a click elsewhere in the popup drops that focus.
                     this->hexField.handleEvent(event, mouse);
                     this->red.handleEvent(event, mouse);
                     this->green.handleEvent(event, mouse);
@@ -183,8 +176,6 @@ namespace rc
                 return true;
             }
 
-            // Typing (and the caret/selection keys) is applied live: tryApplyHex
-            // updates the colour as soon as the field holds a complete hex code.
             if (this->hexField.handleEvent(event, mouse))
             {
                 this->tryApplyHex();
@@ -198,8 +189,6 @@ namespace rc
             return true;
         }
 
-        // Close the popup, dropping keyboard focus from the hex field and
-        // reformatting its text to the canonical "#RRGGBB" of the final colour.
         void close()
         {
             this->open = false;
@@ -269,8 +258,6 @@ namespace rc
             target.draw(this->swatch, states);
         }
 
-        // The open pop-up is drawn in the overlay pass so it can extend past a
-        // scrolling section without being clipped.
         void drawOverlay(sf::RenderTarget &target, sf::RenderStates states) const override
         {
             if (!this->open)
@@ -328,9 +315,6 @@ namespace rc
                 this->onChange(this->color);
         }
 
-        // Push the current colour back into every control. The hex field is left
-        // alone while it is focused so a resync never clobbers what the user is
-        // mid-way through typing.
         void syncFromColor()
         {
             this->red.setValue(this->color.r * 255.f);
@@ -340,9 +324,6 @@ namespace rc
                 this->hexField.setValue(this->formatHex());
         }
 
-        // Parse the hex field and, when it holds a complete colour, apply it to
-        // the sliders / preview and fire onChange - without resyncing the field
-        // itself (it is focused, so syncFromColor leaves its text untouched).
         void tryApplyHex()
         {
             ColorF parsed;
@@ -371,8 +352,6 @@ namespace rc
             return ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'));
         }
 
-        // Accepts any prefix of a valid "#RRGGBB": an optional leading '#'
-        // followed by at most six hex digits. Used to gate keystrokes.
         static bool isHexInput(const std::string &text)
         {
             size_t i = (!text.empty() && text[0] == '#') ? 1 : 0;
@@ -386,7 +365,6 @@ namespace rc
             return (digits <= 6);
         }
 
-        // A complete colour needs exactly six hex digits (the '#' is optional).
         static bool parseHexColor(const std::string &text, ColorF &out)
         {
             const std::string hex = (!text.empty() && text[0] == '#') ? text.substr(1) : text;

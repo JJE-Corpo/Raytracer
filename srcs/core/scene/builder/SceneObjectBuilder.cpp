@@ -158,7 +158,6 @@ namespace rc
             case ObjectType::LIGHT:
                 return this->_lightBuilder.build();
             case ObjectType::GROUP:
-                // Groups are constructed directly by the parser, not this builder.
                 return nullptr;
         }
         return nullptr;

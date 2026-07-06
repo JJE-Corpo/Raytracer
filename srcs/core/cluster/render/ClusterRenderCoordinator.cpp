@@ -106,8 +106,6 @@ namespace rc
             if (now - it->second.assigned >= timeout)
             {
                 this->_pending.push_front(it->second.job);
-                // Reserve reclaimed tiles for the local worker so a stalled
-                // client cannot keep re-grabbing the same tile indefinitely.
                 this->_timedOut.insert(it->first);
                 it = this->_inFlight.erase(it);
                 requeued = true;

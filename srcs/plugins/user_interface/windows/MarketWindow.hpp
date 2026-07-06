@@ -146,9 +146,6 @@ namespace rc
             }
         }
 
-        // Clicking "Add" on an online entry kicks off a background download of the
-        // full-res diffuse texture. The material is only queued into the scene once
-        // the download settles (see finalizeOnlineAdds), so the UI never blocks.
         void queueAddOnline(std::size_t index)
         {
             std::lock_guard<std::mutex> lock(this->onlineMarket.mutex);
@@ -161,9 +158,6 @@ namespace rc
             om.texState = OnlineMaterial::Tex::Queued;
         }
 
-        // Turn any online entry whose texture download has settled into a scene
-        // material (with the texture wired up when the download succeeded, or a
-        // flat average-colour fallback when it failed). Runs on the UI thread.
         void finalizeOnlineAdds()
         {
             std::vector<Material> ready;
@@ -619,7 +613,6 @@ namespace rc
         {
             sf::Vector2i mouse = sf::Mouse::getPosition(window);
 
-            // Hand finished texture downloads to the scene, whatever tab is open.
             this->finalizeOnlineAdds();
 
             searchField.update(mouse);

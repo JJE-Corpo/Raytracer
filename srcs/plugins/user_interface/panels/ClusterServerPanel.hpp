@@ -1,11 +1,3 @@
-//
-// Server-side cluster HUD: a compact card drawn over the host's viewport that
-// shows the listening port, the current render state and every connected client
-// (name, peer address, connection state and how many tiles it has rendered).
-// Header-only like the other lightweight UI pieces; owned and drawn by
-// DefaultScreen whenever the local node is hosting a cluster.
-//
-
 #ifndef CLUSTERSERVERPANEL_HPP
 #define CLUSTERSERVERPANEL_HPP
 
@@ -29,10 +21,6 @@ namespace rc
                 this->_text.setFont(font);
             }
 
-            // Mouse routing for the panel: the header minimize button toggles the
-            // body, dragging the rest of the header moves the whole panel, and any
-            // click on the card is swallowed so it never falls through to the
-            // scene. Returns true when the panel consumed the event.
             bool handleEvent(const sf::Event &event, sf::Vector2i mouse)
             {
                 const float mx = static_cast<float>(mouse.x);
@@ -60,8 +48,6 @@ namespace rc
                     }
                     if (this->_headerBounds.contains(mx, my))
                     {
-                        // Grab the header to drag the whole panel; remember where on
-                        // the card we grabbed so it does not jump under the cursor.
                         this->_dragging = true;
                         this->_placed = true;
                         this->_dragGrab = sf::Vector2f(mx - this->_cardBounds.left, my - this->_cardBounds.top);
@@ -80,8 +66,6 @@ namespace rc
                 return (false);
             }
 
-            // Cursor the host should show: a 4-way move over the draggable header
-            // (or mid-drag), a hand over the minimize button, arrow otherwise.
             CursorType getCursor() const
             {
                 if (this->_dragging || this->_headerHovered)
@@ -91,9 +75,6 @@ namespace rc
                 return (CursorType::ARROW);
             }
 
-            // Anchored by its top-right corner at (rightEdge, top) so it hugs the
-            // viewport's top-right. leftBound is the left edge of the content pane
-            // (the sidebar's right edge), so the panel can never cover the sidebar.
             void draw(sf::RenderTarget &window, const IClusterServer *server,
                 bool rendering, int currentSample, float rightEdge, float top, float leftBound = 0.f)
             {
@@ -115,9 +96,6 @@ namespace rc
                 const float fullHeight = headerH + bodyH + pad;
                 const float height = this->_collapsed ? headerH : fullHeight;
 
-                // Anchored to the top-right until the user drags it; once moved it
-                // keeps its own position. Clamp so it always stays on-screen (also
-                // after a window resize or dragging toward an edge).
                 const float winW = static_cast<float>(window.getSize().x);
                 const float winH = static_cast<float>(window.getSize().y);
                 const float maxX = std::max(leftBound, winW - width);
@@ -236,8 +214,6 @@ namespace rc
                 window.draw(this->_text);
             }
 
-            // A "Label            value" row with the label dimmed on the left and
-            // the value coloured on the right edge of the card.
             void drawRow(const std::string &label, const std::string &value, float x, float width, float pad,
                 LayoutY &pen, const sf::Color &valueColor, sf::RenderTarget &window)
             {
@@ -265,8 +241,6 @@ namespace rc
                     label += " (" + client.address + ")";
                 this->drawLine(label, x + pad + 12.f, pen.y, 12, theme::TEXT_SUBTLE, window);
 
-                // Connected clients show their tile contribution; others show why
-                // they are not rendering yet (pending handshake, refused, ...).
                 std::string right;
                 sf::Color rightColor;
                 if (client.state == ConnectionState::CONNECTED)
@@ -297,7 +271,6 @@ namespace rc
             sf::FloatRect _headerBounds;
             sf::FloatRect _cardBounds;
 
-            // Free-drag position (top-left). Anchored top-right until _placed.
             bool _placed = false;
             bool _dragging = false;
             sf::Vector2f _pos;
