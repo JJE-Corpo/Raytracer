@@ -79,9 +79,18 @@ namespace rc
 
             this->_readBuffer.data.erase(this->_readBuffer.data.begin(), this->_readBuffer.data.begin() + 6 + payloadSize);
 
-            auto packet = PacketFactory::createPacket(static_cast<PacketID>(packetId), payload);
-            if (packet)
-                packet->handle(*this);
+            // The framing above is length-prefixed, so a malformed payload does
+            // not desync the stream: drop just this packet and keep the client.
+            try
+            {
+                auto packet = PacketFactory::createPacket(static_cast<PacketID>(packetId), payload);
+                if (packet)
+                    packet->handle(*this);
+            }
+            catch (const std::exception &e)
+            {
+                this->log(std::string("Dropped malformed packet: ") + e.what());
+            }
         }
         return (true);
     }

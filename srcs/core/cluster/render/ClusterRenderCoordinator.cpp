@@ -13,7 +13,9 @@ namespace rc
         std::lock_guard lock(this->_mutex);
 
         this->_pending.clear();
+        this->_inFlight.clear();
         this->_completedTiles.clear();
+        this->_timedOut.clear();
         this->_currentSample = sample;
         this->_active = true;
         this->_cancelled = false;
@@ -48,19 +50,72 @@ namespace rc
             return (false);
         job = this->_pending.front();
         this->_pending.pop_front();
+        this->_inFlight[job.tile_id] = InFlight{job, std::chrono::steady_clock::now()};
         return (true);
     }
 
-    void ClusterRenderCoordinator::markComplete(const TileJob &job)
+    bool ClusterRenderCoordinator::popRemoteJob(TileJob &job)
+    {
+        std::lock_guard lock(this->_mutex);
+        for (auto it = this->_pending.begin(); it != this->_pending.end(); ++it)
+        {
+            if (this->_timedOut.count(it->tile_id) != 0)
+                continue;
+            job = *it;
+            this->_pending.erase(it);
+            this->_inFlight[job.tile_id] = InFlight{job, std::chrono::steady_clock::now()};
+            return (true);
+        }
+        return (false);
+    }
+
+    bool ClusterRenderCoordinator::markComplete(const TileJob &job)
     {
         std::lock_guard lock(this->_mutex);
 
+        if (!this->_active || this->_cancelled)
+            return (false);
         if (job.sample != this->_currentSample)
-            return ;
-        if (std::find(this->_completedTiles.begin(), this->_completedTiles.end(), job.tile_id) != this->_completedTiles.end())
-            return ;
+            return (false);
+        this->_inFlight.erase(job.tile_id);
+        if (this->_completedTiles.count(job.tile_id) != 0)
+            return (false);
         this->_completedTiles.insert(job.tile_id);
         if (this->isSampleCompleteLocked())
+            this->_cv.notify_all();
+        return (true);
+    }
+
+    void ClusterRenderCoordinator::requeueTimedOut(std::chrono::milliseconds timeout)
+    {
+        std::lock_guard lock(this->_mutex);
+
+        if (!this->_active || this->_cancelled)
+            return ;
+
+        const auto now = std::chrono::steady_clock::now();
+        bool requeued = false;
+
+        for (auto it = this->_inFlight.begin(); it != this->_inFlight.end();)
+        {
+            if (this->_completedTiles.count(it->first) != 0)
+            {
+                it = this->_inFlight.erase(it);
+                continue;
+            }
+            if (now - it->second.assigned >= timeout)
+            {
+                this->_pending.push_front(it->second.job);
+                // Reserve reclaimed tiles for the local worker so a stalled
+                // client cannot keep re-grabbing the same tile indefinitely.
+                this->_timedOut.insert(it->first);
+                it = this->_inFlight.erase(it);
+                requeued = true;
+                continue;
+            }
+            ++it;
+        }
+        if (requeued)
             this->_cv.notify_all();
     }
 
@@ -97,7 +152,9 @@ namespace rc
     {
         std::lock_guard lock(this->_mutex);
         this->_pending.clear();
+        this->_inFlight.clear();
         this->_completedTiles.clear();
+        this->_timedOut.clear();
         this->_active = false;
         this->_cancelled = true;
         this->_cv.notify_all();
