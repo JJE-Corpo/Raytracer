@@ -13,6 +13,7 @@
 #include "../../../common/scene/IScene.hpp"
 #include "../../../common/scene/ILight.hpp"
 #include "../../../common/scene/IPrimitive.hpp"
+#include "../../../common/scene/IEditablePrimitive.hpp"
 #include "../../../common/scene/ISceneObject.hpp"
 
 namespace rc
@@ -34,12 +35,56 @@ namespace rc
         this->_lightIntensityField.setFont(font);
         this->_lightIntensityField.setCharacterSize(12);
 
+        this->_vertexField.setLabel("Vertex");
+        this->_vertexField.setFont(font);
+        this->_vertexField.onValidate = [this](Axis axis, float value)
+        {
+            if (this->onVertexEdit)
+                return (this->onVertexEdit(axis, value));
+            return (false);
+        };
+
         this->_positionField.setLabel("Position");
         this->_positionField.setFont(font);
         this->_rotationField.setLabel("Rotation");
         this->_rotationField.setFont(font);
         this->_scaleField.setLabel("Scale");
         this->_scaleField.setFont(font);
+
+        this->_vertexNavLabel.setFont(font);
+        this->_vertexNavLabel.setCharacterSize(12);
+        this->_vertexNavLabel.setFillColor(theme::TEXT_WHITE);
+        this->_vertexNavLabel.setString("Point 1");
+        this->_vertexPrevButton.setFont(font);
+        this->_vertexPrevButton.setLabel("<");
+        this->_vertexPrevButton.onClick = [this]() { if (this->onVertexNavigate) this->onVertexNavigate(-1); };
+        this->_vertexNextButton.setFont(font);
+        this->_vertexNextButton.setLabel(">");
+        this->_vertexNextButton.onClick = [this]() { if (this->onVertexNavigate) this->onVertexNavigate(1); };
+
+        this->_scaleStepLabel.setFont(font);
+        this->_scaleStepLabel.setCharacterSize(12);
+        this->_scaleStepLabel.setFillColor(theme::TEXT_DIM);
+        this->_scaleStepLabel.setString("Size");
+        this->_scaleDownButton.setFont(font);
+        this->_scaleDownButton.setLabel("-");
+        this->_scaleUpButton.setFont(font);
+        this->_scaleUpButton.setLabel("+");
+
+        this->_convertToMeshButton.setFont(font);
+        this->_convertToMeshButton.setLabel("Convert to Mesh");
+        this->_convertToMeshButton.onClick = [this]() { if (this->onConvertToMesh) this->onConvertToMesh(); };
+
+        this->_gizmoMoveButton.setFont(font);
+        this->_gizmoMoveButton.setLabel("Move");
+        this->_gizmoMoveButton.active = true;
+        this->_gizmoMoveButton.onClick = [this]() { if (this->onGizmoModeChanged) this->onGizmoModeChanged(0); };
+        this->_gizmoRotateButton.setFont(font);
+        this->_gizmoRotateButton.setLabel("Rotate");
+        this->_gizmoRotateButton.onClick = [this]() { if (this->onGizmoModeChanged) this->onGizmoModeChanged(1); };
+        this->_gizmoScaleButton.setFont(font);
+        this->_gizmoScaleButton.setLabel("Scale");
+        this->_gizmoScaleButton.onClick = [this]() { if (this->onGizmoModeChanged) this->onGizmoModeChanged(2); };
 
         this->_materialLabel.setFont(font);
         this->_materialLabel.setCharacterSize(12);
@@ -58,6 +103,23 @@ namespace rc
 
         // this->_title.setPosition({layout.x, layout.y});
         // layout.next(24);
+
+        // Gizmo tool selector (Move / Rotate / Scale) across the top.
+        {
+            const float toolH = 22.0f;
+            const float toolGap = 4.0f;
+            const float toolW = (width - 2.0f * toolGap) / 3.0f;
+            this->_gizmoMoveButton.layout(layout.x, layout.y, toolW, toolH);
+            this->_gizmoRotateButton.layout(layout.x + toolW + toolGap, layout.y, toolW, toolH);
+            this->_gizmoScaleButton.layout(layout.x + 2.0f * (toolW + toolGap), layout.y, toolW, toolH);
+            layout.next(28);
+        }
+
+        if (this->_showVertexEditor)
+        {
+            this->_vertexField.layout(layout.x, layout.y, width);
+            layout.next(32);
+        }
 
         if (this->isLight)
         {
@@ -91,11 +153,61 @@ namespace rc
         this->_scaleField.layout(layout.x, layout.y, width);
         layout.next(32);
 
+        // Vertex navigator row (< Point N / total >), just above the size row.
+        if (this->_showVertexNav)
+        {
+            const float navBtnW = 26.0f;
+            const float navBtnH = 22.0f;
+            const float navGap = 6.0f;
+            this->_vertexNavLabel.setPosition(layout.x, layout.y + 3.0f);
+            this->_vertexPrevButton.layout(layout.x + width - 2.0f * navBtnW - navGap, layout.y, navBtnW, navBtnH);
+            this->_vertexNextButton.layout(layout.x + width - navBtnW, layout.y, navBtnW, navBtnH);
+            layout.next(28);
+        }
+
+        // Uniform grow / shrink row (right-aligned -/+ buttons).
+        const float stepBtnH = 22.0f;
+        const float stepBtnW = 34.0f;
+        const float stepGap = 6.0f;
+        this->_scaleStepLabel.setPosition(layout.x, layout.y + 3.0f);
+        this->_scaleDownButton.layout(layout.x + width - 2.0f * stepBtnW - stepGap, layout.y, stepBtnW, stepBtnH);
+        this->_scaleUpButton.layout(layout.x + width - stepBtnW, layout.y, stepBtnW, stepBtnH);
+        layout.next(28);
+
+        if (this->_showConvertToMesh)
+        {
+            this->_convertToMeshButton.layout(layout.x, layout.y, width, 24.0f);
+            layout.next(30);
+        }
+
         this->height = layout.y - y;
+    }
+
+    void ObjectPanel::setGizmoMode(int mode)
+    {
+        this->_gizmoMoveButton.active = (mode == 0);
+        this->_gizmoRotateButton.active = (mode == 1);
+        this->_gizmoScaleButton.active = (mode == 2);
+    }
+
+    void ObjectPanel::setVertexEditor(bool visible, const Vector3f &value)
+    {
+        this->_showVertexEditor = visible;
+        if (visible)
+            this->_vertexField.setValue(value);
+    }
+
+    void ObjectPanel::setVertexNavigator(bool visible, int index, int count)
+    {
+        this->_showVertexNav = visible;
+        if (visible)
+            this->_vertexNavLabel.setString("Point " + std::to_string(index + 1) + " / " + std::to_string(count));
     }
 
     void ObjectPanel::update(sf::Vector2i mouse)
     {
+        if (this->_showVertexEditor)
+            this->_vertexField.update(mouse);
         if (this->isLight)
         {
             this->_lightColorPicker.update(mouse);
@@ -107,9 +219,21 @@ namespace rc
         {
             slider.update(mouse);
         }
+        this->_gizmoMoveButton.update(mouse);
+        this->_gizmoRotateButton.update(mouse);
+        this->_gizmoScaleButton.update(mouse);
         this->_positionField.update(mouse);
         this->_rotationField.update(mouse);
         this->_scaleField.update(mouse);
+        if (this->_showVertexNav)
+        {
+            this->_vertexPrevButton.update(mouse);
+            this->_vertexNextButton.update(mouse);
+        }
+        this->_scaleDownButton.update(mouse);
+        this->_scaleUpButton.update(mouse);
+        if (this->_showConvertToMesh)
+            this->_convertToMeshButton.update(mouse);
     }
 
     void ObjectPanel::rebuild(const ISceneObject *currentObject)
@@ -118,6 +242,10 @@ namespace rc
 
         this->isLight = false;
         this->isPrimitive = false;
+        // Offer "Convert to Mesh" only for primitives that are not already
+        // vertex-editable (mesh / triangle already have movable vertices).
+        this->_showConvertToMesh = dynamic_cast<const IPrimitive *>(currentObject) != nullptr
+            && dynamic_cast<const IEditablePrimitive *>(currentObject) == nullptr;
 
         this->_lightColorPicker.onChange = nullptr;
         this->_lightIntensityField.onType = nullptr;
@@ -133,11 +261,13 @@ namespace rc
         if (asLight)
         {
             this->isLight = true;
-            this->_lightColorPicker.onChange = [currentObject](const ColorF &color)
+            this->_lightColorPicker.onChange = [this, currentObject](const ColorF &color)
             {
                 const auto *tmp = dynamic_cast<const ILight *>(currentObject);
                 auto *light = const_cast<ILight *>(tmp);
                 light->setColorF(color);
+                if (this->onSceneMutated)
+                    this->onSceneMutated();
             };
             this->_lightIntensityField.enabled = true;
             this->_lightIntensityField.setValue(std::to_string(asLight->getIntensity()));
@@ -149,7 +279,7 @@ namespace rc
                     return (false);
                 return (true);
             };
-            this->_lightIntensityField.onValidate = [asLight](const std::string &value)
+            this->_lightIntensityField.onValidate = [this, asLight](const std::string &value)
             {
                 if (!Utils::isFloat(value))
                     return (false);
@@ -157,6 +287,8 @@ namespace rc
                 if (result < 0)
                     result = 0;
                 const_cast<ILight *>(asLight)->setIntensity(result);
+                if (this->onSceneMutated)
+                    this->onSceneMutated();
                 return (true);
             };
         }
@@ -224,9 +356,11 @@ namespace rc
                 slider.setFont(this->_font);
                 slider.setRange(0.0f, 100.0f);
                 slider.setValue(std::stof(val.first));
-                slider.onChange = [_tmp, asPrimitive](const float value)
+                slider.onChange = [this, _tmp, asPrimitive](const float value)
                 {
                     const_cast<IPrimitive *>(asPrimitive)->setPropertyFloat(_tmp, value);
+                    if (this->onSceneMutated)
+                        this->onSceneMutated();
                 };
                 this->_objectSliders.push_back(slider);
             }
@@ -272,11 +406,41 @@ namespace rc
                 this->onSceneMutated();
             return (true);
         };
+
+        // -/+ : when a vertex is selected, grow/shrink that single vertex
+        // (onVertexScale); otherwise apply a uniform multiplicative step to the
+        // whole object's scale through the same setLocalScale + onSceneMutated
+        // path as the field, so meshes rebuild their geometry/BVH and the
+        // viewport re-traces.
+        this->_scaleDownButton.onClick = [this, obj]()
+        {
+            if (this->_showVertexEditor && this->onVertexScale)
+                this->onVertexScale(1.0f / 1.1f);
+            else
+                this->applyScaleStep(obj, 1.0f / 1.1f);
+        };
+        this->_scaleUpButton.onClick = [this, obj]()
+        {
+            if (this->_showVertexEditor && this->onVertexScale)
+                this->onVertexScale(1.1f);
+            else
+                this->applyScaleStep(obj, 1.1f);
+        };
+    }
+
+    void ObjectPanel::applyScaleStep(ISceneObject *object, float factor)
+    {
+        Vector3f scale = object->getLocalScale() * factor;
+        object->setLocalScale(scale);
+        this->_scaleField.setValue(scale);
+        if (this->onSceneMutated)
+            this->onSceneMutated();
     }
 
     bool ObjectPanel::isCapturing() const
     {
-        if (this->_lightColorPicker.isCapturing()
+        if ((this->_showVertexEditor && this->_vertexField.isCapturing())
+            || this->_lightColorPicker.isCapturing()
             || this->_materialDropdown.isCapturing()
             || this->_lightIntensityField.isCapturing()
             || this->_positionField.isCapturing()
@@ -293,6 +457,8 @@ namespace rc
     {
         std::vector<Component *> children;
 
+        if (this->_showVertexEditor)
+            children.push_back(&this->_vertexField);
         if (this->isLight)
         {
             children.push_back(&this->_lightColorPicker);
@@ -302,9 +468,21 @@ namespace rc
             children.push_back(&this->_materialDropdown);
         for (auto &slider : this->_objectSliders)
             children.push_back(&slider);
+        children.push_back(&this->_gizmoMoveButton);
+        children.push_back(&this->_gizmoRotateButton);
+        children.push_back(&this->_gizmoScaleButton);
         children.push_back(&this->_positionField);
         children.push_back(&this->_rotationField);
         children.push_back(&this->_scaleField);
+        if (this->_showVertexNav)
+        {
+            children.push_back(&this->_vertexPrevButton);
+            children.push_back(&this->_vertexNextButton);
+        }
+        children.push_back(&this->_scaleDownButton);
+        children.push_back(&this->_scaleUpButton);
+        if (this->_showConvertToMesh)
+            children.push_back(&this->_convertToMeshButton);
 
         // Open pop-ups (color picker, material dropdown) capture events and
         // are served first, so their clicks no longer leak to the sliders
@@ -316,14 +494,31 @@ namespace rc
     {
         // target.draw(this->_title, states);
 
+        if (this->_showVertexEditor)
+            target.draw(this->_vertexField, states);
+
         for (auto &slider : this->_objectSliders)
         {
             target.draw(slider, states);
         }
 
+        target.draw(this->_gizmoMoveButton, states);
+        target.draw(this->_gizmoRotateButton, states);
+        target.draw(this->_gizmoScaleButton, states);
         target.draw(this->_positionField, states);
         target.draw(this->_rotationField, states);
         target.draw(this->_scaleField, states);
+        if (this->_showVertexNav)
+        {
+            target.draw(this->_vertexNavLabel, states);
+            target.draw(this->_vertexPrevButton, states);
+            target.draw(this->_vertexNextButton, states);
+        }
+        target.draw(this->_scaleStepLabel, states);
+        target.draw(this->_scaleDownButton, states);
+        target.draw(this->_scaleUpButton, states);
+        if (this->_showConvertToMesh)
+            target.draw(this->_convertToMeshButton, states);
 
         if (this->isLight)
         {
@@ -382,7 +577,18 @@ namespace rc
             }
         }
 
-        const std::vector<Component *> fields = {&this->_positionField, &this->_rotationField, &this->_scaleField};
+        std::vector<Component *> fields = {&this->_gizmoMoveButton, &this->_gizmoRotateButton,
+            &this->_gizmoScaleButton, &this->_positionField, &this->_rotationField, &this->_scaleField,
+            &this->_scaleDownButton, &this->_scaleUpButton};
+        if (this->_showConvertToMesh)
+            fields.push_back(&this->_convertToMeshButton);
+        if (this->_showVertexNav)
+        {
+            fields.push_back(&this->_vertexPrevButton);
+            fields.push_back(&this->_vertexNextButton);
+        }
+        if (this->_showVertexEditor)
+            fields.push_back(&this->_vertexField);
 
         for (auto *field : fields)
         {

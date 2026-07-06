@@ -1,0 +1,66 @@
+{
+    "environment": {
+        "ambient": 0.4,
+        "diffuse": 0.6
+    },
+    "camera": {
+        "resolution": [900, 600],
+        "position": [0.0, -70.0, 26.0],
+        "rotation": [-12.0, 0.0, 0.0],
+        "fieldOfView": 60.0,
+        "samplesPerPixel": 8
+    },
+    "objects": [
+        {
+            "name": "Triangle",
+            "type": "triangle",
+            "vertex0": [-46.0, -4.0, 0.0],
+            "vertex1": [-8.0, -4.0, 0.0],
+            "vertex2": [-27.0, -4.0, 36.0],
+            "material": "Red"
+        },
+        {
+            "name": "Cube",
+            "type": "mesh",
+            "file": "tests/obj/cube.obj",
+            "position": [26.0, 10.0, 15.0],
+            "rotation": [0.0, 0.0, 20.0],
+            "scale": [14.0, 14.0, 14.0],
+            "material": "Blue"
+        },
+        {
+            "name": "Ground",
+            "type": "plane",
+            "axis": "z",
+            "position": [0.0, 0.0, -1.0],
+            "material": "Grey"
+        },
+        {
+            "name": "Key Light",
+            "type": "point_light",
+            "position": [120.0, -120.0, 170.0],
+            "color": [255, 244, 224],
+            "intensity": 2500000.0
+        }
+    ],
+    "materials": [
+        {
+            "name": "Red",
+            "model": "phong",
+            "base_color": [220, 70, 60]
+        },
+        {
+            "name": "Blue",
+            "model": "pbr",
+            "base_color": [70, 120, 230],
+            "metallic": 0.1,
+            "roughness": 0.4
+        },
+        {
+            "name": "Grey",
+            "model": "pbr",
+            "base_color": [60, 60, 66],
+            "roughness": 0.5
+        }
+    ]
+}

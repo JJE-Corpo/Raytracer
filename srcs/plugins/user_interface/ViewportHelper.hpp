@@ -13,6 +13,7 @@
 #include "../../common/scene/IScene.hpp"
 #include "../../common/Material.hpp"
 #include "../../common/Vector.hpp"
+#include "../../common/Ray.hpp"
 
 namespace rc
 {
@@ -101,6 +102,32 @@ namespace rc
 
                 pixel = {static_cast<int>(px + 0.5f), static_cast<int>(py + 0.5f)};
                 return true;
+            }
+
+            // Deterministic primary ray through the CENTRE of render pixel
+            // (px, py) -- unlike ICamera::generateRay it adds no sub-pixel
+            // jitter, so it is stable frame to frame (needed for dragging a
+            // vertex without it shivering). Matches the viewport camera basis.
+            static Ray rayThroughPixel(const ICamera &camera, int px, int py, int width, int height)
+            {
+                const Vector3f origin = camera.getPosition();
+                const Vector3f forward = camera.getForward();
+                const Vector3f right = camera.getRight();
+                Vector3f up = right.cross(forward);
+                up = normalize(up);
+
+                const float theta = static_cast<float>(camera.getFov()) * (3.14159265358979323846f / 180.0f);
+                const float viewport_height = 2.0f * std::tan(theta / 2.0f);
+                const float viewport_width = viewport_height
+                    * (static_cast<float>(width) / static_cast<float>(height));
+
+                const float sx = (static_cast<float>(px) + 0.5f) / static_cast<float>(width) - 0.5f;
+                const float sy = (static_cast<float>(py) + 0.5f) / static_cast<float>(height) - 0.5f;
+
+                Vector3f direction = forward
+                    + right * (viewport_width * sx)
+                    - up * (viewport_height * sy);
+                return (Ray(origin, direction.unit_vector()));
             }
 
             static const ILight *pickViewportLight(const IScene &scene, const ICamera &camera, const sf::Vector2i &pixel)

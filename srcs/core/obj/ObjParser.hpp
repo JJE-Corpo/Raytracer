@@ -2,6 +2,7 @@
 #ifndef OBJPARSER_HPP
 #define OBJPARSER_HPP
 
+#include <array>
 #include <exception>
 
 #include "../../common/scene/IScene.hpp"
@@ -38,6 +39,10 @@ namespace rc
             std::vector<Vector3f> _normals;
 
             std::vector<ObjTriangle> _rawTriangles;
+            // Per-face vertex indices into _vertices (parallel to _rawTriangles).
+            // Exposes the shared-vertex topology so callers such as the Mesh
+            // primitive can move a shared vertex across all incident faces.
+            std::vector<std::array<int, 3>> _faceVertexIndices;
             bool _emitObjects = true;
 
             std::size_t _triangleNumber = 0;
@@ -63,6 +68,11 @@ namespace rc
             // existing "obj" scene path is unchanged.
             void setEmitObjects(bool emit);
             const std::vector<ObjTriangle> &getTriangles() const;
+
+            // Object-space unique vertices (the raw `v` list, untransformed) and,
+            // parallel to getTriangles(), the vertex index triplet of each face.
+            const std::vector<Vector3f> &getVertices() const;
+            const std::vector<std::array<int, 3>> &getFaceVertexIndices() const;
     };
 
     class ObjParserException : public std::exception

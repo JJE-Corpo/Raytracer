@@ -6,9 +6,13 @@
 #include "../../../common/scene/ILight.hpp"
 #include "../../../common/Intersection.hpp"
 #include "../../../common/scene/IPrimitive.hpp"
+#include "../../../common/scene/IEditablePrimitive.hpp"
 #include "../../../common/ISelectionAwareRenderer.hpp"
 #include "../../../common/scene/IScene.hpp"
+#include "../../../common/Axis.hpp"
 #include <algorithm>
+#include <cmath>
+#include <cstddef>
 #include <limits>
 
 #include "../EventRouter.hpp"
@@ -135,58 +139,7 @@ namespace rc
         MenuItem saveItem;
         saveItem.setLabel("Save");
         saveItem.onClick = [&]() {
-            if (this->_isNewScene)
-            {
-                if (this->_exploratorJustClosed == true)
-                {
-                    this->_toastManager.push("Please close the current explorer window first", "An explorer window is already open.", ToastType::ERROR);
-                    return;
-                }
-
-                try
-                {
-                    this->_exploratorResult = "";
-                    this->_exploratorJustClosed = true;
-
-                    this->_exploratorOnClose = [&]()
-                    {
-                        if (!this->_exploratorResult.empty())
-                        {
-                            try
-                            {
-                                this->_coreAccess->saveScene(this->_exploratorResult);
-                                this->_toastManager.push("Scene saved", "Scene saved successfully.", ToastType::SUCCESS);
-                            }
-                            catch (const std::exception &e)
-                            {
-                                this->_toastManager.push("Error saving scene", e.what(), ToastType::ERROR);
-                            }
-                        }
-                        else
-                        {
-                            this->_toastManager.push("No file selected", "No file was selected.", ToastType::INFO);
-                        }
-                    };
-
-                    this->_exploratorWindow.create(*this->_font, ExploratorMode::SAVE, this->_exploratorResult);
-                }
-                catch(const std::exception& e)
-                {
-                    this->_toastManager.push("Error loading scene", e.what(), ToastType::ERROR);
-                }
-
-                return;
-            }
-
-            try
-            {
-                this->_coreAccess->saveScene(this->_coreAccess->getCurrentScenePath());
-                this->_toastManager.push("Scene saved", "Scene saved successfully.", ToastType::SUCCESS);
-            }
-            catch (const std::exception &e)
-            {
-                this->_toastManager.push("Error saving scene", e.what(), ToastType::ERROR);
-            }
+            this->triggerSave();
         };
 
         MenuItem saveAsItem;
@@ -291,7 +244,7 @@ namespace rc
         {
             try
             {
-                this->_coreAccess->getScene()->addDefaultPrimitive("plane");
+                this->addPrimitiveAtMarker("plane");
                 this->markViewportBvhDirty();
                 this->_toastManager.push("Plane added", "A new plane primitive has been added to the scene.", ToastType::SUCCESS);
             }
@@ -307,7 +260,7 @@ namespace rc
         {
             try
             {
-                this->_coreAccess->getScene()->addDefaultPrimitive("sphere");
+                this->addPrimitiveAtMarker("sphere");
                 this->markViewportBvhDirty();
                 this->_toastManager.push("Sphere added", "A new sphere primitive has been added to the scene.", ToastType::SUCCESS);
             }
@@ -323,7 +276,7 @@ namespace rc
         {
             try
             {
-                this->_coreAccess->getScene()->addDefaultPrimitive("cylinder");
+                this->addPrimitiveAtMarker("cylinder");
                 this->markViewportBvhDirty();
                 this->_toastManager.push("Cylinder added", "A new cylinder primitive has been added to the scene.", ToastType::SUCCESS);
             }
@@ -339,7 +292,7 @@ namespace rc
         {
             try
             {
-                this->_coreAccess->getScene()->addDefaultPrimitive("cone");
+                this->addPrimitiveAtMarker("cone");
                 this->markViewportBvhDirty();
                 this->_toastManager.push("Cone added", "A new cone primitive has been added to the scene.", ToastType::SUCCESS);
             }
@@ -355,7 +308,7 @@ namespace rc
         {
             try
             {
-                this->_coreAccess->getScene()->addDefaultPrimitive("triangle");
+                this->addPrimitiveAtMarker("triangle");
                 this->markViewportBvhDirty();
                 this->_toastManager.push("Triangle added", "A new triangle primitive has been added to the scene.", ToastType::SUCCESS);
             }
@@ -371,7 +324,7 @@ namespace rc
         {
             try
             {
-                this->_coreAccess->getScene()->addDefaultPrimitive("cube");
+                this->addPrimitiveAtMarker("cube");
                 this->markViewportBvhDirty();
                 this->_toastManager.push("Cube added", "A new cube primitive has been added to the scene.", ToastType::SUCCESS);
             }
@@ -387,7 +340,7 @@ namespace rc
         {
             try
             {
-                this->_coreAccess->getScene()->addDefaultPrimitive("fractal");
+                this->addPrimitiveAtMarker("fractal");
                 this->markViewportBvhDirty();
                 this->_toastManager.push("Fractal added", "A new fractal primitive has been added to the scene.", ToastType::SUCCESS);
             }
@@ -403,7 +356,7 @@ namespace rc
         {
             try
             {
-                this->_coreAccess->getScene()->addDefaultPrimitive("tanglecube");
+                this->addPrimitiveAtMarker("tanglecube");
                 this->markViewportBvhDirty();
                 this->_toastManager.push("Tanglecube added", "A new tanglecube primitive has been added to the scene.", ToastType::SUCCESS);
             }
@@ -419,7 +372,7 @@ namespace rc
         {
             try
             {
-                this->_coreAccess->getScene()->addDefaultPrimitive("torus");
+                this->addPrimitiveAtMarker("torus");
                 this->markViewportBvhDirty();
                 this->_toastManager.push("Torus added", "A new torus primitive has been added to the scene.", ToastType::SUCCESS);
             }
@@ -612,8 +565,71 @@ namespace rc
         this->_objectPanel.setFont(*this->_font);
         this->_objectPanel.onSceneMutated = [this]
         {
+            // Rebuild the scene BVH AND force the viewport to re-trace: the
+            // renderer only re-runs its geometry pass on a camera/selection
+            // change, so without this a transform edit (position/rotation/scale,
+            // incl. the -/+ size buttons) would rebuild the BVH but keep showing
+            // the cached shape until the camera moved.
             this->markViewportBvhDirty();
+            this->forceViewportRetrace();
         };
+        // Keyboard edit of the selected vertex's world coordinates, kept in sync
+        // with dragging. Applies straight onto the editable primitive.
+        this->_objectPanel.onVertexEdit = [this](Axis axis, float value) -> bool
+        {
+            if (!this->_editMode || !this->_editTarget || this->_selectedVertex < 0)
+                return (false);
+            Vector3f vertex = this->_editTarget->getVertex(static_cast<std::size_t>(this->_selectedVertex));
+            if (axis == Axis::X) vertex.x = value;
+            else if (axis == Axis::Y) vertex.y = value;
+            else if (axis == Axis::Z) vertex.z = value;
+            this->_editTarget->setVertex(static_cast<std::size_t>(this->_selectedVertex), vertex);
+            this->_editTarget->onGeometryChanged();
+            this->markViewportBvhDirty();
+            this->forceViewportRetrace();
+            return (true);
+        };
+        // -/+ buttons while a vertex is selected: move only that vertex, away
+        // from (factor > 1) or toward (factor < 1) the shape's centroid, so the
+        // selected point grows/shrinks while the rest of the geometry stays put.
+        this->_objectPanel.onVertexScale = [this](float factor) -> bool
+        {
+            if (!this->_editMode || !this->_editTarget || this->_selectedVertex < 0)
+                return (false);
+            const std::size_t count = this->_editTarget->getVertexCount();
+            if (count == 0)
+                return (false);
+            Vector3f centroid = {0.0f, 0.0f, 0.0f};
+            for (std::size_t i = 0; i < count; ++i)
+                centroid = centroid + this->_editTarget->getVertex(i);
+            centroid = centroid * (1.0f / static_cast<float>(count));
+
+            const Vector3f vertex = this->_editTarget->getVertex(static_cast<std::size_t>(this->_selectedVertex));
+            const Vector3f moved = centroid + (vertex - centroid) * factor;
+            this->_editTarget->setVertex(static_cast<std::size_t>(this->_selectedVertex), moved);
+            this->_editTarget->onGeometryChanged();
+            this->markViewportBvhDirty();
+            this->forceViewportRetrace();
+            this->syncVertexEditorField();
+            return (true);
+        };
+        // Object-panel arrows: step to the previous / next vertex of the shape.
+        this->_objectPanel.onVertexNavigate = [this](int direction)
+        {
+            this->navigateVertex(direction);
+        };
+        // "Convert to Mesh": bake the selected analytic primitive into an
+        // editable triangle mesh and select the result.
+        this->_objectPanel.onConvertToMesh = [this]
+        {
+            this->convertSelectionToMesh();
+        };
+        this->_objectPanel.onGizmoModeChanged = [this](int mode)
+        {
+            this->_gizmoMode = static_cast<GizmoMode>(mode);
+            this->_objectPanel.setGizmoMode(mode);
+        };
+        this->_objectPanel.setGizmoMode(static_cast<int>(this->_gizmoMode));
         this->_materialPanel.setFont(*this->_font);
 
         this->_sidebarResize.onResize = [this](float width)
@@ -709,7 +725,29 @@ namespace rc
 
         this->layoutSidebarResize(window);
 
+        // Detect a scene replaced outside our own undo/redo (startup, Open, a
+        // config reload). Drop selection/hover that pointed into the old scene
+        // and start a fresh undo baseline on the new one. onSceneRestored keeps
+        // _lastHistoryScene in step for our swaps, so those don't reach here.
+        IScene *liveScene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+        if (liveScene != this->_lastHistoryScene)
+        {
+            this->_hierarchyPanel.applyViewportSelection({});
+            this->clearHover();
+            this->syncSelectionToRenderer();
+            if (this->_coreAccess)
+                this->_coreAccess->historyReset();
+            this->_lastHistoryScene = liveScene;
+        }
+
         this->_hierarchyPanel.setScene(this->_coreAccess ? this->_coreAccess->getScene() : nullptr);
+
+        // Leave edit mode if the selection changed away from the edited object
+        // (hierarchy reselection, deletion, multi-select). Guards against acting
+        // on a stale/freed _editTarget.
+        if (this->_editMode && this->editableFromSelection() != this->_editTarget)
+            this->exitEditMode();
+
         this->refreshSidebarVisibility();
         this->_sidebar.layout(this->_sidebarWidth, MENU_HEIGHT, static_cast<float>(window.getSize().y));
         this->_sidebar.update(mouse);
@@ -757,6 +795,21 @@ namespace rc
         if (this->_activeRenderer)
             this->drawRenderer(window, this->_activeRenderer);
 
+        if (this->_viewMode == ViewMode::VIEWPORT)
+        {
+            this->drawEditOverlay(window);
+            switch (this->_gizmoMode)
+            {
+                case GizmoMode::MOVE: this->drawMoveGizmo(window); break;
+                case GizmoMode::ROTATE: this->drawRotationRings(window); break;
+                case GizmoMode::SCALE: this->drawScaleGizmo(window); break;
+            }
+            this->drawMarker(window);
+            this->drawAxisGizmo(window);
+        }
+        if (this->_movementMode && this->_viewMode == ViewMode::VIEWPORT)
+            this->drawMovementIndicator(window);
+
         this->_menuBar.layout(static_cast<float>(window.getSize().x));
         window.draw(this->_menuBar);
 
@@ -775,6 +828,49 @@ namespace rc
         window.draw(this->_rendererPanel);
     }
 
+    void DefaultScreen::drawMovementIndicator(sf::RenderWindow &window)
+    {
+        if (!this->_font)
+            return;
+
+        sf::Text label;
+        label.setFont(*this->_font);
+        label.setString("MOVEMENT MODE");
+        label.setCharacterSize(13);
+        label.setFillColor(theme::TEXT_WHITE);
+
+        // Badge geometry: a fixed height keeps the text and status dot vertically
+        // centred (SFML text bounds carry a baseline offset), and the width grows
+        // to fit the label.
+        const float padX = 12.0f;
+        const float dot = 8.0f;
+        const float gap = 8.0f;
+        const float badgeH = 26.0f;
+        const float badgeW = padX + dot + gap + label.getLocalBounds().width + padX;
+        const float margin = 14.0f;
+
+        // Anchor to the bottom-left of the viewport (right of the sidebar, above
+        // the window's bottom edge) - a conventional, unobtrusive HUD corner.
+        const sf::Vector2u size = window.getSize();
+        const float x = this->_sidebarWidth + margin;
+        const float y = static_cast<float>(size.y) - margin - badgeH;
+
+        sf::RectangleShape badge({badgeW, badgeH});
+        badge.setPosition(x, y);
+        badge.setFillColor(theme::withAlpha(theme::CHECKED, 235));
+        badge.setOutlineThickness(1.0f);
+        badge.setOutlineColor(theme::OUTLINE);
+        window.draw(badge);
+
+        sf::CircleShape statusDot(dot / 2.0f);
+        statusDot.setPosition(x + padX, y + (badgeH - dot) / 2.0f);
+        statusDot.setFillColor(theme::TEXT_WHITE);
+        window.draw(statusDot);
+
+        label.setPosition(x + padX + dot + gap, y + 5.0f);
+        window.draw(label);
+    }
+
     void DefaultScreen::syncSelectionToRenderer()
     {
         if (!this->_coreAccess)
@@ -790,6 +886,7 @@ namespace rc
             this->_objectPanel.setScene(this->_coreAccess->getScene());
         if (this->_hierarchyPanel.tryCast<const ISceneObject>())
            this->_objectPanel.rebuild(this->_hierarchyPanel.tryCast<const ISceneObject>());
+        this->syncVertexNavigator();
         if (this->_hierarchyPanel.isCameraSelected())
         {
             this->_cameraPanel.rebuild(&this->_coreAccess->getScene()->getCamera());
@@ -1021,6 +1118,13 @@ namespace rc
         if (this->_marketWindow.running)
             return;
 
+        // Global keyboard shortcuts (save / undo / redo) run before any routing
+        // so they win over the viewport and panels. handleShortcut returns true
+        // once it has consumed the event; an undo/redo may have swapped the scene
+        // object, so nothing below must touch the now-stale local state.
+        if (this->handleShortcut(event))
+            return;
+
         // Right mouse over the viewport is overloaded: a drag rotates the camera
         // (independently of the component routing below), while a plain click
         // (released without dragging past the threshold) opens the object
@@ -1041,6 +1145,16 @@ namespace rc
 
         if (event.type == sf::Event::MouseMoved && this->_rightMouseHeld && !this->_rightDragged)
         {
+            // Shift + right-click drops a 3D marker under the cursor instead of
+            // orbiting; the next primitive added from the menu spawns there.
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::LShift)
+                || sf::Keyboard::isKeyPressed(sf::Keyboard::RShift))
+            {
+                this->placeMarker(mouse);
+                return;
+            }
+            this->_rightMouseHeld = true;
+            this->_lastMouse = sf::Mouse::getPosition(window);
             const int dx = mouse.x - this->_rightPressMouse.x;
             const int dy = mouse.y - this->_rightPressMouse.y;
             if (dx * dx + dy * dy > RIGHT_CLICK_DRAG * RIGHT_CLICK_DRAG)
@@ -1068,15 +1182,121 @@ namespace rc
             }
         }
 
+        // 'M' toggles movement mode, which gates all camera controls (the
+        // right-drag look and the ZQSD fly keys). Only fires in the viewport and
+        // never while a text field / menu owns the keyboard, so typing 'm' into a
+        // field can't flip the mode.
+        if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::M
+            && !event.key.control && this->_viewMode == ViewMode::VIEWPORT
+            && !this->isKeyboardCaptured())
+            this->toggleMovementMode();
+
         // Latch fly-camera keys here, while the event is fresh and before the
         // frame's (possibly slow) render, so presses/releases are never missed.
         this->trackFlyKeys(event, mouse);
 
+        const bool viewportMode = this->_viewMode == ViewMode::VIEWPORT;
+
+        // Vertex edit mode: keep driving an in-progress drag no matter what the
+        // cursor is now over, and end it on release. Handled before component
+        // routing so a fast drag that strays onto a panel is never dropped.
+        if (this->_vertexDragActive)
+        {
+            if (event.type == sf::Event::MouseMoved)
+            {
+                this->applyVertexDrag(mouse);
+                return;
+            }
+            if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left)
+            {
+                this->endVertexDrag();
+                return;
+            }
+        }
+
+        // Move gizmo: keep driving an in-progress axis-arrow drag and end it on
+        // release, handled before component routing (same as the vertex drag).
+        if (this->_axisDragActive)
+        {
+            if (event.type == sf::Event::MouseMoved)
+            {
+                this->applyAxisDrag(mouse);
+                return;
+            }
+            if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left)
+            {
+                this->endAxisDrag();
+                return;
+            }
+        }
+
+        // Rotation gizmo: keep driving an in-progress ring drag and end it on
+        // release, handled before component routing (same as the vertex drag).
+        if (this->_rotDragActive)
+        {
+            if (event.type == sf::Event::MouseMoved)
+            {
+                this->applyRotationDrag(mouse);
+                return;
+            }
+            if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left)
+            {
+                this->endRotationDrag();
+                return;
+            }
+        }
+
+        // Scale gizmo: keep driving an in-progress scale-arrow drag and end it on
+        // release, handled before component routing (same as the vertex drag).
+        if (this->_scaleDragActive)
+        {
+            if (event.type == sf::Event::MouseMoved)
+            {
+                this->applyScaleDrag(mouse);
+                return;
+            }
+            if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left)
+            {
+                this->endScaleDrag();
+                return;
+            }
+        }
+
+        // Object move: keep driving an in-progress object drag and end it on
+        // release, handled before component routing (same as the vertex drag).
+        if (this->_objectDragActive)
+        {
+            if (event.type == sf::Event::MouseMoved)
+            {
+                this->applyObjectDrag(mouse);
+                return;
+            }
+            if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left)
+            {
+                this->endObjectDrag();
+                return;
+            }
+        }
+
+        // Tab toggles vertex edit mode for a selected editable primitive;
+        // Escape leaves it. Suppressed while a field/pop-up owns the input.
+        if (viewportMode && event.type == sf::Event::KeyPressed && !this->anyUiCapturing())
+        {
+            if (event.key.code == sf::Keyboard::Tab)
+            {
+                this->toggleEditMode();
+                return;
+            }
+            if (event.key.code == sf::Keyboard::Escape && this->_editMode)
+            {
+                this->exitEditMode();
+                return;
+            }
+        }
+
         // Build the set of top-level components that are live in the current view
         // mode, then let the router pick the single best one for this event
         // (menu bar and open pop-ups win over the panels and the viewport).
-        const bool viewportMode = this->_viewMode == ViewMode::VIEWPORT;
-
         std::vector<Component *> candidates = {&this->_contextMenu, &this->_menuBar, &this->_rendererPanel};
 
         if (viewportMode)
@@ -1117,17 +1337,101 @@ namespace rc
             event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left)
         {
             if (mouse.x > this->_sidebarWidth && mouse.y >= static_cast<int>(MENU_HEIGHT))
-                this->updateSelectionFromClick(mouse);
+            {
+                if (this->_editMode)
+                {
+                    // In edit mode a left click grabs the nearest vertex handle
+                    // (object selection is intentionally disabled); a miss just
+                    // clears the vertex selection.
+                    const int vertex = this->pickVertexHandle(mouse);
+                    if (vertex >= 0)
+                        this->beginVertexDrag(vertex);
+                    else
+                    {
+                        this->_selectedVertex = -1;
+                        this->syncVertexEditorField();
+                    }
+                }
+                else if (int axis = (this->_gizmoMode == GizmoMode::MOVE) ? this->pickGizmoAxis(mouse) : -1;
+                         axis >= 0)
+                {
+                    // Clicking a move-gizmo arrow grabs that axis: the current
+                    // selection is kept and the object slides along the axis only.
+                    this->beginAxisDrag(this->singleSelectedObject(), axis, mouse);
+                }
+                else if (int axis = (this->_gizmoMode == GizmoMode::ROTATE) ? this->pickRotationRing(mouse) : -1;
+                         axis >= 0)
+                {
+                    // Clicking a rotation ring grabs that axis: the object rotates
+                    // around it while the selection is kept.
+                    this->beginRotationDrag(this->singleSelectedObject(), axis, mouse);
+                }
+                else if (int axis = (this->_gizmoMode == GizmoMode::SCALE) ? this->pickGizmoAxis(mouse) : -1;
+                         axis >= 0)
+                {
+                    // Clicking a scale-gizmo arrow grabs that axis: the object is
+                    // scaled along it while the selection is kept.
+                    this->beginScaleDrag(this->singleSelectedObject(), axis, mouse);
+                }
+                else
+                {
+                    this->updateSelectionFromClick(mouse);
+
+                    // Double-click an editable primitive to jump into edit mode.
+                    const IPrimitive *prim = this->_hierarchyPanel.tryCast<const IPrimitive>();
+                    const ISceneObject *obj = this->_hierarchyPanel.tryCast<const ISceneObject>();
+                    IEditablePrimitive *editable = prim ? dynamic_cast<IEditablePrimitive *>(const_cast<IPrimitive *>(prim)) : nullptr;
+                    if (editable && obj && obj == this->_editClickObject
+                        && this->_editClickClock.getElapsedTime().asMilliseconds() < 350)
+                        this->enterEditMode(obj, editable);
+                    this->_editClickObject = obj;
+                    this->_editClickClock.restart();
+
+                    // Left-drag the object just clicked to move it in space (a
+                    // plain click with no drag is still just a selection). Skipped
+                    // in edit mode and when Ctrl (multi-select) is held.
+                    const bool ctrl = sf::Keyboard::isKeyPressed(sf::Keyboard::LControl)
+                        || sf::Keyboard::isKeyPressed(sf::Keyboard::RControl);
+                    const ISceneObject *underCursor = this->pickObjectAt(mouse);
+                    if (!this->_editMode && !ctrl && underCursor)
+                        this->beginObjectDrag(const_cast<ISceneObject *>(underCursor), mouse);
+                }
+            }
         }
 
-        // Track what's under the cursor so the viewport can highlight it, the
-        // same way the click fallback above picks the object to select.
+        // Track what's under the cursor so the viewport can highlight it. In edit
+        // mode this highlights the nearest vertex handle instead of an object.
         if (event.type == sf::Event::MouseMoved || event.type == sf::Event::MouseLeft)
         {
             if (viewportMode && consumer == nullptr && event.type == sf::Event::MouseMoved)
-                this->updateHoverFromMouse(mouse);
+            {
+                if (this->_editMode)
+                {
+                    this->_hoverVertex = this->pickVertexHandle(mouse);
+                    this->clearHover();
+                }
+                else
+                    this->updateHoverFromMouse(mouse);
+            }
             else
+            {
+                if (this->_editMode)
+                    this->_hoverVertex = -1;
                 this->clearHover();
+            }
+        }
+
+        // Fold whatever this event changed into the undo history. Only commit-
+        // like events snapshot (a press for menu/context actions, a release to
+        // end a drag, a key release for typed edits), and historyCapture() is a
+        // no-op when nothing actually changed -- so a slider drag becomes a
+        // single undo step and plain selections/camera moves add none.
+        if (viewportMode && this->_coreAccess
+            && (event.type == sf::Event::MouseButtonPressed
+                || event.type == sf::Event::MouseButtonReleased
+                || event.type == sf::Event::KeyReleased))
+        {
+            this->_coreAccess->historyCapture();
         }
     }
 
@@ -1162,7 +1466,7 @@ namespace rc
         ICamera &camera = scene->getCamera();
         const sf::Vector2i mouse = sf::Mouse::getPosition(window);
 
-        if (this->_rightMouseHeld)
+        if (this->_movementMode && this->_rightMouseHeld)
         {
             sf::Vector2i delta = mouse - this->_lastMouse;
             this->_lastMouse = mouse;
@@ -1231,12 +1535,16 @@ namespace rc
             return;
         }
         // Releases always count, so a key can never stick regardless of where the
-        // cursor is; presses only start a fly while the viewport owns input, so
-        // typing into a focused field or panel never drives the camera.
+        // cursor is; presses only start a fly while movement mode is on and the
+        // viewport owns input, so typing into a focused field or panel never
+        // drives the camera. A press with Ctrl held is a shortcut (Ctrl+S/Z), not
+        // a fly key, so ignore it - otherwise Ctrl+Z would also nudge the camera
+        // forward (Z == forward).
         if (event.type == sf::Event::KeyReleased)
             this->setFlyKey(event.key.code, false);
-        else if (event.type == sf::Event::KeyPressed &&
-                 (this->_rightMouseHeld || this->isViewportCaptured(mouse)))
+        else if (event.type == sf::Event::KeyPressed && !this->_vertexDragActive && !this->_objectDragActive
+                 && !this->_axisDragActive && !this->_rotDragActive && !this->_scaleDragActive && !event.key.control &&
+                 this->_movementMode && (this->_rightMouseHeld || this->isViewportCaptured(mouse)))
             this->setFlyKey(event.key.code, true);
     }
 
@@ -1264,6 +1572,21 @@ namespace rc
         this->_keyDown = false;
     }
 
+    void DefaultScreen::toggleMovementMode()
+    {
+        this->_movementMode = !this->_movementMode;
+        // Drop any keys latched while flying so releasing the mode instantly
+        // stops the camera instead of coasting until the next physical key-up.
+        if (!this->_movementMode)
+            this->resetFlyKeys();
+        if (this->_movementMode)
+            this->_toastManager.push("Movement mode on",
+                "Right-drag to look, Z/Q/S/D + Space/Shift to fly.", ToastType::INFO);
+        else
+            this->_toastManager.push("Movement mode off",
+                "Camera controls are disabled.", ToastType::INFO);
+    }
+
     void DefaultScreen::prepareFrame()
     {
         this->_activeRenderer = nullptr;
@@ -1281,6 +1604,9 @@ namespace rc
             if (this->_viewportBvhDirty)
             {
                 this->_coreAccess->getScene()->buildBvh();
+                // The BVH being dirty means the scene contents changed; tell the
+                // viewport renderer to drop its cached frame so the edit shows up.
+                this->_activeRenderer->markSceneDirty();
                 this->_viewportBvhDirty = false;
             }
             this->_activeRenderer->renderScene(*this->_coreAccess->getScene());
@@ -1290,6 +1616,155 @@ namespace rc
     void DefaultScreen::markViewportBvhDirty()
     {
         this->_viewportBvhDirty = true;
+        // A dirty BVH always means the geometry changed, so force the viewport to
+        // re-trace: the ViewportRenderer otherwise only refreshes on a camera or
+        // selection change and would keep showing the cached image (e.g. after
+        // adding or deleting an object) until the camera moved.
+        this->forceViewportRetrace();
+    }
+
+    void DefaultScreen::triggerSave()
+    {
+        // A never-saved scene has no path yet, so route to the save dialog (same
+        // flow as "Save as"); an already-saved one overwrites its file directly.
+        if (this->_isNewScene)
+        {
+            if (this->_exploratorJustClosed == true)
+            {
+                this->_toastManager.push("Please close the current explorer window first", "An explorer window is already open.", ToastType::ERROR);
+                return;
+            }
+
+            try
+            {
+                this->_exploratorResult = "";
+                this->_exploratorJustClosed = true;
+
+                this->_exploratorOnClose = [&]()
+                {
+                    if (!this->_exploratorResult.empty())
+                    {
+                        try
+                        {
+                            this->_coreAccess->saveScene(this->_exploratorResult);
+                            this->_toastManager.push("Scene saved", "Scene saved successfully.", ToastType::SUCCESS);
+                        }
+                        catch (const std::exception &e)
+                        {
+                            this->_toastManager.push("Error saving scene", e.what(), ToastType::ERROR);
+                        }
+                    }
+                    else
+                    {
+                        this->_toastManager.push("No file selected", "No file was selected.", ToastType::INFO);
+                    }
+                };
+
+                this->_exploratorWindow.create(*this->_font, ExploratorMode::SAVE, this->_exploratorResult);
+            }
+            catch(const std::exception& e)
+            {
+                this->_toastManager.push("Error loading scene", e.what(), ToastType::ERROR);
+            }
+
+            return;
+        }
+
+        try
+        {
+            this->_coreAccess->saveScene(this->_coreAccess->getCurrentScenePath());
+            this->_toastManager.push("Scene saved", "Scene saved successfully.", ToastType::SUCCESS);
+        }
+        catch (const std::exception &e)
+        {
+            this->_toastManager.push("Error saving scene", e.what(), ToastType::ERROR);
+        }
+    }
+
+    bool DefaultScreen::isKeyboardCaptured()
+    {
+        if (this->_menuBar.isCapturing() || this->_contextMenu.isCapturing())
+            return (true);
+
+        std::vector<Component *> components;
+        this->_sidebar.collectComponents(components);
+        for (Component *component : components)
+            if (component && component->isCapturing())
+                return (true);
+        return (false);
+    }
+
+    bool DefaultScreen::handleShortcut(const sf::Event &event)
+    {
+        if (event.type != sf::Event::KeyPressed || !event.key.control)
+            return (false);
+
+        // Ctrl+S saves regardless of focus (it never destroys work); the modal
+        // windows already return earlier in handleEvent, so this can't fire while
+        // the save/open dialog is up.
+        if (event.key.code == sf::Keyboard::S)
+        {
+            this->triggerSave();
+            return (true);
+        }
+
+        // Ctrl+Z / Ctrl+Shift+Z undo/redo, but only in the editing viewport and
+        // never while a text field owns the keyboard (so typing keeps its own
+        // meaning and the scene isn't swapped from under an active edit).
+        if (event.key.code == sf::Keyboard::Z
+            && this->_viewMode == ViewMode::VIEWPORT && !this->isKeyboardCaptured())
+        {
+            if (event.key.shift)
+                this->redoShortcut();
+            else
+                this->undoShortcut();
+            return (true);
+        }
+        return (false);
+    }
+
+    void DefaultScreen::undoShortcut()
+    {
+        if (!this->_coreAccess)
+            return;
+        if (!this->_coreAccess->historyUndo())
+        {
+            this->_toastManager.push("Nothing to undo", "You are at the oldest change.", ToastType::INFO);
+            return;
+        }
+        this->onSceneRestored();
+        this->_toastManager.push("Undo", "Reverted the last change.", ToastType::INFO);
+    }
+
+    void DefaultScreen::redoShortcut()
+    {
+        if (!this->_coreAccess)
+            return;
+        if (!this->_coreAccess->historyRedo())
+        {
+            this->_toastManager.push("Nothing to redo", "You are at the latest change.", ToastType::INFO);
+            return;
+        }
+        this->onSceneRestored();
+        this->_toastManager.push("Redo", "Reapplied the change.", ToastType::INFO);
+    }
+
+    void DefaultScreen::onSceneRestored()
+    {
+        IScene *scene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+
+        // The previous scene object was deleted by the swap, so every cached
+        // pointer into it (selection, hover, panels) must be dropped/rebound
+        // before anything touches it again.
+        this->_hierarchyPanel.applyViewportSelection({});
+        this->_hierarchyPanel.setScene(scene);
+        this->clearHover();
+        this->syncSelectionToRenderer();
+        this->markViewportBvhDirty();
+
+        // This swap is ours, so keep the baseline tracker in step: otherwise
+        // update() would see the changed pointer and wipe the history.
+        this->_lastHistoryScene = scene;
     }
 
     void DefaultScreen::applyImport()
@@ -1381,5 +1856,1183 @@ namespace rc
         this->syncSelectionToRenderer();
         this->_toastManager.push("Materials added",
             std::to_string(additions.size()) + " material(s) added from the market.", ToastType::SUCCESS);
+    }
+
+    bool DefaultScreen::anyUiCapturing()
+    {
+        if (this->_menuBar.isCapturing())
+            return (true);
+        std::vector<Component *> components;
+        this->_sidebar.collectComponents(components);
+        for (Component *component : components)
+            if (component && component->isCapturing())
+                return (true);
+        return (false);
+    }
+
+    IEditablePrimitive *DefaultScreen::editableFromSelection() const
+    {
+        // tryCast is non-const; the panel is only inspected here.
+        HierarchyPanel &panel = const_cast<HierarchyPanel &>(this->_hierarchyPanel);
+        const IPrimitive *primitive = panel.tryCast<const IPrimitive>();
+        if (!primitive)
+            return (nullptr);
+        return (dynamic_cast<IEditablePrimitive *>(const_cast<IPrimitive *>(primitive)));
+    }
+
+    void DefaultScreen::toggleEditMode()
+    {
+        if (this->_editMode)
+        {
+            this->exitEditMode();
+            return;
+        }
+        IEditablePrimitive *editable = this->editableFromSelection();
+        if (!editable)
+        {
+            this->_toastManager.push("Nothing to edit", "Select a single Triangle or Mesh to edit its vertices.", ToastType::INFO);
+            return;
+        }
+        const ISceneObject *object = const_cast<HierarchyPanel &>(this->_hierarchyPanel).tryCast<const ISceneObject>();
+        this->enterEditMode(object, editable);
+    }
+
+    void DefaultScreen::enterEditMode(const ISceneObject *object, IEditablePrimitive *editable)
+    {
+        this->_editMode = true;
+        this->_editObject = object;
+        this->_editTarget = editable;
+        this->_selectedVertex = -1;
+        this->_hoverVertex = -1;
+        this->_vertexDragActive = false;
+        this->resetFlyKeys();
+        this->clearHover();
+        this->_objectPanel.setVertexEditor(false, {0.0f, 0.0f, 0.0f});
+        this->syncVertexNavigator();
+        const std::string name = object ? object->getName() : "object";
+        this->_toastManager.push("Edit mode — " + name, "Drag a handle to move a vertex. X/Y/Z locks an axis. Tab/Esc to exit.", ToastType::INFO);
+    }
+
+    void DefaultScreen::exitEditMode()
+    {
+        // Never calls into _editTarget here: the selection may have changed
+        // because the object was deleted, so the pointer can already be stale.
+        const bool wasEditing = this->_editMode;
+        this->_editMode = false;
+        this->_editObject = nullptr;
+        this->_editTarget = nullptr;
+        this->_selectedVertex = -1;
+        this->_hoverVertex = -1;
+        this->_vertexDragActive = false;
+        this->_objectPanel.setVertexEditor(false, {0.0f, 0.0f, 0.0f});
+        this->syncVertexNavigator();
+        if (wasEditing)
+            this->_toastManager.push("Edit mode off", "Back to object mode.", ToastType::INFO);
+    }
+
+    bool DefaultScreen::vertexHandleWindowPos(std::size_t index, sf::Vector2f &out) const
+    {
+        if (!this->_coreAccess || !this->_editTarget)
+            return (false);
+        IScene *scene = this->_coreAccess->getScene();
+        if (!scene)
+            return (false);
+        const ICamera &camera = scene->getCamera();
+        const Vector2i resolution = camera.getResolution();
+        sf::Vector2i pixel;
+        if (!ViewportHelper::projectToPixel(camera, this->_editTarget->getVertex(index), resolution.x, resolution.y, pixel))
+            return (false);
+        const sf::IntRect &bounds = this->_rendererPanel.viewportBounds;
+        const float scale = this->_rendererPanel.viewportScale;
+        out.x = static_cast<float>(bounds.left) + static_cast<float>(pixel.x) * scale;
+        out.y = static_cast<float>(bounds.top) + static_cast<float>(pixel.y) * scale;
+        return (true);
+    }
+
+    int DefaultScreen::pickVertexHandle(const sf::Vector2i &mouse) const
+    {
+        if (!this->_editTarget || !this->_coreAccess || !this->_coreAccess->getScene())
+            return (-1);
+        const Vector3f cameraPos = this->_coreAccess->getScene()->getCamera().getPosition();
+        const float pickRadius = 9.0f;
+        const float pickRadiusSq = pickRadius * pickRadius;
+
+        int best = -1;
+        float bestDistSq = pickRadiusSq;
+        float bestCameraDist = 0.0f;
+        const std::size_t count = this->_editTarget->getVertexCount();
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            sf::Vector2f handle;
+            if (!this->vertexHandleWindowPos(i, handle))
+                continue;
+            const float dx = handle.x - static_cast<float>(mouse.x);
+            const float dy = handle.y - static_cast<float>(mouse.y);
+            const float distSq = dx * dx + dy * dy;
+            if (distSq > pickRadiusSq)
+                continue;
+            const float cameraDist = static_cast<float>((this->_editTarget->getVertex(i) - cameraPos).length());
+            // Nearest to the cursor wins; ties (overlapping handles) go to the
+            // vertex closest to the camera.
+            if (best == -1 || distSq < bestDistSq - 0.5f
+                || (std::fabs(distSq - bestDistSq) <= 0.5f && cameraDist < bestCameraDist))
+            {
+                best = static_cast<int>(i);
+                bestDistSq = distSq;
+                bestCameraDist = cameraDist;
+            }
+        }
+        return (best);
+    }
+
+    void DefaultScreen::beginVertexDrag(int index)
+    {
+        this->_selectedVertex = index;
+        this->_vertexDragActive = true;
+        this->_dragStartWorld = this->_editTarget->getVertex(static_cast<std::size_t>(index));
+        this->resetFlyKeys();
+        this->syncVertexEditorField();
+    }
+
+    void DefaultScreen::applyVertexDrag(const sf::Vector2i &mouse)
+    {
+        if (!this->_editTarget || this->_selectedVertex < 0 || !this->_coreAccess)
+            return;
+        IScene *scene = this->_coreAccess->getScene();
+        if (!scene)
+            return;
+        const ICamera &camera = scene->getCamera();
+
+        sf::Vector2i pixel;
+        if (!this->_rendererPanel.getViewportPixel(mouse, pixel))
+            return;
+        const Vector2i resolution = camera.getResolution();
+        const Ray ray = ViewportHelper::rayThroughPixel(camera, pixel.x, pixel.y, resolution.x, resolution.y);
+
+        // Drag in the plane through the vertex's start position, parallel to the
+        // image plane (normal = camera forward) -- the intuitive default.
+        const Vector3f normal = camera.getForward();
+        const float denom = dot(ray.direction, normal);
+        if (std::fabs(denom) < 1e-6f)
+            return;
+        const float t = dot(this->_dragStartWorld - ray.origin, normal) / denom;
+        if (t <= 0.0f)
+            return;
+        Vector3f world = ray.origin + ray.direction * t;
+
+        // Optional world-axis lock while X, Y or Z is held.
+        Vector3f axis = {0.0f, 0.0f, 0.0f};
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::X))
+            axis = {1.0f, 0.0f, 0.0f};
+        else if (sf::Keyboard::isKeyPressed(sf::Keyboard::Y))
+            axis = {0.0f, 1.0f, 0.0f};
+        else if (sf::Keyboard::isKeyPressed(sf::Keyboard::Z))
+            axis = {0.0f, 0.0f, 1.0f};
+        if (axis.x != 0.0f || axis.y != 0.0f || axis.z != 0.0f)
+        {
+            const Vector3f delta = world - this->_dragStartWorld;
+            world = this->_dragStartWorld + axis * dot(delta, axis);
+        }
+
+        this->_editTarget->setVertex(static_cast<std::size_t>(this->_selectedVertex), world);
+        this->markViewportBvhDirty();
+        this->forceViewportRetrace();
+        this->syncVertexEditorField();
+    }
+
+    void DefaultScreen::endVertexDrag()
+    {
+        if (!this->_vertexDragActive)
+            return;
+        this->_vertexDragActive = false;
+        if (this->_editTarget)
+            this->_editTarget->onGeometryChanged();
+        this->markViewportBvhDirty();
+        this->forceViewportRetrace();
+        this->syncVertexEditorField();
+    }
+
+    void DefaultScreen::forceViewportRetrace()
+    {
+        if (!this->_coreAccess)
+            return;
+        auto *selection_renderer = dynamic_cast<ISelectionAwareRenderer *>(this->_coreAccess->getViewportRenderer());
+        if (selection_renderer)
+            selection_renderer->setSelection(this->_hierarchyPanel.getSelection());
+    }
+
+    void DefaultScreen::syncVertexEditorField()
+    {
+        if (this->_editMode && this->_editTarget && this->_selectedVertex >= 0)
+            this->_objectPanel.setVertexEditor(true, this->_editTarget->getVertex(static_cast<std::size_t>(this->_selectedVertex)));
+        else
+            this->_objectPanel.setVertexEditor(false, {0.0f, 0.0f, 0.0f});
+        this->syncVertexNavigator();
+    }
+
+    void DefaultScreen::convertSelectionToMesh()
+    {
+        if (!this->_coreAccess)
+            return;
+        IScene *scene = this->_coreAccess->getScene();
+        if (!scene)
+            return;
+        const IPrimitive *primitive = this->_hierarchyPanel.tryCast<const IPrimitive>();
+        if (!primitive)
+            return;
+        if (this->_editMode)
+            this->exitEditMode();
+
+        IPrimitive *mesh = scene->convertToMesh(const_cast<IPrimitive *>(primitive));
+        if (!mesh)
+        {
+            this->_toastManager.push("Cannot convert", "This primitive can't be meshed (infinite, e.g. a plane, or already a mesh).", ToastType::INFO);
+            return;
+        }
+        this->markViewportBvhDirty();
+        this->forceViewportRetrace();
+        // Refresh the hierarchy and select the new mesh so it is ready to edit.
+        this->_hierarchyPanel.setScene(scene);
+        const ISceneObject *asObject = dynamic_cast<const ISceneObject *>(mesh);
+        if (asObject)
+            this->_hierarchyPanel.applyViewportSelection({asObject});
+        this->_toastManager.push("Converted to mesh", "Now an editable mesh — press Tab to move its vertices.", ToastType::SUCCESS);
+    }
+
+    const ISceneObject *DefaultScreen::pickObjectAt(const sf::Vector2i &mouse)
+    {
+        IScene *scene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+        if (!scene)
+            return (nullptr);
+        sf::Vector2i pixel;
+        if (!this->_rendererPanel.getViewportPixel(mouse, pixel))
+            return (nullptr);
+        const ISceneObject *object = ViewportHelper::pickViewportLight(*scene, scene->getCamera(), pixel);
+        if (!object)
+        {
+            Intersection hit;
+            const Ray ray = scene->getCamera().generateRay(pixel.x, pixel.y);
+            if (scene->intersect(ray, 0.001f, std::numeric_limits<float>::infinity(), hit) && hit.primitive)
+                object = hit.primitive;
+        }
+        return (object);
+    }
+
+    bool DefaultScreen::viewportPlanePoint(const sf::Vector2i &mouse, const Vector3f &planeOrigin, Vector3f &out)
+    {
+        IScene *scene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+        if (!scene)
+            return (false);
+        sf::Vector2i pixel;
+        if (!this->_rendererPanel.getViewportPixel(mouse, pixel))
+            return (false);
+        const ICamera &camera = scene->getCamera();
+        const Vector2i resolution = camera.getResolution();
+        const Ray ray = ViewportHelper::rayThroughPixel(camera, pixel.x, pixel.y, resolution.x, resolution.y);
+        const Vector3f normal = camera.getForward();
+        const float denom = dot(ray.direction, normal);
+        if (std::fabs(denom) < 1e-6f)
+            return (false);
+        const float t = dot(planeOrigin - ray.origin, normal) / denom;
+        if (t <= 0.0f)
+            return (false);
+        out = ray.origin + ray.direction * t;
+        return (true);
+    }
+
+    void DefaultScreen::beginObjectDrag(ISceneObject *object, const sf::Vector2i &mouse)
+    {
+        if (!object)
+            return;
+        this->_objectDragActive = true;
+        this->_objectDragMoved = false;
+        this->_objectDragTarget = object;
+        const Vector3f objPos = object->getLocalPosition();
+        this->_objectDragPlaneOrigin = objPos;
+        Vector3f grab;
+        if (this->viewportPlanePoint(mouse, objPos, grab))
+            this->_objectDragOffset = objPos - grab;
+        else
+            this->_objectDragOffset = {0.0f, 0.0f, 0.0f};
+    }
+
+    void DefaultScreen::applyObjectDrag(const sf::Vector2i &mouse)
+    {
+        if (!this->_objectDragTarget)
+            return;
+        Vector3f grab;
+        if (!this->viewportPlanePoint(mouse, this->_objectDragPlaneOrigin, grab))
+            return;
+        Vector3f newPos = grab + this->_objectDragOffset;
+
+        // Hold X, Y or Z to constrain the move to that world axis, measured from
+        // the object's position at the start of the drag.
+        Vector3f axis = {0.0f, 0.0f, 0.0f};
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::X))
+            axis = {1.0f, 0.0f, 0.0f};
+        else if (sf::Keyboard::isKeyPressed(sf::Keyboard::Y))
+            axis = {0.0f, 1.0f, 0.0f};
+        else if (sf::Keyboard::isKeyPressed(sf::Keyboard::Z))
+            axis = {0.0f, 0.0f, 1.0f};
+        if (axis.x != 0.0f || axis.y != 0.0f || axis.z != 0.0f)
+        {
+            const Vector3f delta = newPos - this->_objectDragPlaneOrigin;
+            newPos = this->_objectDragPlaneOrigin + axis * dot(delta, axis);
+        }
+
+        this->_objectDragTarget->setLocalPosition(newPos);
+        this->_objectDragMoved = true;
+        this->markViewportBvhDirty();
+        this->forceViewportRetrace();
+    }
+
+    void DefaultScreen::endObjectDrag()
+    {
+        if (!this->_objectDragActive)
+            return;
+        this->_objectDragActive = false;
+        // A pure click (no movement) leaves the object where it was; only refresh
+        // the Object panel's position field when the object actually moved.
+        if (this->_objectDragMoved && this->_objectDragTarget)
+        {
+            this->_objectPanel.rebuild(this->_objectDragTarget);
+            this->markViewportBvhDirty();
+            this->forceViewportRetrace();
+        }
+        this->_objectDragTarget = nullptr;
+    }
+
+    namespace
+    {
+        Vector3f axisVector(int axis)
+        {
+            if (axis == 0)
+                return {1.0f, 0.0f, 0.0f};
+            if (axis == 1)
+                return {0.0f, 1.0f, 0.0f};
+            return {0.0f, 0.0f, 1.0f};
+        }
+
+        // Shortest distance from point p to the segment [a, b], in 2D.
+        float segmentDistance(const sf::Vector2f &p, const sf::Vector2f &a, const sf::Vector2f &b)
+        {
+            const sf::Vector2f ab(b.x - a.x, b.y - a.y);
+            const sf::Vector2f ap(p.x - a.x, p.y - a.y);
+            const float len2 = ab.x * ab.x + ab.y * ab.y;
+            float t = (len2 > 1e-6f) ? (ap.x * ab.x + ap.y * ab.y) / len2 : 0.0f;
+            t = std::max(0.0f, std::min(1.0f, t));
+            const sf::Vector2f proj(a.x + ab.x * t, a.y + ab.y * t);
+            const sf::Vector2f d(p.x - proj.x, p.y - proj.y);
+            return std::sqrt(d.x * d.x + d.y * d.y);
+        }
+    }
+
+    ISceneObject *DefaultScreen::singleSelectedObject() const
+    {
+        const std::vector<const ISceneObject *> &selection = this->_hierarchyPanel.getSelection();
+        if (selection.size() != 1 || !selection[0])
+            return (nullptr);
+        return (const_cast<ISceneObject *>(selection[0]));
+    }
+
+    bool DefaultScreen::projectToViewport(const Vector3f &point, sf::Vector2f &out) const
+    {
+        IScene *scene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+        if (!scene)
+            return (false);
+        const ICamera &camera = scene->getCamera();
+        const Vector2i resolution = camera.getResolution();
+        if (resolution.x <= 0 || resolution.y <= 0)
+            return (false);
+
+        const Vector3f forward = camera.getForward();
+        const Vector3f right = camera.getRight();
+        const Vector3f up = right.cross(forward).unit_vector();
+        const Vector3f toPoint = point - camera.getPosition();
+        const float z = dot(toPoint, forward);
+        if (z <= 0.001f) // behind the camera
+            return (false);
+
+        constexpr float PI = 3.14159265358979323846f;
+        const float theta = static_cast<float>(camera.getFov()) * (PI / 180.0f);
+        const float viewportHeight = 2.0f * std::tan(theta / 2.0f);
+        const float viewportWidth = viewportHeight
+            * (static_cast<float>(resolution.x) / static_cast<float>(resolution.y));
+        const float ndcX = (dot(toPoint, right) / z) / (viewportWidth / 2.0f);
+        const float ndcY = (dot(toPoint, up) / z) / (viewportHeight / 2.0f);
+        // No NDC clamp (unlike ViewportHelper::projectToPixel), so an arrow whose
+        // tip leaves the viewport edge still projects and draws.
+        const float px = (ndcX * 0.5f + 0.5f) * static_cast<float>(resolution.x - 1);
+        const float py = (-ndcY * 0.5f + 0.5f) * static_cast<float>(resolution.y - 1);
+
+        const sf::IntRect &bounds = this->_rendererPanel.viewportBounds;
+        const float scale = this->_rendererPanel.viewportScale;
+        out.x = static_cast<float>(bounds.left) + px * scale;
+        out.y = static_cast<float>(bounds.top) + py * scale;
+        return (true);
+    }
+
+    bool DefaultScreen::gizmoArrow(int axis, sf::Vector2f &origin, sf::Vector2f &tip) const
+    {
+        ISceneObject *object = this->singleSelectedObject();
+        if (!object || !this->_coreAccess)
+            return (false);
+        IScene *scene = this->_coreAccess->getScene();
+        if (!scene)
+            return (false);
+        const Vector3f objPos = object->getPosition();
+        // World length chosen so the arrow keeps a roughly constant on-screen size
+        // regardless of the object's distance to the camera.
+        const Vector3f toCam = objPos - scene->getCamera().getPosition();
+        float length = std::sqrt(dot(toCam, toCam)) * 0.16f;
+        if (length < 1e-4f)
+            length = 1.0f;
+        if (!this->projectToViewport(objPos, origin))
+            return (false);
+        if (!this->projectToViewport(objPos + axisVector(axis) * length, tip))
+            return (false);
+        return (true);
+    }
+
+    int DefaultScreen::pickGizmoAxis(const sf::Vector2i &mouse) const
+    {
+        if (this->_editMode || !this->singleSelectedObject())
+            return (-1);
+        if (!this->_rendererPanel.viewportBounds.contains(mouse))
+            return (-1);
+        const sf::Vector2f m(static_cast<float>(mouse.x), static_cast<float>(mouse.y));
+        int best = -1;
+        float bestDistance = 8.0f; // pick radius in pixels
+        for (int axis = 0; axis < 3; ++axis)
+        {
+            sf::Vector2f origin;
+            sf::Vector2f tip;
+            if (!this->gizmoArrow(axis, origin, tip))
+                continue;
+            const float d = segmentDistance(m, origin, tip);
+            if (d < bestDistance)
+            {
+                bestDistance = d;
+                best = axis;
+            }
+        }
+        return (best);
+    }
+
+    void DefaultScreen::drawMoveGizmo(sf::RenderWindow &window) const
+    {
+        if (this->_editMode || !this->singleSelectedObject())
+            return;
+        constexpr float PI = 3.14159265358979323846f;
+        const sf::Color colors[3] = {sf::Color(235, 80, 80), sf::Color(95, 205, 100), sf::Color(95, 160, 245)};
+        bool centerDrawn = false;
+        sf::Vector2f center;
+        for (int axis = 0; axis < 3; ++axis)
+        {
+            sf::Vector2f origin;
+            sf::Vector2f tip;
+            if (!this->gizmoArrow(axis, origin, tip))
+                continue;
+            center = origin;
+            centerDrawn = true;
+            const sf::Vector2f d(tip.x - origin.x, tip.y - origin.y);
+            const float len = std::sqrt(d.x * d.x + d.y * d.y);
+            if (len < 1.0f)
+                continue;
+            const float angle = std::atan2(d.y, d.x) * 180.0f / PI;
+
+            const bool active = this->_axisDragActive && this->_axisDragAxis == axis;
+            const sf::Color color = active ? sf::Color(255, 235, 90) : colors[axis];
+
+            sf::RectangleShape shaft({len - 6.0f, active ? 4.0f : 3.0f});
+            shaft.setOrigin(0.0f, (active ? 4.0f : 3.0f) / 2.0f);
+            shaft.setPosition(origin);
+            shaft.setRotation(angle);
+            shaft.setFillColor(color);
+            window.draw(shaft);
+
+            sf::CircleShape head(6.5f, 3);
+            head.setOrigin(6.5f, 6.5f);
+            head.setPosition(tip);
+            head.setRotation(angle + 90.0f);
+            head.setFillColor(color);
+            window.draw(head);
+        }
+        if (centerDrawn)
+        {
+            sf::CircleShape hub(3.5f);
+            hub.setOrigin(3.5f, 3.5f);
+            hub.setPosition(center);
+            hub.setFillColor(sf::Color(240, 240, 240));
+            window.draw(hub);
+        }
+    }
+
+    bool DefaultScreen::axisParamFromMouse(const sf::Vector2i &mouse, const Vector3f &axisOrigin,
+        const Vector3f &axisDir, float &t) const
+    {
+        IScene *scene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+        if (!scene)
+            return (false);
+        sf::Vector2i pixel;
+        if (!this->_rendererPanel.getViewportPixel(mouse, pixel))
+            return (false);
+        const ICamera &camera = scene->getCamera();
+        const Vector2i resolution = camera.getResolution();
+        const Ray ray = ViewportHelper::rayThroughPixel(camera, pixel.x, pixel.y, resolution.x, resolution.y);
+        const Vector3f o = ray.origin;
+        const Vector3f r = ray.direction.unit_vector();
+
+        // Closest point on the axis line (axisOrigin + t*axisDir, axisDir unit) to
+        // the mouse ray (o + s*r, r unit): with a = c = 1, t = (b*e - d) / (1 - b^2).
+        const Vector3f w0 = axisOrigin - o;
+        const float b = dot(axisDir, r);
+        const float d = dot(axisDir, w0);
+        const float e = dot(r, w0);
+        const float denom = 1.0f - b * b;
+        if (std::fabs(denom) < 1e-6f) // ray nearly parallel to the axis: ill-defined
+            return (false);
+        t = (b * e - d) / denom;
+        return (true);
+    }
+
+    void DefaultScreen::beginAxisDrag(ISceneObject *object, int axis, const sf::Vector2i &mouse)
+    {
+        if (!object)
+            return;
+        this->_axisDragActive = true;
+        this->_axisDragMoved = false;
+        this->_axisDragTarget = object;
+        this->_axisDragAxis = axis;
+        this->_axisDragObjStart = object->getPosition();
+        this->_axisDragDir = axisVector(axis);
+        float t = 0.0f;
+        this->_axisDragGrabT =
+            this->axisParamFromMouse(mouse, this->_axisDragObjStart, this->_axisDragDir, t) ? t : 0.0f;
+    }
+
+    void DefaultScreen::applyAxisDrag(const sf::Vector2i &mouse)
+    {
+        if (!this->_axisDragTarget)
+            return;
+        float t = 0.0f;
+        if (!this->axisParamFromMouse(mouse, this->_axisDragObjStart, this->_axisDragDir, t))
+            return;
+        const Vector3f newPos = this->_axisDragObjStart + this->_axisDragDir * (t - this->_axisDragGrabT);
+        this->_axisDragTarget->setLocalPosition(newPos);
+        this->_axisDragMoved = true;
+        this->markViewportBvhDirty();
+        this->forceViewportRetrace();
+    }
+
+    void DefaultScreen::endAxisDrag()
+    {
+        if (!this->_axisDragActive)
+            return;
+        this->_axisDragActive = false;
+        if (this->_axisDragMoved && this->_axisDragTarget)
+        {
+            this->_objectPanel.rebuild(this->_axisDragTarget);
+            this->markViewportBvhDirty();
+            this->forceViewportRetrace();
+        }
+        this->_axisDragMoved = false;
+        this->_axisDragTarget = nullptr;
+        this->_axisDragAxis = -1;
+    }
+
+    namespace
+    {
+        // Two orthonormal vectors spanning the plane perpendicular to the axis,
+        // i.e. the plane the rotation ring lives in.
+        void ringBasis(int axis, Vector3f &u, Vector3f &v)
+        {
+            if (axis == 0) // X ring lives in the YZ plane
+            {
+                u = {0.0f, 1.0f, 0.0f};
+                v = {0.0f, 0.0f, 1.0f};
+            }
+            else if (axis == 1) // Y ring in the ZX plane
+            {
+                u = {0.0f, 0.0f, 1.0f};
+                v = {1.0f, 0.0f, 0.0f};
+            }
+            else // Z ring in the XY plane
+            {
+                u = {1.0f, 0.0f, 0.0f};
+                v = {0.0f, 1.0f, 0.0f};
+            }
+        }
+
+        constexpr int RING_SEGMENTS = 48;
+    }
+
+    bool DefaultScreen::rayPlanePoint(const sf::Vector2i &mouse, const Vector3f &origin,
+        const Vector3f &normal, Vector3f &out) const
+    {
+        IScene *scene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+        if (!scene)
+            return (false);
+        sf::Vector2i pixel;
+        if (!this->_rendererPanel.getViewportPixel(mouse, pixel))
+            return (false);
+        const ICamera &camera = scene->getCamera();
+        const Vector2i resolution = camera.getResolution();
+        const Ray ray = ViewportHelper::rayThroughPixel(camera, pixel.x, pixel.y, resolution.x, resolution.y);
+        const float denom = dot(ray.direction, normal);
+        if (std::fabs(denom) < 1e-6f)
+            return (false);
+        const float t = dot(origin - ray.origin, normal) / denom;
+        if (t <= 0.0f)
+            return (false);
+        out = ray.origin + ray.direction * t;
+        return (true);
+    }
+
+    bool DefaultScreen::rotationRing(int axis, std::vector<sf::Vector2f> &pts, std::vector<char> &valid) const
+    {
+        ISceneObject *object = this->singleSelectedObject();
+        if (!object || !this->_coreAccess)
+            return (false);
+        IScene *scene = this->_coreAccess->getScene();
+        if (!scene)
+            return (false);
+        const Vector3f objPos = object->getPosition();
+        const Vector3f toCam = objPos - scene->getCamera().getPosition();
+        float radius = std::sqrt(dot(toCam, toCam)) * 0.19f; // just outside the move arrows
+        if (radius < 1e-4f)
+            radius = 1.2f;
+        Vector3f u;
+        Vector3f v;
+        ringBasis(axis, u, v);
+
+        constexpr float PI = 3.14159265358979323846f;
+        pts.assign(RING_SEGMENTS + 1, {0.0f, 0.0f});
+        valid.assign(RING_SEGMENTS + 1, 0);
+        for (int i = 0; i <= RING_SEGMENTS; ++i)
+        {
+            const float theta = 2.0f * PI * static_cast<float>(i) / static_cast<float>(RING_SEGMENTS);
+            const Vector3f world = objPos + (u * std::cos(theta) + v * std::sin(theta)) * radius;
+            sf::Vector2f screen;
+            valid[i] = this->projectToViewport(world, screen) ? 1 : 0;
+            pts[i] = screen;
+        }
+        return (true);
+    }
+
+    int DefaultScreen::pickRotationRing(const sf::Vector2i &mouse) const
+    {
+        if (this->_editMode || !this->singleSelectedObject())
+            return (-1);
+        if (!this->_rendererPanel.viewportBounds.contains(mouse))
+            return (-1);
+        const sf::Vector2f m(static_cast<float>(mouse.x), static_cast<float>(mouse.y));
+        int best = -1;
+        float bestDistance = 7.0f; // pick radius in pixels
+        std::vector<sf::Vector2f> pts;
+        std::vector<char> valid;
+        for (int axis = 0; axis < 3; ++axis)
+        {
+            if (!this->rotationRing(axis, pts, valid))
+                continue;
+            for (int i = 0; i < RING_SEGMENTS; ++i)
+            {
+                if (!valid[i] || !valid[i + 1])
+                    continue;
+                const float d = segmentDistance(m, pts[i], pts[i + 1]);
+                if (d < bestDistance)
+                {
+                    bestDistance = d;
+                    best = axis;
+                }
+            }
+        }
+        return (best);
+    }
+
+    void DefaultScreen::drawRotationRings(sf::RenderWindow &window) const
+    {
+        if (this->_editMode || !this->singleSelectedObject())
+            return;
+        constexpr float PI = 3.14159265358979323846f;
+        const sf::Color colors[3] = {sf::Color(235, 80, 80), sf::Color(95, 205, 100), sf::Color(95, 160, 245)};
+        std::vector<sf::Vector2f> pts;
+        std::vector<char> valid;
+        for (int axis = 0; axis < 3; ++axis)
+        {
+            if (!this->rotationRing(axis, pts, valid))
+                continue;
+            const bool active = this->_rotDragActive && this->_rotDragAxis == axis;
+            const sf::Color color = active ? sf::Color(255, 235, 90) : colors[axis];
+            const float thick = active ? 3.0f : 2.0f;
+            for (int i = 0; i < RING_SEGMENTS; ++i)
+            {
+                if (!valid[i] || !valid[i + 1])
+                    continue;
+                const sf::Vector2f a = pts[i];
+                const sf::Vector2f b = pts[i + 1];
+                const sf::Vector2f d(b.x - a.x, b.y - a.y);
+                const float len = std::sqrt(d.x * d.x + d.y * d.y);
+                if (len < 0.5f)
+                    continue;
+                sf::RectangleShape seg({len, thick});
+                seg.setOrigin(0.0f, thick / 2.0f);
+                seg.setPosition(a);
+                seg.setRotation(std::atan2(d.y, d.x) * 180.0f / PI);
+                seg.setFillColor(color);
+                window.draw(seg);
+            }
+        }
+    }
+
+    void DefaultScreen::beginRotationDrag(ISceneObject *object, int axis, const sf::Vector2i &mouse)
+    {
+        if (!object)
+            return;
+        this->_rotDragActive = true;
+        this->_rotDragMoved = false;
+        this->_rotDragTarget = object;
+        this->_rotDragAxis = axis;
+        this->_rotDragStartRot = object->getLocalRotation();
+        this->_rotDragObjPos = object->getPosition();
+        this->_rotDragAxisN = axisVector(axis);
+        Vector3f grab;
+        this->_rotDragValid = false;
+        if (this->rayPlanePoint(mouse, this->_rotDragObjPos, this->_rotDragAxisN, grab))
+        {
+            const Vector3f gv = grab - this->_rotDragObjPos;
+            const float len = std::sqrt(dot(gv, gv));
+            if (len > 1e-5f)
+            {
+                this->_rotDragGrabVec = gv * (1.0f / len);
+                this->_rotDragValid = true;
+            }
+        }
+    }
+
+    void DefaultScreen::applyRotationDrag(const sf::Vector2i &mouse)
+    {
+        if (!this->_rotDragTarget || !this->_rotDragValid)
+            return;
+        Vector3f point;
+        if (!this->rayPlanePoint(mouse, this->_rotDragObjPos, this->_rotDragAxisN, point))
+            return;
+        const Vector3f cv = point - this->_rotDragObjPos;
+        const float len = std::sqrt(dot(cv, cv));
+        if (len < 1e-5f)
+            return;
+        const Vector3f cur = cv * (1.0f / len);
+
+        // Signed angle from the grab vector to the current vector, about the axis.
+        constexpr float PI = 3.14159265358979323846f;
+        const float sine = dot(this->_rotDragGrabVec.cross(cur), this->_rotDragAxisN);
+        const float cosine = dot(this->_rotDragGrabVec, cur);
+        const float angleDeg = std::atan2(sine, cosine) * 180.0f / PI;
+
+        Vector3f rotation = this->_rotDragStartRot;
+        if (this->_rotDragAxis == 0)
+            rotation.x += angleDeg;
+        else if (this->_rotDragAxis == 1)
+            rotation.y += angleDeg;
+        else
+            rotation.z += angleDeg;
+        this->_rotDragTarget->setLocalRotation(rotation);
+        this->_rotDragMoved = true;
+        this->markViewportBvhDirty();
+        this->forceViewportRetrace();
+    }
+
+    void DefaultScreen::endRotationDrag()
+    {
+        if (!this->_rotDragActive)
+            return;
+        this->_rotDragActive = false;
+        if (this->_rotDragMoved && this->_rotDragTarget)
+        {
+            this->_objectPanel.rebuild(this->_rotDragTarget);
+            this->markViewportBvhDirty();
+            this->forceViewportRetrace();
+        }
+        this->_rotDragMoved = false;
+        this->_rotDragValid = false;
+        this->_rotDragTarget = nullptr;
+        this->_rotDragAxis = -1;
+    }
+
+    void DefaultScreen::drawScaleGizmo(sf::RenderWindow &window) const
+    {
+        if (this->_editMode || !this->singleSelectedObject())
+            return;
+        constexpr float PI = 3.14159265358979323846f;
+        const sf::Color colors[3] = {sf::Color(235, 80, 80), sf::Color(95, 205, 100), sf::Color(95, 160, 245)};
+        bool centerDrawn = false;
+        sf::Vector2f center;
+        for (int axis = 0; axis < 3; ++axis)
+        {
+            sf::Vector2f origin;
+            sf::Vector2f tip;
+            if (!this->gizmoArrow(axis, origin, tip))
+                continue;
+            center = origin;
+            centerDrawn = true;
+            const sf::Vector2f d(tip.x - origin.x, tip.y - origin.y);
+            const float len = std::sqrt(d.x * d.x + d.y * d.y);
+            if (len < 1.0f)
+                continue;
+            const float angle = std::atan2(d.y, d.x) * 180.0f / PI;
+            const bool active = this->_scaleDragActive && this->_scaleDragAxis == axis;
+            const sf::Color color = active ? sf::Color(255, 235, 90) : colors[axis];
+
+            sf::RectangleShape shaft({len - 6.0f, active ? 4.0f : 3.0f});
+            shaft.setOrigin(0.0f, (active ? 4.0f : 3.0f) / 2.0f);
+            shaft.setPosition(origin);
+            shaft.setRotation(angle);
+            shaft.setFillColor(color);
+            window.draw(shaft);
+
+            // A cube (square) tip distinguishes the scale gizmo from the move one.
+            sf::RectangleShape box({9.0f, 9.0f});
+            box.setOrigin(4.5f, 4.5f);
+            box.setPosition(tip);
+            box.setRotation(angle);
+            box.setFillColor(color);
+            window.draw(box);
+        }
+        if (centerDrawn)
+        {
+            sf::CircleShape hub(3.5f);
+            hub.setOrigin(3.5f, 3.5f);
+            hub.setPosition(center);
+            hub.setFillColor(sf::Color(240, 240, 240));
+            window.draw(hub);
+        }
+    }
+
+    void DefaultScreen::beginScaleDrag(ISceneObject *object, int axis, const sf::Vector2i &mouse)
+    {
+        if (!object)
+            return;
+        this->_scaleDragActive = true;
+        this->_scaleDragMoved = false;
+        this->_scaleDragTarget = object;
+        this->_scaleDragAxis = axis;
+        this->_scaleDragStartScale = object->getLocalScale();
+        this->_scaleDragObjStart = object->getPosition();
+        this->_scaleDragDir = axisVector(axis);
+        float t = 0.0f;
+        this->_scaleDragGrabT =
+            this->axisParamFromMouse(mouse, this->_scaleDragObjStart, this->_scaleDragDir, t) ? t : 0.0f;
+    }
+
+    void DefaultScreen::applyScaleDrag(const sf::Vector2i &mouse)
+    {
+        if (!this->_scaleDragTarget)
+            return;
+        if (std::fabs(this->_scaleDragGrabT) < 1e-4f) // grabbed at the centre: ill-defined
+            return;
+        float t = 0.0f;
+        if (!this->axisParamFromMouse(mouse, this->_scaleDragObjStart, this->_scaleDragDir, t))
+            return;
+        const float factor = t / this->_scaleDragGrabT;
+        Vector3f scale = this->_scaleDragStartScale;
+        if (this->_scaleDragAxis == 0)
+            scale.x = std::max(0.001f, this->_scaleDragStartScale.x * factor);
+        else if (this->_scaleDragAxis == 1)
+            scale.y = std::max(0.001f, this->_scaleDragStartScale.y * factor);
+        else
+            scale.z = std::max(0.001f, this->_scaleDragStartScale.z * factor);
+        this->_scaleDragTarget->setLocalScale(scale);
+        this->_scaleDragMoved = true;
+        this->markViewportBvhDirty();
+        this->forceViewportRetrace();
+    }
+
+    void DefaultScreen::endScaleDrag()
+    {
+        if (!this->_scaleDragActive)
+            return;
+        this->_scaleDragActive = false;
+        if (this->_scaleDragMoved && this->_scaleDragTarget)
+        {
+            this->_objectPanel.rebuild(this->_scaleDragTarget);
+            this->markViewportBvhDirty();
+            this->forceViewportRetrace();
+        }
+        this->_scaleDragMoved = false;
+        this->_scaleDragTarget = nullptr;
+        this->_scaleDragAxis = -1;
+    }
+
+    bool DefaultScreen::computeMarker(const sf::Vector2i &mouse, Vector3f &out)
+    {
+        IScene *scene = this->_coreAccess ? this->_coreAccess->getScene() : nullptr;
+        if (!scene)
+            return (false);
+        sf::Vector2i pixel;
+        if (!this->_rendererPanel.getViewportPixel(mouse, pixel))
+            return (false);
+        const ICamera &camera = scene->getCamera();
+        const Vector2i resolution = camera.getResolution();
+        const Ray ray = ViewportHelper::rayThroughPixel(camera, pixel.x, pixel.y, resolution.x, resolution.y);
+
+        // Prefer the point on the surface under the cursor.
+        Intersection hit;
+        if (scene->intersect(ray, 0.001f, std::numeric_limits<float>::infinity(), hit))
+        {
+            out = hit.point;
+            return (true);
+        }
+        // Otherwise drop it on the ground plane (z = 0), or a fixed distance ahead.
+        if (std::fabs(ray.direction.z) > 1e-6f)
+        {
+            const float t = -ray.origin.z / ray.direction.z;
+            if (t > 0.0f)
+            {
+                out = ray.origin + ray.direction * t;
+                return (true);
+            }
+        }
+        out = ray.origin + ray.direction * 20.0f;
+        return (true);
+    }
+
+    void DefaultScreen::placeMarker(const sf::Vector2i &mouse)
+    {
+        Vector3f position;
+        if (!this->computeMarker(mouse, position))
+            return;
+        this->_markerActive = true;
+        this->_markerPos = position;
+        this->_toastManager.push("Marker placed", "New primitives from the Add menu will spawn here.", ToastType::INFO);
+    }
+
+    bool DefaultScreen::markerWindowPos(sf::Vector2f &out) const
+    {
+        if (!this->_markerActive || !this->_coreAccess)
+            return (false);
+        IScene *scene = this->_coreAccess->getScene();
+        if (!scene)
+            return (false);
+        const ICamera &camera = scene->getCamera();
+        const Vector2i resolution = camera.getResolution();
+        sf::Vector2i pixel;
+        if (!ViewportHelper::projectToPixel(camera, this->_markerPos, resolution.x, resolution.y, pixel))
+            return (false);
+        const sf::IntRect &bounds = this->_rendererPanel.viewportBounds;
+        const float scale = this->_rendererPanel.viewportScale;
+        out.x = static_cast<float>(bounds.left) + static_cast<float>(pixel.x) * scale;
+        out.y = static_cast<float>(bounds.top) + static_cast<float>(pixel.y) * scale;
+        return (true);
+    }
+
+    void DefaultScreen::drawMarker(sf::RenderWindow &window) const
+    {
+        sf::Vector2f p;
+        if (!this->markerWindowPos(p))
+            return;
+        const sf::IntRect &bounds = this->_rendererPanel.viewportBounds;
+        if (!bounds.contains(static_cast<int>(p.x), static_cast<int>(p.y)))
+            return;
+
+        const sf::Color color(255, 210, 40);
+        const float len = 9.0f;
+        const float thick = 2.0f;
+        sf::RectangleShape h({2.0f * len, thick});
+        h.setOrigin(len, thick / 2.0f);
+        h.setPosition(p);
+        h.setFillColor(color);
+        sf::RectangleShape v({thick, 2.0f * len});
+        v.setOrigin(thick / 2.0f, len);
+        v.setPosition(p);
+        v.setFillColor(color);
+        sf::CircleShape ring(5.0f);
+        ring.setOrigin(5.0f, 5.0f);
+        ring.setPosition(p);
+        ring.setFillColor(sf::Color::Transparent);
+        ring.setOutlineThickness(2.0f);
+        ring.setOutlineColor(color);
+        window.draw(h);
+        window.draw(v);
+        window.draw(ring);
+    }
+
+    void DefaultScreen::addPrimitiveAtMarker(const std::string &type)
+    {
+        if (!this->_coreAccess)
+            return;
+        IScene *scene = this->_coreAccess->getScene();
+        if (!scene)
+            return;
+        scene->addDefaultPrimitive(type);
+        if (this->_markerActive)
+        {
+            const std::vector<IPrimitive *> &primitives = scene->getPrimitives();
+            if (!primitives.empty())
+            {
+                ISceneObject *object = dynamic_cast<ISceneObject *>(primitives.back());
+                if (object)
+                    object->setLocalPosition(this->_markerPos);
+            }
+        }
+    }
+
+    void DefaultScreen::drawAxisGizmo(sf::RenderWindow &window) const
+    {
+        if (!this->_coreAccess || !this->_font)
+            return;
+        IScene *scene = this->_coreAccess->getScene();
+        if (!scene)
+            return;
+        const sf::IntRect &bounds = this->_rendererPanel.viewportBounds;
+        if (bounds.width <= 0 || bounds.height <= 0)
+            return;
+
+        const ICamera &camera = scene->getCamera();
+        const Vector3f forward = camera.getForward();
+        const Vector3f right = camera.getRight();
+        const Vector3f up = right.cross(forward).unit_vector();
+
+        constexpr float PI = 3.14159265358979323846f;
+        const float radius = 26.0f;
+        const float margin = 18.0f;
+        const sf::Vector2f center(static_cast<float>(bounds.left + bounds.width) - margin - radius,
+            static_cast<float>(bounds.top) + margin + radius);
+
+        // Faint backing disc for contrast over any scene colour.
+        sf::CircleShape disc(radius + 9.0f);
+        disc.setOrigin(radius + 9.0f, radius + 9.0f);
+        disc.setPosition(center);
+        disc.setFillColor(sf::Color(18, 20, 26, 140));
+        window.draw(disc);
+
+        struct GizmoAxis { Vector3f dir; sf::Color color; const char *label; float depth; };
+        GizmoAxis axes[3] = {
+            {{1.0f, 0.0f, 0.0f}, sf::Color(235, 80, 80), "X", 0.0f},
+            {{0.0f, 1.0f, 0.0f}, sf::Color(95, 205, 100), "Y", 0.0f},
+            {{0.0f, 0.0f, 1.0f}, sf::Color(95, 160, 245), "Z", 0.0f},
+        };
+        for (GizmoAxis &a : axes)
+            a.depth = dot(a.dir, forward);
+        // Draw far axes first (larger depth = pointing away) so near ones sit on top.
+        std::sort(axes, axes + 3, [](const GizmoAxis &a, const GizmoAxis &b) { return a.depth > b.depth; });
+
+        for (const GizmoAxis &a : axes)
+        {
+            const float gx = dot(a.dir, right);
+            const float gy = -dot(a.dir, up);
+            const sf::Vector2f tip(center.x + gx * radius, center.y + gy * radius);
+            const sf::Vector2f d(tip.x - center.x, tip.y - center.y);
+            const float len = std::sqrt(d.x * d.x + d.y * d.y);
+
+            if (len > 0.5f)
+            {
+                sf::RectangleShape line({len, 2.5f});
+                line.setOrigin(0.0f, 1.25f);
+                line.setPosition(center);
+                line.setRotation(std::atan2(d.y, d.x) * 180.0f / PI);
+                line.setFillColor(a.color);
+                window.draw(line);
+            }
+            sf::CircleShape knob(4.5f);
+            knob.setOrigin(4.5f, 4.5f);
+            knob.setPosition(tip);
+            knob.setFillColor(a.color);
+            window.draw(knob);
+
+            sf::Text label(a.label, *this->_font, 12);
+            label.setFillColor(sf::Color::White);
+            const sf::FloatRect lb = label.getLocalBounds();
+            label.setOrigin(lb.left + lb.width / 2.0f, lb.top + lb.height / 2.0f);
+            const sf::Vector2f nd = (len > 0.5f) ? sf::Vector2f(d.x / len, d.y / len) : sf::Vector2f(0.0f, 0.0f);
+            label.setPosition(tip.x + nd.x * 9.0f, tip.y + nd.y * 9.0f);
+            window.draw(label);
+        }
+    }
+
+    void DefaultScreen::syncVertexNavigator()
+    {
+        // The navigator is available whenever the selected object has vertices,
+        // even before entering edit mode, so it doubles as the entry point.
+        IEditablePrimitive *editable = this->_editMode ? this->_editTarget : this->editableFromSelection();
+        if (editable && editable->getVertexCount() > 0)
+        {
+            const int count = static_cast<int>(editable->getVertexCount());
+            const int index = (this->_editMode && this->_selectedVertex >= 0) ? this->_selectedVertex : 0;
+            this->_objectPanel.setVertexNavigator(true, index, count);
+        }
+        else
+        {
+            this->_objectPanel.setVertexNavigator(false, 0, 0);
+        }
+    }
+
+    void DefaultScreen::navigateVertex(int direction)
+    {
+        IEditablePrimitive *editable = this->_editMode ? this->_editTarget : this->editableFromSelection();
+        if (!editable)
+            return;
+        if (!this->_editMode)
+        {
+            const ISceneObject *object = const_cast<HierarchyPanel &>(this->_hierarchyPanel).tryCast<const ISceneObject>();
+            this->enterEditMode(object, editable);
+        }
+        const int count = static_cast<int>(this->_editTarget->getVertexCount());
+        if (count == 0)
+            return;
+        if (this->_selectedVertex < 0)
+            this->_selectedVertex = (direction >= 0) ? 0 : count - 1;
+        else
+            this->_selectedVertex = ((this->_selectedVertex + direction) % count + count) % count;
+        this->syncVertexEditorField();
+        this->forceViewportRetrace();
+    }
+
+    void DefaultScreen::drawEditOverlay(sf::RenderWindow &window)
+    {
+        if (!this->_editMode || !this->_editTarget || !this->_font)
+            return;
+
+        const sf::IntRect &bounds = this->_rendererPanel.viewportBounds;
+
+        // Persistent "Edit Mode" banner over the top-left of the viewport.
+        const std::string name = this->_editObject ? this->_editObject->getName() : "object";
+        sf::Text banner("Edit Mode  —  " + name + "    (Tab/Esc: exit    drag: move    X/Y/Z: lock axis)", *this->_font, 13);
+        banner.setFillColor(theme::TEXT_WHITE);
+        banner.setPosition(static_cast<float>(bounds.left) + 10.0f, static_cast<float>(bounds.top) + 7.0f);
+        const sf::FloatRect textBounds = banner.getLocalBounds();
+        sf::RectangleShape bannerBg({textBounds.width + 20.0f, 24.0f});
+        bannerBg.setPosition(static_cast<float>(bounds.left) + 6.0f, static_cast<float>(bounds.top) + 6.0f);
+        bannerBg.setFillColor(theme::withAlpha(theme::ACCENT, 210));
+        window.draw(bannerBg);
+        window.draw(banner);
+
+        // Vertex handles. Drawing is capped so a dense mesh can't stall the UI;
+        // off-screen / behind-camera vertices are skipped by the projection.
+        const sf::Color baseColor(0, 170, 255);
+        const sf::Color hoverColor(255, 255, 255);
+        const sf::Color selectedColor(255, 30, 30);   // bright red: the vertex being edited
+        const std::size_t MAX_HANDLES = 4000;
+        const std::size_t count = this->_editTarget->getVertexCount();
+        std::size_t drawn = 0;
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            sf::Vector2f handle;
+            if (!this->vertexHandleWindowPos(i, handle))
+                continue;
+            const bool selected = static_cast<int>(i) == this->_selectedVertex;
+            const bool hovered = static_cast<int>(i) == this->_hoverVertex;
+            // The selected handle is drawn larger with a white outline so the
+            // bright-red dot stays legible over any surface colour.
+            const float radius = selected ? 6.5f : 4.0f;
+            sf::CircleShape dot(radius);
+            dot.setOrigin(radius, radius);
+            dot.setPosition(handle);
+            dot.setFillColor(selected ? selectedColor : (hovered ? hoverColor : baseColor));
+            dot.setOutlineThickness(selected ? 2.0f : 1.0f);
+            dot.setOutlineColor(selected ? sf::Color(255, 255, 255) : theme::OUTLINE);
+            window.draw(dot);
+            if (++drawn >= MAX_HANDLES)
+                break;
+        }
     }
 }

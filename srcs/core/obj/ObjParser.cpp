@@ -162,6 +162,11 @@ void rc::ObjParser::parseFace(const std::string &line, std::size_t line_number)
         raw.n2 = (rotation * this->_normals[normalIndex2]).unit_vector();
     }
     this->_rawTriangles.push_back(raw);
+    this->_faceVertexIndices.push_back({
+        std::get<0>(vertices[0]),
+        std::get<0>(vertices[1]),
+        std::get<0>(vertices[2])
+    });
 
     if (!this->_emitObjects)
         return;
@@ -205,4 +210,14 @@ void rc::ObjParser::setEmitObjects(bool emit)
 const std::vector<rc::ObjTriangle> &rc::ObjParser::getTriangles() const
 {
     return this->_rawTriangles;
+}
+
+const std::vector<rc::Vector3f> &rc::ObjParser::getVertices() const
+{
+    return this->_vertices;
+}
+
+const std::vector<std::array<int, 3>> &rc::ObjParser::getFaceVertexIndices() const
+{
+    return this->_faceVertexIndices;
 }

@@ -31,6 +31,13 @@ namespace rc
             virtual void renderScene(const IScene &scene) = 0;
             virtual void setPixel(int x, int y, Color color) = 0;
 
+            // Optional hook: the scene's contents changed (object transform,
+            // material, light, ...) without the camera moving. Renderers that
+            // cache a traced frame use this to invalidate that cache so the next
+            // renderScene re-traces; those that always render from scratch ignore
+            // it (default no-op).
+            virtual void markSceneDirty() {}
+
             virtual void stopRendering() = 0;
 
             virtual bool isRendering() const = 0;

@@ -13,18 +13,60 @@
 
 namespace rc
 {
-    MeshTriangle::MeshTriangle(const Vector3f &v0, const Vector3f &v1, const Vector3f &v2)
-        : _vertex0(v0), _edge1(v1 - v0), _edge2(v2 - v0),
-          _faceNormal(this->_edge1.cross(this->_edge2).unit_vector())
+    void MeshTriangle::recomputeEdges()
     {
+        this->_edge1 = this->_vertex[1] - this->_vertex[0];
+        this->_edge2 = this->_vertex[2] - this->_vertex[0];
+        this->_faceNormal = this->_edge1.cross(this->_edge2).unit_vector();
+    }
+
+    MeshTriangle::MeshTriangle(const Vector3f &v0, const Vector3f &v1, const Vector3f &v2)
+    {
+        this->_vertex[0] = v0;
+        this->_vertex[1] = v1;
+        this->_vertex[2] = v2;
+        this->recomputeEdges();
     }
 
     MeshTriangle::MeshTriangle(const Vector3f &v0, const Vector3f &v1, const Vector3f &v2,
         const Vector3f &n0, const Vector3f &n1, const Vector3f &n2)
-        : _vertex0(v0), _edge1(v1 - v0), _edge2(v2 - v0),
-          _faceNormal(this->_edge1.cross(this->_edge2).unit_vector()),
-          _smooth(true), _normal0(n0), _normal1(n1), _normal2(n2)
     {
+        this->_vertex[0] = v0;
+        this->_vertex[1] = v1;
+        this->_vertex[2] = v2;
+        this->_smooth = true;
+        this->_normal[0] = n0;
+        this->_normal[1] = n1;
+        this->_normal[2] = n2;
+        this->recomputeEdges();
+    }
+
+    void MeshTriangle::setCornerVertex(int corner, const Vector3f &worldPos)
+    {
+        if (corner < 0 || corner > 2)
+            return;
+        this->_vertex[corner] = worldPos;
+        this->recomputeEdges();
+    }
+
+    void MeshTriangle::setCornerNormal(int corner, const Vector3f &worldNormal)
+    {
+        if (corner < 0 || corner > 2)
+            return;
+        this->_smooth = true;
+        this->_normal[corner] = worldNormal;
+    }
+
+    Vector3f MeshTriangle::cornerVertex(int corner) const
+    {
+        if (corner < 0 || corner > 2)
+            return (this->_vertex[0]);
+        return (this->_vertex[corner]);
+    }
+
+    Vector3f MeshTriangle::faceNormal() const
+    {
+        return (this->_faceNormal);
     }
 
     bool MeshTriangle::intersect(const Ray &ray, float tMin, float tMax, Intersection &hit) const
@@ -38,7 +80,7 @@ namespace rc
             return (false);
 
         float f = 1.0f / a;
-        Vector3f s = ray.origin - this->_vertex0;
+        Vector3f s = ray.origin - this->_vertex[0];
         float u = f * dot(s, h);
 
         if (u < 0.0f || u > 1.0f)
@@ -62,7 +104,7 @@ namespace rc
         if (this->_smooth)
         {
             float w = 1.0f - u - v;
-            Vector3f interpolated = w * this->_normal0 + u * this->_normal1 + v * this->_normal2;
+            Vector3f interpolated = w * this->_normal[0] + u * this->_normal[1] + v * this->_normal[2];
             float len = static_cast<float>(interpolated.length());
             if (len > 0.0f)
                 normal = interpolated / len;
@@ -80,17 +122,15 @@ namespace rc
 
     AABB MeshTriangle::bounding_box() const
     {
-        Vector3f v1 = this->_vertex0 + this->_edge1;
-        Vector3f v2 = this->_vertex0 + this->_edge2;
         Vector3f min(
-            std::min({this->_vertex0.x, v1.x, v2.x}),
-            std::min({this->_vertex0.y, v1.y, v2.y}),
-            std::min({this->_vertex0.z, v1.z, v2.z})
+            std::min({this->_vertex[0].x, this->_vertex[1].x, this->_vertex[2].x}),
+            std::min({this->_vertex[0].y, this->_vertex[1].y, this->_vertex[2].y}),
+            std::min({this->_vertex[0].z, this->_vertex[1].z, this->_vertex[2].z})
         );
         Vector3f max(
-            std::max({this->_vertex0.x, v1.x, v2.x}),
-            std::max({this->_vertex0.y, v1.y, v2.y}),
-            std::max({this->_vertex0.z, v1.z, v2.z})
+            std::max({this->_vertex[0].x, this->_vertex[1].x, this->_vertex[2].x}),
+            std::max({this->_vertex[0].y, this->_vertex[1].y, this->_vertex[2].y}),
+            std::max({this->_vertex[0].z, this->_vertex[1].z, this->_vertex[2].z})
         );
         return AABB{min, max};
     }
