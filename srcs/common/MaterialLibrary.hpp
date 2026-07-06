@@ -164,6 +164,10 @@ namespace rc
                 return (fallback);
             }
 
+        public:
+            // Serialization API shared with the scene saver/loader so a material
+            // round-trips identically whether it lives in the market folder or
+            // embedded in a scene file.
             static nlohmann::json toJson(const Material &material)
             {
                 nlohmann::json object;

@@ -192,15 +192,20 @@ namespace rc
         assignFloat("roughness", material.roughness);
         assignFloat("ao", material.ao);
         assignFloat("specularLevel", material.specular_level);
+        assignFloat("specular_level", material.specular_level);
         assignFloat("specularTint", material.specular_tint);
+        assignFloat("specular_tint", material.specular_tint);
         assignFloat("clearcoat", material.clearcoat);
         assignFloat("clearcoatRoughness", material.clearcoat_roughness);
+        assignFloat("clearcoat_roughness", material.clearcoat_roughness);
         assignFloat("sheen", material.sheen);
         assignFloat("sheenTint", material.sheen_tint);
+        assignFloat("sheen_tint", material.sheen_tint);
         assignFloat("transmission", material.transmission);
         assignFloat("alpha", material.alpha);
         assignFloat("normal_scale", material.normal_scale);
         assignFloat("normal_noise_frequency", material.normal_noise_frequency);
+        assignFloat("texture_uv_scale", material.texture_uv_scale);
 
         if (object.contains("normal_map"))
             material.normal_map = asString(object["normal_map"], "normal_map");
@@ -211,6 +216,16 @@ namespace rc
                 material.normal_map_enabled = enabled.get<bool>();
             else if (enabled.is_number())
                 material.normal_map_enabled = (enabled.get<float>() != 0.0f);
+        }
+        if (object.contains("texture_map"))
+            material.texture_map = asString(object["texture_map"], "texture_map");
+        if (object.contains("texture_map_enabled"))
+        {
+            const json &enabled = object["texture_map_enabled"];
+            if (enabled.is_boolean())
+                material.texture_map_enabled = enabled.get<bool>();
+            else if (enabled.is_number())
+                material.texture_map_enabled = (enabled.get<float>() != 0.0f);
         }
 
         return material;
