@@ -91,11 +91,19 @@ namespace rc
                 {
                     std::vector<ColorF> pixels;
                     render_kernel::render_tile_sample(scene, camera, job.start_x, job.start_y, job.end_x, job.end_y, pixels);
-                    this->applyTileSample(job, pixels);
-                    this->_coordinator.markComplete(job);
+                    // markComplete gates the accumulation: if a client already
+                    // returned this tile (after a timeout requeue), skip it so we
+                    // don't add the same tile twice.
+                    if (this->_coordinator.markComplete(job))
+                        this->applyTileSample(job, pixels);
                     continue;
                 }
 
+                // Nothing left to render locally: reclaim any tiles that were
+                // dispatched to clients but never came back, so the sample
+                // completes even if every client died. Driving this from the
+                // render loop makes termination independent of the server thread.
+                this->_coordinator.requeueTimedOut(this->_tileTimeout);
                 if (this->_coordinator.waitForSampleCompletion(std::chrono::milliseconds(10)))
                     break;
             }
@@ -106,7 +114,8 @@ namespace rc
 
         this->_currentSample = -1;
         this->_rendering = false;
-        server->broadcastServerState(ServerRenderState::IDLING);
+        if (server)
+            server->broadcastServerState(ServerRenderState::IDLING);
     }
 
     void ClusterRenderer::stopRendering()
