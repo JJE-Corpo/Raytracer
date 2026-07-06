@@ -25,7 +25,7 @@
         {
             "name": "Sphere",
             "type": "sphere",
-            "material": "material #0",
+            "material": "material #8",
             "position": [
                 0.0,
                 0.0,
@@ -41,7 +41,7 @@
     ],
     "materials": [
         {
-            "name": "material #0",
+            "name": "material #8",
             "model": "pbr",
             "alpha": 1.0,
             "ao": 1.0,

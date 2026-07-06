@@ -110,6 +110,7 @@ namespace rc
                 normal = interpolated / len;
         }
         hit.set_face_normal(ray, normal);
+        hit.uv = Vector2f(u, v);
         hit.primitive = this;
         return (true);
     }

@@ -56,6 +56,7 @@ namespace rc
         hit.t = t;
         hit.point = ray.at(hit.t);
         hit.set_face_normal(ray, this->_normal);
+        hit.uv = Vector2f(u, v);
         // hit.color = this->_colorF;
         if (this->_material)
             hit.material = *this->_material;

@@ -11,6 +11,7 @@
 #include "../LayoutPen.hpp"
 #include "../ViewportHelper.hpp"
 #include "../../../common/Material.hpp"
+#include "../../../common/MaterialLibrary.hpp"
 #include "../../../common/scene/IPrimitive.hpp"
 #include "../../../common/scene/ISceneObject.hpp"
 
@@ -143,6 +144,7 @@ namespace rc
         {
             const MaterialModel model = index == 0 ? MaterialModel::PHONG : MaterialModel::PBR;
             const_cast<Material *>(primitive->getMaterial())->model = model;
+            this->persistMaterial();
             this->rebuild(primitive);
         };
         this->_materialModelSelector.enabled = true;
@@ -152,6 +154,7 @@ namespace rc
         this->_baseColorPicker.onChange = [primitive, this](const ColorF &color)
         {
             const_cast<Material *>(primitive->getMaterial())->baseColor = color;
+            this->persistMaterial();
             this->rebuild(primitive);
         };
 
@@ -172,9 +175,10 @@ namespace rc
             slider.setValue(value);
 
             const std::string prop_key = name;
-            slider.onChange            = [prop_key, primitive](float value)
+            slider.onChange            = [prop_key, primitive, this](float value)
             {
                 const_cast<Material *>(primitive->getMaterial())->update<float>(prop_key, value);
+                this->persistMaterial();
             };
 
             this->_materialSliders.push_back(slider);
@@ -279,8 +283,21 @@ namespace rc
         if (trimmed.empty())
             return;
 
+        const std::string previousName = this->_material->name;
         this->_material->name = trimmed;
         this->_materialName.setString(trimmed);
+
+        // Rename in the market too: drop the old file before writing the new one
+        // so a renamed material does not leave a stale entry behind.
+        if (previousName != trimmed)
+            MaterialLibrary::remove(previousName);
+        this->persistMaterial();
+    }
+
+    void MaterialPanel::persistMaterial()
+    {
+        if (this->_material)
+            MaterialLibrary::save(*this->_material);
     }
 
     void MaterialPanel::draw(sf::RenderTarget &target, sf::RenderStates states) const

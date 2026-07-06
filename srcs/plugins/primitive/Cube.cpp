@@ -18,6 +18,7 @@
 #include "../../common/Intersection.hpp"
 #include "../../common/AABB.hpp"
 #include "../../common/Matrix.hpp"
+#include "../../common/UvMapping.hpp"
 #include "../../core/scene/builder/SceneObjectBuilder.hpp"
 
 rc::Cube::Cube(std::string name, const Vector3f &center, const Vector3f &rotation, const Vector3f &scale, float size, const Material *material) : _center(center), _rotation(rotation), _scale(scale), _size(size), _material(material)
@@ -182,6 +183,8 @@ bool rc::Cube::intersect(const Ray &ray, float tMin, float tMax, Intersection &h
     Vector3f n(normal4.x, normal4.y, normal4.z);
     n = normalize(n);
     hit.normal = n;
+    float uvSize = (this->_size != 0.0f) ? this->_size : 1.0f;
+    hit.uv = uvmap::planar(hit.point - this->_center, n, uvSize);
     // hit.color = this->_colorF;
     if (this->_material)
         hit.material = *this->_material;

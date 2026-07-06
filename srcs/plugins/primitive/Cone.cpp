@@ -15,6 +15,7 @@
 #include "../../common/Intersection.hpp"
 #include "../../common/Ray.hpp"
 #include "../../common/Matrix.hpp"
+#include "../../common/UvMapping.hpp"
 #include "iostream"
 #include "../../core/scene/builder/SceneObjectBuilder.hpp"
 // source : https://www.geometrictools.com/Documentation/IntersectionLineCone.pdf
@@ -150,6 +151,7 @@ namespace rc
         Vector3f nRot = rotOnly * nScaled;
         nRot = normalize(nRot);
         hit.set_face_normal(ray, nRot);
+        hit.uv = uvmap::cylindrical(hit.point - V, D, eff_height);
         // hit.color = this->_colorF;
         if (this->_material)
             hit.material = *this->_material;
