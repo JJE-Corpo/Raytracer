@@ -45,6 +45,7 @@ Typical outputs include classic scenes with spheres, planes, cubes, cones, cylin
 | Directional light | [docs/objects/lights/directional-light.md](docs/objects/lights/directional-light.md) |
 | Camera model | [docs/camera.md](docs/camera.md) |
 | Ray model | [docs/ray.md](docs/ray.md) |
+| Vertex editing | [docs/vertex-editing.md](docs/vertex-editing.md) |
 
 ## Features
 
@@ -59,6 +60,7 @@ Typical outputs include classic scenes with spheres, planes, cubes, cones, cylin
 	- BVH build before rendering.
 	- Config-driven scene construction with builder/factory pipeline.
 	- Runtime plugin loading for renderers and user interface (`.so`).
+	- Interactive vertex editing of Triangle and Mesh primitives in the viewport (see [docs/vertex-editing.md](docs/vertex-editing.md)).
 	- Optional cluster module infrastructure.
 
 ## Getting Started

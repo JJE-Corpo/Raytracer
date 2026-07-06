@@ -37,6 +37,13 @@ namespace rc
             // by the scene, so deleting a group and one of its descendants in the
             // same batch is safe in any order. The caller must rebuild the BVH.
             virtual void removeObject(ISceneObject *object) = 0;
+            // Replace an analytic primitive with an editable triangle mesh that
+            // approximates its surface (the mesh is baked to a .obj under
+            // generated_meshes/ so it round-trips like any other mesh). Returns
+            // the new mesh, or nullptr if the primitive cannot be meshed
+            // (infinite, e.g. a plane, or already a mesh/triangle). The caller
+            // must rebuild the BVH and refresh the selection.
+            virtual IPrimitive *convertToMesh(IPrimitive *primitive) = 0;
             virtual Material *getMaterial(const std::string &name) = 0;
             virtual Material *createMaterial(const std::string &name) = 0;
             virtual Material *createMaterial() = 0;
