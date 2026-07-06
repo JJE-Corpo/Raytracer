@@ -67,6 +67,12 @@ namespace rc
         void drawRenderer(sf::RenderWindow &window, ISceneRenderer *renderer);
         // Host-side cluster HUD (top-right); no-ops unless this node is a server.
         void drawClusterServerOverlay(sf::RenderWindow &window);
+        // Route a mouse event to the cluster HUD's minimize/expand toggle; returns
+        // true when the toggle consumed the click so it never reaches the scene.
+        bool handleClusterOverlayEvent(sf::RenderWindow &window, const sf::Event &event);
+        // The cursor the cluster HUD wants (move over its header, hand over the
+        // toggle), or ARROW when not hosting or not hovering it.
+        CursorType clusterOverlayCursor();
         // Persistent badge in the viewport's bottom-left corner, drawn only while
         // movement mode is on, so the active camera controls are always visible
         // (the toggle toast is transient).
