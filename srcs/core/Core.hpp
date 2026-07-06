@@ -40,6 +40,12 @@ namespace rc
 
             std::atomic<bool> _renderRequested{};
 
+            // Set while we overwrite the watched scene file ourselves (Ctrl+S).
+            // The config-watcher poll loop skips its hot-reload while this is up,
+            // so our own save is never mistaken for an external edit (which would
+            // delete + reparse the scene out from under the live UI/renderer).
+            std::atomic<bool> _suppressWatcherReload{false};
+
             std::atomic<bool> _running;
 
             std::atomic<CoreState> _state;
