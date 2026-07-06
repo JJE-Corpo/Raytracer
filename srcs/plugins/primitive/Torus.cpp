@@ -171,6 +171,14 @@ int solveCubic(double c[4], double s[3]) {
         Vector3f forward_rot(-_rotation.x, -_rotation.y, -_rotation.z);
         N = normalize(rotate(N, forward_rot));
         hit.set_face_normal(ray, N);
+
+        // Toroidal UV: angle around the main axis (u) and around the tube (v).
+        constexpr float PI = 3.14159265358979323846f;
+        float ringAngle = std::atan2(static_cast<float>(localP.y), static_cast<float>(localP.x));
+        float inPlane = std::sqrt(static_cast<float>(localP.x * localP.x + localP.y * localP.y)) - static_cast<float>(R);
+        float tubeAngle = std::atan2(static_cast<float>(localP.z), inPlane);
+        hit.uv = Vector2f(0.5f + ringAngle / (2.0f * PI), 0.5f + tubeAngle / (2.0f * PI));
+
         //  hit.color = this->_colorF;
         if (this->_material)
             hit.material = *this->_material;

@@ -50,6 +50,7 @@ SOURCES = main.cpp \
 		srcs/plugins/primitive/Fractal.cpp \
 		srcs/plugins/primitive/mesh/MeshTriangle.cpp \
 		srcs/plugins/primitive/mesh/Mesh.cpp \
+		srcs/common/render/stb_image_impl.cpp \
 
 OBJECTS = ${SOURCES:.cpp=.o}
 
@@ -69,11 +70,13 @@ USERINTERFACE_SOURCES = srcs/plugins/user_interface/UserInterface.cpp \
 USERINTERFACE_OBJECTS = ${USERINTERFACE_SOURCES:.cpp=.o}
 
 DEFAULTRENDERER_NAME = renderer_default.so
-DEFAULTRENDERER_SOURCES = srcs/plugins/renderer/DefaultRenderer.cpp
+DEFAULTRENDERER_SOURCES = srcs/plugins/renderer/DefaultRenderer.cpp \
+		srcs/common/render/stb_image_impl.cpp
 DEFAULTRENDERER_OBJECTS = ${DEFAULTRENDERER_SOURCES:.cpp=.o}
 
 VIEWPORTRENDERER_NAME = renderer_viewport.so
-VIEWPORTRENDERER_SOURCES = srcs/plugins/renderer/ViewportRenderer.cpp
+VIEWPORTRENDERER_SOURCES = srcs/plugins/renderer/ViewportRenderer.cpp \
+		srcs/common/render/stb_image_impl.cpp
 VIEWPORTRENDERER_OBJECTS = ${VIEWPORTRENDERER_SOURCES:.cpp=.o}
 
 all: $(NAME)

@@ -43,6 +43,11 @@ namespace rc
             void beginNameEdit();
             void commitName(const std::string &value);
 
+            // Mirror the currently shown material back to the materials market
+            // (~/.raytracer/materials) so UI edits persist there. No-op when no
+            // material is shown.
+            void persistMaterial();
+
             sf::Text _materialName;
             SegmentedControl _materialModelSelector;
             ColorPicker _baseColorPicker;

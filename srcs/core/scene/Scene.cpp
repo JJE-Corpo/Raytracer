@@ -4,6 +4,7 @@
 
 #include "Scene.hpp"
 #include "../../common/Intersection.hpp"
+#include "../../common/MaterialLibrary.hpp"
 #include "../../common/Ray.hpp"
 #include "../../common/AABB.hpp"
 #include "../../common/scene/IEditablePrimitive.hpp"
@@ -450,6 +451,9 @@ namespace rc
 
         result.name = name;
         this->_materials.emplace(name, result);
+        // Every freshly created material joins the market so it can be reused
+        // from any scene later (see MaterialLibrary / the market window).
+        MaterialLibrary::save(this->_materials[name]);
         return (&this->_materials[name]);
     }
 

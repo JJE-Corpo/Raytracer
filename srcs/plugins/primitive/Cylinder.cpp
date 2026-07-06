@@ -9,6 +9,7 @@
 #include "../../common/Intersection.hpp"
 #include "../../common/Ray.hpp"
 #include "../../common/Utils.hpp"
+#include "../../common/UvMapping.hpp"
 #include "../../core/scene/builder/SceneObjectBuilder.hpp"
 
 namespace rc
@@ -105,6 +106,7 @@ namespace rc
             hit.t = root;
             hit.point = point;
             hit.set_face_normal(ray, normal);
+            hit.uv = uvmap::cylindrical(point - this->_center, axis, eff_height);
             if (this->_material)
                 hit.material = *this->_material;
             hit.primitive = this;
@@ -143,6 +145,7 @@ namespace rc
             hit.t = t;
             hit.point = point;
             hit.set_face_normal(ray, normal);
+            hit.uv = uvmap::planar(point - center, axis, 2.0f * eff_radius);
             // hit.color = this->_colorF;
             if (this->_material)
                 hit.material = *this->_material;

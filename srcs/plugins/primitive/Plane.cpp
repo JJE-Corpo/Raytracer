@@ -75,6 +75,16 @@ namespace rc
         hit.t = t;
         hit.point = ray.origin + t * ray.direction;
         hit.set_face_normal(ray, (denom < 0.0f) ? this->_normal : -this->_normal);
+
+        // Planar UV: project the hit onto an orthonormal basis of the plane.
+        Vector3f n = normalize(this->_normal);
+        Vector3f up = (std::fabs(n.y) > 0.99f) ? Vector3f(1.0f, 0.0f, 0.0f) : Vector3f(0.0f, 1.0f, 0.0f);
+        Vector3f tangent = normalize(up.cross(n));
+        Vector3f bitangent = n.cross(tangent);
+        Vector3f rel = hit.point - this->_origin;
+        float scale = (this->_size != 0.0f) ? this->_size : 1.0f;
+        hit.uv = Vector2f(dot(rel, tangent) / scale, dot(rel, bitangent) / scale);
+
         // hit.color = this->_colorF;
         if (this->_material)
             hit.material = *this->_material;
