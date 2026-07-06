@@ -1267,9 +1267,6 @@ namespace rc
         // Build the set of top-level components that are live in the current view
         // mode, then let the router pick the single best one for this event
         // (menu bar and open pop-ups win over the panels and the viewport).
-        std::vector<Component *> candidates = {&this->_menuBar, &this->_rendererPanel};
-        const bool viewportMode = this->_viewMode == ViewMode::VIEWPORT;
-
         std::vector<Component *> candidates = {&this->_contextMenu, &this->_menuBar, &this->_rendererPanel};
 
         if (viewportMode)
@@ -1516,10 +1513,8 @@ namespace rc
         if (event.type == sf::Event::KeyReleased)
             this->setFlyKey(event.key.code, false);
         else if (event.type == sf::Event::KeyPressed && !this->_vertexDragActive && !this->_objectDragActive
-                 && !this->_axisDragActive && !this->_rotDragActive && !this->_scaleDragActive &&
-        else if (event.type == sf::Event::KeyPressed && !event.key.control &&
-                 this->_movementMode &&
-                 (this->_rightMouseHeld || this->isViewportCaptured(mouse)))
+                 && !this->_axisDragActive && !this->_rotDragActive && !this->_scaleDragActive && !event.key.control &&
+                 this->_movementMode && (this->_rightMouseHeld || this->isViewportCaptured(mouse)))
             this->setFlyKey(event.key.code, true);
     }
 
