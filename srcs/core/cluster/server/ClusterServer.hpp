@@ -40,7 +40,12 @@ namespace rc
             IClusterTileSink *_tileSink = nullptr;
             std::chrono::milliseconds _tileTimeout{5000};
 
+            // Guards _renderCoordinator / _tileSink.
             std::mutex _serverMutex;
+            // Guards _connections. The socket thread mutates it (accept/erase)
+            // while the render thread iterates it (broadcasts/dispatch), so every
+            // access must hold this — except the blocking poll(), which stays out.
+            std::mutex _connectionsMutex;
 
             void handleClientDisconnect(int connectionFd);
             void handleClients();
