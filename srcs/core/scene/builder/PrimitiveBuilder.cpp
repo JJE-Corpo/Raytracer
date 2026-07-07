@@ -114,6 +114,24 @@ rc::PrimitiveBuilder &rc::PrimitiveBuilder::withVertexOverrides(const std::vecto
     return (*this);
 }
 
+rc::PrimitiveBuilder &rc::PrimitiveBuilder::withVertices(const std::vector<Vector3f> &vertices)
+{
+    this->_vertices = vertices;
+    return (*this);
+}
+
+rc::PrimitiveBuilder &rc::PrimitiveBuilder::withFaces(const std::vector<std::array<int, 3>> &faces)
+{
+    this->_faces = faces;
+    return (*this);
+}
+
+rc::PrimitiveBuilder &rc::PrimitiveBuilder::withNormals(const std::vector<Vector3f> &normals)
+{
+    this->_normals = normals;
+    return (*this);
+}
+
 rc::PrimitiveBuilder &rc::PrimitiveBuilder::withMaterial(const Material *material)
 {
     this->_material = material;
@@ -147,6 +165,12 @@ rc::IPrimitive *rc::PrimitiveBuilder::build() const
     if (this->_type == PRIMITIVE_TORUS)
         return (new Torus(this->_name, this->_position, this->_rotation, static_cast<float>(this->_radius), this->_height, this->_material));
     if (this->_type == PRIMITIVE_MESH)
+    {
+        // Inline geometry (a baked primitive) takes precedence over a .obj path.
+        if (!this->_vertices.empty())
+            return (new Mesh(this->_name, this->_vertices, this->_faces, this->_normals,
+                this->_position, this->_rotation, this->_scale, this->_material));
         return (new Mesh(this->_name, this->_file, this->_position, this->_rotation, this->_scale, this->_material, this->_vertexOverrides));
+    }
     return (nullptr);
 }

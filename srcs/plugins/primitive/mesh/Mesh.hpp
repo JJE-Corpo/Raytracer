@@ -68,6 +68,12 @@ namespace rc
             AABB _bounds{{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}};
 
             void loadObj();
+            // Populate the object-space topology (vertices, faces, normals) from an
+            // in-memory geometry buffer instead of a .obj file. `vertexNormals` may
+            // be empty (flat shading) or one normal per vertex (smooth shading).
+            void buildFromGeometry(const std::vector<Vector3f> &vertices,
+                const std::vector<std::array<int, 3>> &faces,
+                const std::vector<Vector3f> &vertexNormals);
             void applyOverrides(const std::vector<std::pair<int, Vector3f>> &overrides);
             void buildWorldGeometry();
             void rebuildBvh();
@@ -83,6 +89,13 @@ namespace rc
             Mesh(std::string name, const std::string &file, const Vector3f &position,
                 const Vector3f &rotation, const Vector3f &scale, const Material *material,
                 const std::vector<std::pair<int, Vector3f>> &overrides = {});
+            // In-memory construction: bake a primitive straight into a mesh (verts +
+            // index triples + optional per-vertex normals) with no backing .obj file.
+            // Used by Scene::convertToMesh; the geometry is serialized inline instead.
+            Mesh(std::string name, const std::vector<Vector3f> &vertices,
+                const std::vector<std::array<int, 3>> &faces,
+                const std::vector<Vector3f> &vertexNormals, const Vector3f &position,
+                const Vector3f &rotation, const Vector3f &scale, const Material *material);
 
             bool intersect(const Ray &ray, float tMin, float tMax, Intersection &hit) const override;
             bool isFinite() const override;
@@ -116,6 +129,15 @@ namespace rc
 
             // Serialization: object-space edits to persist as vertex_overrides.
             std::map<std::size_t, Vector3f> getVertexOverrides() const override;
+
+            // Inline geometry (meshes with no backing .obj file, e.g. baked from a
+            // primitive): the scene serializer writes these arrays instead of a
+            // "file" path so the mesh round-trips without any external file.
+            bool hasInlineGeometry() const;
+            const std::vector<Vector3f> &getBaseVertices() const;
+            const std::vector<std::array<int, 3>> &getBaseFaces() const;
+            // One normal per base vertex, or empty when the mesh is flat-shaded.
+            std::vector<Vector3f> getVertexNormals() const;
     };
 }
 

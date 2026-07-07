@@ -105,6 +105,24 @@ namespace rc
         return (*this);
     }
 
+    SceneObjectBuilder &SceneObjectBuilder::withVertices(const std::vector<Vector3f> &vertices)
+    {
+        this->_primitiveBuilder.withVertices(vertices);
+        return (*this);
+    }
+
+    SceneObjectBuilder &SceneObjectBuilder::withFaces(const std::vector<std::array<int, 3>> &faces)
+    {
+        this->_primitiveBuilder.withFaces(faces);
+        return (*this);
+    }
+
+    SceneObjectBuilder &SceneObjectBuilder::withNormals(const std::vector<Vector3f> &normals)
+    {
+        this->_primitiveBuilder.withNormals(normals);
+        return (*this);
+    }
+
     SceneObjectBuilder &SceneObjectBuilder::withMaterial(const Material *material)
     {
         this->_primitiveBuilder.withMaterial(material);

@@ -1,6 +1,7 @@
 #ifndef SCENEOBJECTBUILDER_HPP
 #define SCENEOBJECTBUILDER_HPP
 
+#include <array>
 #include <utility>
 #include <vector>
 
@@ -50,6 +51,9 @@ namespace rc
             SceneObjectBuilder &withSize(float size);
             SceneObjectBuilder &withFile(const std::string &file);
             SceneObjectBuilder &withVertexOverrides(const std::vector<std::pair<int, Vector3f>> &overrides);
+            SceneObjectBuilder &withVertices(const std::vector<Vector3f> &vertices);
+            SceneObjectBuilder &withFaces(const std::vector<std::array<int, 3>> &faces);
+            SceneObjectBuilder &withNormals(const std::vector<Vector3f> &normals);
             SceneObjectBuilder &withMaterial(const Material *material);
             SceneObjectBuilder &withPower(float power);
             SceneObjectBuilder &withIterations(int iterations);

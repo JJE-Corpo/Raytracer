@@ -37,6 +37,19 @@ namespace rc
         this->rebuildBvh();
     }
 
+    Mesh::Mesh(std::string name, const std::vector<Vector3f> &vertices,
+        const std::vector<std::array<int, 3>> &faces,
+        const std::vector<Vector3f> &vertexNormals, const Vector3f &position,
+        const Vector3f &rotation, const Vector3f &scale, const Material *material)
+        : _position(position), _rotation(rotation), _scale(scale), _material(material)
+    {
+        if (!name.empty())
+            this->_name = name;
+        this->buildFromGeometry(vertices, faces, vertexNormals);
+        this->buildWorldGeometry();
+        this->rebuildBvh();
+    }
+
     Vector3f Mesh::objToWorld(const Vector3f &objPos) const
     {
         Vector3f p = objPos - this->_objCenter;
@@ -151,6 +164,66 @@ namespace rc
             {
                 this->_faceSmooth[f] = 1;
                 this->_cornerObjNormal[f] = {tris[f].n0, tris[f].n1, tris[f].n2};
+            }
+            else
+            {
+                const Vector3f &n = this->_faceObjNormal[f];
+                this->_cornerObjNormal[f] = {n, n, n};
+            }
+        }
+    }
+
+    void Mesh::buildFromGeometry(const std::vector<Vector3f> &vertices,
+        const std::vector<std::array<int, 3>> &faces,
+        const std::vector<Vector3f> &vertexNormals)
+    {
+        this->_baseVertices = vertices;
+        this->_faces = faces;
+        this->_incident.clear();
+        this->_faceObjNormal.clear();
+        this->_cornerObjNormal.clear();
+        this->_faceSmooth.clear();
+        this->_overrides.clear();
+        this->_objCenter = {0.0f, 0.0f, 0.0f};
+        if (this->_baseVertices.empty())
+            return;
+
+        // Fixed recenter pivot from the incoming vertices (matches loadObj()).
+        Vector3f mn = this->_baseVertices[0];
+        Vector3f mx = mn;
+        for (const Vector3f &v : this->_baseVertices)
+        {
+            mn.x = std::min(mn.x, v.x); mn.y = std::min(mn.y, v.y); mn.z = std::min(mn.z, v.z);
+            mx.x = std::max(mx.x, v.x); mx.y = std::max(mx.y, v.y); mx.z = std::max(mx.z, v.z);
+        }
+        this->_objCenter = (mn + mx) * 0.5f;
+
+        // Vertex -> incident (face, corner) table.
+        this->_incident.assign(this->_baseVertices.size(), {});
+        for (std::size_t f = 0; f < this->_faces.size(); ++f)
+            for (int c = 0; c < 3; ++c)
+            {
+                const int vi = this->_faces[f][c];
+                if (vi >= 0 && vi < static_cast<int>(this->_baseVertices.size()))
+                    this->_incident[vi].push_back({static_cast<int>(f), c});
+            }
+
+        // Per-vertex normals (one per vertex) drive smooth shading; without them
+        // the faces stay flat, giving hard edges (e.g. a baked cube).
+        const bool smooth = (vertexNormals.size() == this->_baseVertices.size());
+        this->_faceObjNormal.assign(this->_faces.size(), Vector3f(0.0f, 0.0f, 1.0f));
+        this->_cornerObjNormal.assign(this->_faces.size(), {Vector3f(), Vector3f(), Vector3f()});
+        this->_faceSmooth.assign(this->_faces.size(), 0);
+        for (std::size_t f = 0; f < this->_faces.size(); ++f)
+        {
+            this->recomputeFaceObjNormal(static_cast<int>(f));
+            if (smooth)
+            {
+                this->_faceSmooth[f] = 1;
+                this->_cornerObjNormal[f] = {
+                    vertexNormals[this->_faces[f][0]],
+                    vertexNormals[this->_faces[f][1]],
+                    vertexNormals[this->_faces[f][2]]};
             }
             else
             {
@@ -419,5 +492,43 @@ namespace rc
     std::map<std::size_t, Vector3f> Mesh::getVertexOverrides() const
     {
         return (this->_overrides);
+    }
+
+    bool Mesh::hasInlineGeometry() const
+    {
+        return (this->_file.empty() && !this->_baseVertices.empty());
+    }
+
+    const std::vector<Vector3f> &Mesh::getBaseVertices() const
+    {
+        return (this->_baseVertices);
+    }
+
+    const std::vector<std::array<int, 3>> &Mesh::getBaseFaces() const
+    {
+        return (this->_faces);
+    }
+
+    std::vector<Vector3f> Mesh::getVertexNormals() const
+    {
+        // Recover one normal per vertex from its first incident smooth corner.
+        // Freshly baked meshes are uniformly smooth or flat; a flat mesh has no
+        // per-vertex normals, so return empty and let the reload recompute them.
+        std::vector<Vector3f> normals(this->_baseVertices.size(), Vector3f(0.0f, 0.0f, 0.0f));
+        bool anySmooth = false;
+        for (std::size_t v = 0; v < this->_baseVertices.size(); ++v)
+        {
+            if (v >= this->_incident.size() || this->_incident[v].empty())
+                continue;
+            const std::pair<int, int> &ref = this->_incident[v][0];
+            if (this->_faceSmooth[ref.first])
+            {
+                normals[v] = this->_cornerObjNormal[ref.first][ref.second];
+                anySmooth = true;
+            }
+        }
+        if (!anySmooth)
+            return (std::vector<Vector3f>());
+        return (normals);
     }
 }
