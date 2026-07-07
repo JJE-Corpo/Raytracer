@@ -17,6 +17,9 @@ namespace rc
     struct ClusterClientScreen : AScreen
     {
         private:
+            static constexpr float MARGIN = 12.f;
+            static constexpr float CARD_W = 300.f;
+
             void updateRenderPreview()
             {
                 sf::Image image;
@@ -39,8 +42,42 @@ namespace rc
                     this->_renderTexture.loadFromImage(image);
                 else
                     this->_renderTexture.update(image);
-                this->_renderSprite.setTexture(this->_renderTexture);
+                this->_renderSprite.setTexture(this->_renderTexture, true);
             }
+
+            static const char *activityLabel(IClusterClient::ClientState state)
+            {
+                switch (state)
+                {
+                    case IClusterClient::ClientState::FETCHING_DATA:  return ("Fetching scene");
+                    case IClusterClient::ClientState::RECEIVING_DATA: return ("Receiving scene");
+                    case IClusterClient::ClientState::RENDERING:      return ("Rendering tiles");
+                    case IClusterClient::ClientState::SENDING_DATA:   return ("Sending tiles");
+                    default:                                          return ("Idle");
+                }
+            }
+
+            static const char *connectionLabel(ConnectionState state)
+            {
+                switch (state)
+                {
+                    case ConnectionState::CONNECTED:    return ("Connected");
+                    case ConnectionState::PENDING:      return ("Connecting...");
+                    case ConnectionState::REFUSED:      return ("Refused");
+                    default:                            return ("Disconnected");
+                }
+            }
+
+            static sf::Color connectionColor(ConnectionState state)
+            {
+                switch (state)
+                {
+                    case ConnectionState::CONNECTED:    return (theme::CHECKED);
+                    case ConnectionState::PENDING:      return (theme::ACCENT);
+                    default:                            return (theme::TOAST_ERROR);
+                }
+            }
+
         public:
         void setClient(IClusterClient *client)
         {
@@ -77,8 +114,7 @@ namespace rc
 
         void setFont(sf::Font &font) override
         {
-            this->_title.setFont(font);
-            this->_status.setFont(font);
+            this->_line.setFont(font);
             this->_leaveButton.setFont(font);
             this->_toastManager.setFont(font);
         }
@@ -95,9 +131,6 @@ namespace rc
             void update(sf::RenderWindow &window) override
             {
                 sf::Vector2i mouse = sf::Mouse::getPosition(window);
-                int width = window.getSize().x - 20;
-                LayoutPen verticalLayout = {10, 10};
-                float viewportScale = 1.f;
 
                 if (this->_clusterClient == nullptr)
                     return;
@@ -109,7 +142,7 @@ namespace rc
                 {
                     IScene *scene = this->_clusterClient->getScene();
 
-                    if (scene)
+                    if (scene && this->_viewportRenderer)
                     {
                         this->_viewportRenderer->renderScene(*scene);
                         this->_currentRender = this->_viewportRenderer->getRender();
@@ -119,31 +152,26 @@ namespace rc
                         this->_currentRender = Render();
                     }
                 }
-                this->_title.setString("Cluster " + this->_clusterClient->getAddress() + " (Port: " + std::to_string(this->_clusterClient->getPort()) + ")");
-                this->_title.setPosition(verticalLayout.x, verticalLayout.y);
-                this->_title.setCharacterSize(18);
-                this->_title.setFillColor(theme::TEXT_MAIN);
-                verticalLayout.next(18);
-                this->_status.setString(this->_clusterClient->getStatus());
-                this->_status.setPosition(verticalLayout.x, verticalLayout.y);
-                this->_status.setCharacterSize(12);
-                this->_status.setFillColor(theme::TEXT_WHITE);
-                verticalLayout.next(12);
+
+                const float cardH = this->cardHeight();
                 this->_leaveButton.update(mouse);
                 this->_leaveButton.setLabel("Leave cluster");
                 this->_leaveButton.onClick = this->_onLeave;
-                this->_leaveButton.layout(verticalLayout.x, verticalLayout.y, width, 24);
-                verticalLayout.next(24);
+                this->_leaveButton.layout(MARGIN + 12.f, MARGIN + cardH - 34.f, CARD_W - 24.f, 24.f);
 
-                if (this->_currentRender.size_x > 0 && this->_currentRender.size_y > 0)
+                const float previewX = MARGIN + CARD_W + MARGIN;
+                const float availW = static_cast<float>(window.getSize().x) - previewX - MARGIN;
+                const float availH = static_cast<float>(window.getSize().y) - 2 * MARGIN;
+                float viewportScale = 1.f;
+
+                if (this->_currentRender.size_x > 0 && this->_currentRender.size_y > 0 && availW > 0 && availH > 0)
                 {
-                    const float scaleX = width / static_cast<float>(this->_currentRender.size_x);
-                    const float scaleY = (window.getSize().y - 20) / static_cast<float>(this->_currentRender.size_y);
+                    const float scaleX = availW / static_cast<float>(this->_currentRender.size_x);
+                    const float scaleY = availH / static_cast<float>(this->_currentRender.size_y);
                     viewportScale = std::min(scaleX, scaleY);
                 }
-
                 this->_renderSprite.setScale(viewportScale, viewportScale);
-                this->_renderSprite.setPosition({10, 10});
+                this->_renderSprite.setPosition({previewX, MARGIN});
 
                 this->applyCursor(window, this->_leaveButton.getCursor());
             }
@@ -152,18 +180,129 @@ namespace rc
             {
                 if (this->_clusterClient == nullptr)
                     return;
-                updateRenderPreview();
-                window.draw(this->_renderSprite);
-                window.draw(this->_title);
-                window.draw(this->_status);
-                window.draw(this->_leaveButton);
+
+                this->drawPreview(window);
+                this->drawInfoCard(window);
                 this->_toastManager.update();
                 this->_toastManager.draw(window);
             }
 
         private:
-            sf::Text _title;
-            sf::Text _status;
+            float cardHeight() const
+            {
+                // header + address + 4 info rows + separators + button.
+                return (26.f + 22.f + 4 * 22.f + 20.f + 34.f);
+            }
+
+            void drawPreview(sf::RenderWindow &window)
+            {
+                const float previewX = MARGIN + CARD_W + MARGIN;
+                const float availW = static_cast<float>(window.getSize().x) - previewX - MARGIN;
+                const float availH = static_cast<float>(window.getSize().y) - 2 * MARGIN;
+
+                if (this->_currentRender.size_x > 0 && this->_currentRender.size_y > 0)
+                {
+                    updateRenderPreview();
+                    window.draw(this->_renderSprite);
+                    return;
+                }
+                if (availW <= 0 || availH <= 0)
+                    return;
+                sf::RectangleShape placeholder({availW, availH});
+                placeholder.setPosition(previewX, MARGIN);
+                placeholder.setFillColor(theme::BG_PANEL);
+                placeholder.setOutlineThickness(1.f);
+                placeholder.setOutlineColor(theme::OUTLINE_MID);
+                window.draw(placeholder);
+
+                const bool serverBusy = this->_clusterClient->getServerRenderState() == ServerRenderState::RENDERING;
+                this->_line.setString(serverBusy ? "Server is rendering - helping render tiles..."
+                                                  : "Waiting for scene data...");
+                this->_line.setCharacterSize(14);
+                this->_line.setFillColor(theme::TEXT_DIM);
+                const sf::FloatRect bounds = this->_line.getLocalBounds();
+                this->_line.setPosition(previewX + (availW - bounds.width) / 2.f, MARGIN + availH / 2.f - 10.f);
+                window.draw(this->_line);
+            }
+
+            void drawLine(const std::string &text, float x, float y, unsigned size, const sf::Color &color,
+                sf::RenderWindow &window)
+            {
+                this->_line.setString(text);
+                this->_line.setCharacterSize(size);
+                this->_line.setFillColor(color);
+                this->_line.setPosition(x, y);
+                window.draw(this->_line);
+            }
+
+            void drawRow(const std::string &label, const std::string &value, const sf::Color &valueColor,
+                bool withDot, float cardX, float &penY, sf::RenderWindow &window)
+            {
+                const float pad = 12.f;
+                this->drawLine(label, cardX + pad, penY, 12, theme::TEXT_DIM, window);
+
+                float valueRight = cardX + CARD_W - pad;
+                this->_line.setString(value);
+                this->_line.setCharacterSize(12);
+                this->_line.setFillColor(valueColor);
+                const float valueWidth = this->_line.getLocalBounds().width;
+                this->_line.setPosition(valueRight - valueWidth, penY);
+                window.draw(this->_line);
+                if (withDot)
+                {
+                    sf::CircleShape dot(3.5f);
+                    dot.setPosition(valueRight - valueWidth - 12.f, penY + 4.f);
+                    dot.setFillColor(valueColor);
+                    window.draw(dot);
+                }
+                penY += 22.f;
+            }
+
+            void drawInfoCard(sf::RenderWindow &window)
+            {
+                const float cardX = MARGIN;
+                const float cardY = MARGIN;
+                const float cardH = this->cardHeight();
+
+                sf::RectangleShape card({CARD_W, cardH});
+                card.setPosition(cardX, cardY);
+                card.setFillColor(theme::withAlpha(theme::BG_POPUP, 240));
+                card.setOutlineThickness(1.f);
+                card.setOutlineColor(theme::OUTLINE_MID);
+                window.draw(card);
+
+                sf::RectangleShape header({CARD_W, 26.f});
+                header.setPosition(cardX, cardY);
+                header.setFillColor(theme::BG_BAR);
+                window.draw(header);
+                this->drawLine("CLUSTER CLIENT", cardX + 12.f, cardY + 5.f, 13, theme::TEXT_WHITE, window);
+
+                const std::string endpoint = this->_clusterClient->getAddress() + ":"
+                    + std::to_string(this->_clusterClient->getPort());
+                this->drawLine(endpoint, cardX + 12.f, cardY + 30.f, 12, theme::TEXT_SUBTLE, window);
+
+                float penY = cardY + 54.f;
+                const ConnectionState conn = this->_clusterClient->getConnectionState();
+                this->drawRow("Connection", connectionLabel(conn), connectionColor(conn), true, cardX, penY, window);
+
+                const bool serverBusy = this->_clusterClient->getServerRenderState() == ServerRenderState::RENDERING;
+                this->drawRow("Server", serverBusy ? "Rendering" : "Idle",
+                    serverBusy ? theme::ACCENT : theme::TEXT_DIM, false, cardX, penY, window);
+
+                this->drawRow("Activity", activityLabel(this->_clusterClient->getClientState()),
+                    theme::TEXT_MAIN, false, cardX, penY, window);
+
+                IScene *scene = this->_clusterClient->getScene();
+                const std::string sceneInfo = scene
+                    ? std::to_string(scene->getPrimitives().size()) + " obj - "
+                        + std::to_string(scene->getLights().size()) + " lights"
+                    : "-";
+                this->drawRow("Scene", sceneInfo, scene ? theme::TEXT_MAIN : theme::TEXT_DIM, false, cardX, penY, window);
+
+                window.draw(this->_leaveButton);
+            }
+
+            sf::Text _line;
             sf::Texture _renderTexture;
             sf::Sprite _renderSprite;
             Render _currentRender;

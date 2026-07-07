@@ -10,10 +10,6 @@
 
 namespace rc
 {
-    // A single triangle as read from the .obj (after the parser transform),
-    // with per-vertex normals when the file provides them (`vn`). Collected in
-    // raw mode so callers such as the Mesh primitive can build their own
-    // geometry instead of standalone Triangle scene objects.
     struct ObjTriangle
     {
         Vector3f v0;
@@ -39,9 +35,6 @@ namespace rc
             std::vector<Vector3f> _normals;
 
             std::vector<ObjTriangle> _rawTriangles;
-            // Per-face vertex indices into _vertices (parallel to _rawTriangles).
-            // Exposes the shared-vertex topology so callers such as the Mesh
-            // primitive can move a shared vertex across all incident faces.
             std::vector<std::array<int, 3>> _faceVertexIndices;
             bool _emitObjects = true;
 
@@ -63,14 +56,9 @@ namespace rc
             void withRotation(const Vector3f &rotation);
             void withSize(float size);
 
-            // When disabled, parse() records triangles into the raw list only and
-            // builds no Triangle scene objects. Defaults to enabled so the
-            // existing "obj" scene path is unchanged.
             void setEmitObjects(bool emit);
             const std::vector<ObjTriangle> &getTriangles() const;
 
-            // Object-space unique vertices (the raw `v` list, untransformed) and,
-            // parallel to getTriangles(), the vertex index triplet of each face.
             const std::vector<Vector3f> &getVertices() const;
             const std::vector<std::array<int, 3>> &getFaceVertexIndices() const;
     };

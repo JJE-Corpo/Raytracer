@@ -33,21 +33,11 @@ namespace rc
         bool caretVisible = true;
         size_t cursorPos = 0;
 
-        // Horizontal inset of the text inside the box, reserved on both sides so
-        // the caret never sits flush against an edge.
         static constexpr float PADDING = 8.f;
 
-        // How far (px) the text is shifted left so the caret stays inside the
-        // box: the field scrolls to follow the cursor when the value is wider
-        // than the visible area. Recomputed each frame in draw().
         mutable float scrollX = 0.f;
 
-        // The selection is the range [selMin(), selMax()) of value. The anchor is
-        // the fixed end (set where the drag/extend started); cursorPos is the
-        // moving end. When they are equal there is no selection, only a caret.
         size_t selectionAnchor = 0;
-        // True while the left button is held after a press inside the box, so
-        // MouseMoved events extend the selection (drag-select).
         bool selecting = false;
 
         size_t getCursorPosFromMouse(float mouseX) const
@@ -55,8 +45,6 @@ namespace rc
             if (this->value.empty())
                 return 0;
 
-            // The text is drawn shifted left by scrollX, so a click at screen
-            // mouseX lands on the glyph at unscrolled coordinate mouseX + scrollX.
             float adjustedX = mouseX + this->scrollX;
             float startX = this->text.getPosition().x;
             if (adjustedX <= startX)
@@ -129,16 +117,12 @@ namespace rc
             return (this->value.substr(this->selMin(), this->selMax() - this->selMin()));
         }
 
-        // A "word" is a run of alphanumeric/underscore characters; everything
-        // else (spaces, punctuation, path separators) counts as a boundary.
         static bool isWordChar(char c)
         {
             unsigned char uc = static_cast<unsigned char>(c);
             return (std::isalnum(uc) || c == '_');
         }
 
-        // Start of the word to the left of pos (Ctrl+Left / Ctrl+Backspace
-        // target): skip any boundary characters, then the word itself.
         size_t prevWordBoundary(size_t pos) const
         {
             size_t i = pos;
@@ -149,8 +133,6 @@ namespace rc
             return (i);
         }
 
-        // Start of the next word to the right of pos (Ctrl+Right / Ctrl+Delete
-        // target): skip the current word, then the boundary characters after it.
         size_t nextWordBoundary(size_t pos) const
         {
             size_t n = this->value.size();
@@ -162,17 +144,12 @@ namespace rc
             return (i);
         }
 
-        // Blink reset: force the caret on and restart its half-second clock so it
-        // stays solid right after any cursor/selection change.
         void resetCaret()
         {
             this->caretClock.restart();
             this->caretVisible = true;
         }
 
-        // Splice insert into value in place of [from, to), if the resulting text
-        // passes the onType validator. Collapses the selection onto the caret at
-        // the end of the inserted text. Returns whether the edit was applied.
         bool replaceRange(size_t from, size_t to, const std::string &insert)
         {
             std::string newValue = this->value;
@@ -199,8 +176,6 @@ namespace rc
         void pasteFromClipboard()
         {
             std::string clip = sf::Clipboard::getString().toAnsiString();
-            // Keep only printable ASCII: a single-line field must never ingest
-            // the newlines/control characters a clipboard may carry.
             std::string filtered;
             filtered.reserve(clip.size());
             for (char c : clip)
@@ -231,9 +206,6 @@ namespace rc
             return (this->box.getGlobalBounds());
         }
 
-        // A focused field captures keyboard events wherever the cursor is. It also
-        // keeps receiving pointer events (MouseMoved) so a drag-select can extend
-        // past the box edge.
         bool isCapturing() const override
         {
             return (this->focused && this->enabled);
@@ -245,9 +217,6 @@ namespace rc
                 return (false);
 
             // --- mouse: press/drag/release also drive focus ----------------
-            // Focus used to be applied from mouse polling in update(); it is done
-            // here instead so a press cleanly starts a drag-select and a release
-            // ends it, rather than the poll re-placing the caret every frame.
             if (event.type == sf::Event::MouseButtonPressed
                 && event.mouseButton.button == sf::Mouse::Left)
             {
@@ -260,16 +229,12 @@ namespace rc
                         || sf::Keyboard::isKeyPressed(sf::Keyboard::RShift);
                     this->focused = true;
                     this->cursorPos = pos;
-                    // Shift+click on an already-focused field extends from the
-                    // current anchor; any other click collapses to a caret.
                     if (!(shift && wasFocused))
                         this->selectionAnchor = pos;
                     this->selecting = true;
                     this->resetCaret();
                     return (true);
                 }
-                // A click elsewhere drops focus so the field stops eating the
-                // keyboard, but is not consumed: it must reach what is underneath.
                 this->focused = false;
                 this->selecting = false;
                 return (false);
@@ -285,7 +250,6 @@ namespace rc
 
             if (event.type == sf::Event::MouseMoved && this->selecting)
             {
-                // Extend the selection: move the cursor, leave the anchor put.
                 this->cursorPos = this->getCursorPosFromMouse((float)mouse.x);
                 this->resetCaret();
                 return (true);
@@ -296,9 +260,6 @@ namespace rc
 
             if (event.type == sf::Event::TextEntered)
             {
-                // Backspace and Delete are handled in KeyPressed below so their
-                // Ctrl modifier can trigger word deletion; here we only insert
-                // printable characters (replacing any active selection).
                 if (event.text.unicode < 128 && std::isprint(static_cast<int>(event.text.unicode)))
                 {
                     char ch = static_cast<char>(event.text.unicode);
@@ -357,8 +318,6 @@ namespace rc
 
                 if (event.key.code == sf::Keyboard::Left)
                 {
-                    // Ctrl jumps a whole word; plain Left over a selection
-                    // collapses to its left edge; otherwise it steps one char.
                     if (event.key.control)
                         this->cursorPos = this->prevWordBoundary(this->cursorPos);
                     else if (this->hasSelection() && !shift)
@@ -405,7 +364,6 @@ namespace rc
 
                 if (event.key.code == sf::Keyboard::BackSpace)
                 {
-                    // Ctrl+Backspace deletes the whole word to the left.
                     if (this->hasSelection())
                         this->deleteSelection();
                     else if (event.key.control)
@@ -421,7 +379,6 @@ namespace rc
 
                 if (event.key.code == sf::Keyboard::Delete)
                 {
-                    // Ctrl+Delete deletes the whole word to the right.
                     if (this->hasSelection())
                         this->deleteSelection();
                     else if (event.key.control)
@@ -440,16 +397,11 @@ namespace rc
             return (false);
         }
 
-        // Width available for text inside the box (both paddings removed).
         float innerWidth() const
         {
             return (std::max(0.f, this->box.getSize().x - 2.f * PADDING));
         }
 
-        // Recompute scrollX so the caret stays visible. An unfocused field, or one
-        // whose whole value already fits, is shown from the start (scrollX = 0);
-        // a focused, overflowing field slides just enough to keep the caret a few
-        // pixels inside either edge.
         void updateScroll() const
         {
             const float inner = this->innerWidth();
@@ -470,16 +422,9 @@ namespace rc
             else if (caret > this->scrollX + inner - margin)
                 this->scrollX = caret - inner + margin;
 
-            // Bound the scroll to the text (a small margin past the end keeps the
-            // caret visible when it sits at the very last character).
             this->scrollX = std::clamp(this->scrollX, 0.f, textWidth - inner + margin);
         }
 
-        // Restrict the following draws to `interior` (world coordinates) and apply
-        // the horizontal scroll, composed on top of whatever view is already active
-        // (e.g. a ScrollView's) so the text never bleeds past the box or outside the
-        // parent's own clip region. Returns false when there is nothing to draw
-        // (degenerate box or fully off-screen), in which case the caller skips.
         bool beginClip(sf::RenderTarget &target, const sf::FloatRect &interior, const sf::View &saved) const
         {
             if (interior.width <= 0.f || interior.height <= 0.f)
@@ -491,7 +436,6 @@ namespace rc
             const float W = static_cast<float>(ts.x);
             const float H = static_cast<float>(ts.y);
 
-            // Where the interior currently lands on screen through the active view.
             const sf::Vector2i tl = target.mapCoordsToPixel({interior.left, interior.top}, saved);
             const sf::Vector2i br = target.mapCoordsToPixel(
                 {interior.left + interior.width, interior.top + interior.height}, saved);
@@ -502,7 +446,6 @@ namespace rc
             if (rw <= 0.f || rh <= 0.f)
                 return (false);
 
-            // Clip that screen rect against the parent view's own visible region.
             const sf::FloatRect vp = saved.getViewport();
             const float ix0 = std::max(rx, vp.left * W);
             const float iy0 = std::max(ry, vp.top * H);
@@ -511,8 +454,6 @@ namespace rc
             if (ix1 <= ix0 || iy1 <= iy0)
                 return (false);
 
-            // Map the clipped screen rect back to the sub-rectangle of world space
-            // it shows (the interior shifted left by scrollX), keeping scale 1:1.
             const float worldLeft = interior.left + this->scrollX;
             const float wl = worldLeft + (ix0 - rx) / rw * interior.width;
             const float wt = interior.top + (iy0 - ry) / rh * interior.height;
@@ -547,7 +488,6 @@ namespace rc
             if (!clipped)
                 return;
 
-            // Selection highlight sits behind the glyphs so the text stays legible.
             if (this->focused && this->enabled && this->hasSelection())
             {
                 float x0 = this->text.findCharacterPos(this->selMin()).x;

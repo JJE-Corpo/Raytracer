@@ -92,8 +92,6 @@ namespace rc
             if (this->shouldExit())
                 break;
 
-            // The (potentially expensive) scene render happens outside the window
-            // lock, so it never blocks anything else waiting on the window.
             screen.prepareFrame();
             {
                 std::lock_guard<std::mutex> lock(gWindowXLock());

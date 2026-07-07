@@ -205,7 +205,7 @@ namespace rc
         while (this->_running)
         {
             bool reloadScene = this->_configObserver.pollChanges();
-            if (reloadScene)
+            if (reloadScene && !this->_suppressWatcherReload)
                 this->loadScene(this->_configObserver.getFilePath());
             if (this->getClusterModule()->getClusterMode() == ClusterMode::CLIENT)
             {
@@ -243,7 +243,18 @@ namespace rc
     {
         SceneRegister registerer;
 
+        const bool watchingTarget = (scene_path == this->_configObserver.getFilePath());
+
+        if (watchingTarget)
+            this->_suppressWatcherReload = true;
+
         registerer.saveScene(scene_path, this->_scene);
+
+        if (watchingTarget)
+        {
+            this->_configObserver.reset();
+            this->_suppressWatcherReload = false;
+        }
     }
 
     IScene &Core::loadNewScene(const std::string &scene_path)
@@ -263,8 +274,6 @@ namespace rc
 
     std::string Core::historySignature(const nlohmann::json &snapshot)
     {
-        // Compare scenes without their camera so panning/orbiting/flying the
-        // camera does not register as an editable change.
         nlohmann::json cameraless = snapshot;
 
         cameraless.erase("camera");
@@ -273,9 +282,6 @@ namespace rc
 
     void Core::restoreSnapshot(const nlohmann::json &snapshot)
     {
-        // Keep the live camera across the swap: the snapshot carries whatever
-        // camera it was taken with (needed so the parser accepts it), but the
-        // user's current viewpoint should not jump when undoing an edit.
         ICamera &current = this->_scene->getCamera();
         const Vector3f position = current.getPosition();
         const Vector3f rotation = current.getRotation();
@@ -320,12 +326,10 @@ namespace rc
         if (historySignature(snapshot) == historySignature(this->_history[this->_historyIndex]))
             return (false);
 
-        // Drop any redo tail, then append the new state as the current step.
         if (this->_historyIndex + 1 < static_cast<int>(this->_history.size()))
             this->_history.erase(this->_history.begin() + this->_historyIndex + 1, this->_history.end());
         this->_history.push_back(std::move(snapshot));
 
-        // Bound memory: forget the oldest states once the cap is hit.
         if (this->_history.size() > HISTORY_LIMIT)
             this->_history.erase(this->_history.begin(), this->_history.begin() + (this->_history.size() - HISTORY_LIMIT));
         this->_historyIndex = static_cast<int>(this->_history.size()) - 1;

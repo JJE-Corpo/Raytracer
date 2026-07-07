@@ -1,8 +1,3 @@
-//
-// Small helpers to derive texture UV coordinates from geometry, shared by the
-// primitives so texture mapping stays consistent across shapes.
-//
-
 #ifndef UVMAPPING_HPP
 #define UVMAPPING_HPP
 
@@ -15,7 +10,6 @@ namespace rc::uvmap
 {
     constexpr float PI = 3.14159265358979323846f;
 
-    // Two orthonormal vectors spanning the plane perpendicular to `n`.
     inline void basis(const Vector3f &n, Vector3f &tangent, Vector3f &bitangent)
     {
         Vector3f nn = normalize(n);
@@ -33,8 +27,6 @@ namespace rc::uvmap
         return Vector2f(0.5f + phi / (2.0f * PI), 0.5f + theta / PI);
     }
 
-    // Planar projection of `rel` (point relative to an origin) onto the plane
-    // whose normal is `n`, divided by `scale` for tiling.
     inline Vector2f planar(const Vector3f &rel, const Vector3f &n, float scale)
     {
         Vector3f tangent;

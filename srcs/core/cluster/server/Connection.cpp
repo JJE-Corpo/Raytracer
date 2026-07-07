@@ -8,6 +8,8 @@
 #include <stdexcept>
 #include <unistd.h>
 #include <vector>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <sys/socket.h>
 
 #include "../../../common/cluster/ByteBuffer.hpp"
@@ -32,9 +34,16 @@ namespace rc
 
     void Connection::open(int socket)
     {
-        this->_connectionFd = accept(socket, nullptr, nullptr);
+        sockaddr_in peer{};
+        socklen_t peerLen = sizeof(peer);
+
+        this->_connectionFd = accept(socket, reinterpret_cast<sockaddr *>(&peer), &peerLen);
         if (this->_connectionFd < 0)
             throw std::runtime_error("Accept failed");
+
+        char host[INET_ADDRSTRLEN] = {0};
+        if (::inet_ntop(AF_INET, &peer.sin_addr, host, sizeof(host)) != nullptr)
+            this->_address = std::string(host) + ":" + std::to_string(ntohs(peer.sin_port));
     }
 
     void Connection::sendPacket(const IPacket &packet)
@@ -79,9 +88,16 @@ namespace rc
 
             this->_readBuffer.data.erase(this->_readBuffer.data.begin(), this->_readBuffer.data.begin() + 6 + payloadSize);
 
-            auto packet = PacketFactory::createPacket(static_cast<PacketID>(packetId), payload);
-            if (packet)
-                packet->handle(*this);
+            try
+            {
+                auto packet = PacketFactory::createPacket(static_cast<PacketID>(packetId), payload);
+                if (packet)
+                    packet->handle(*this);
+            }
+            catch (const std::exception &e)
+            {
+                this->log(std::string("Dropped malformed packet: ") + e.what());
+            }
         }
         return (true);
     }
@@ -108,9 +124,24 @@ namespace rc
         return (this->_name);
     }
 
+    std::string Connection::getAddress() const
+    {
+        return (this->_address);
+    }
+
     int Connection::getFd()
     {
         return (this->_connectionFd);
+    }
+
+    uint64_t Connection::getTilesRendered() const
+    {
+        return (this->_tilesRendered.load());
+    }
+
+    void Connection::incrementTilesRendered()
+    {
+        this->_tilesRendered.fetch_add(1);
     }
 
     ConnectionState Connection::getConnectionState() const

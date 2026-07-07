@@ -74,9 +74,6 @@ namespace rc
             throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "Unknown axis \"" + axisStr + "\"");
         }
 
-        // Link a freshly built leaf under a parent. The builder set its transform
-        // as world; for a nested child that value is its LOCAL transform, so copy
-        // it into the local fields (flatten recomputes world from the ancestors).
         void linkChild(ISceneObject *child, ISceneObject *parent)
         {
             if (!parent || !child)
@@ -192,15 +189,20 @@ namespace rc
         assignFloat("roughness", material.roughness);
         assignFloat("ao", material.ao);
         assignFloat("specularLevel", material.specular_level);
+        assignFloat("specular_level", material.specular_level);
         assignFloat("specularTint", material.specular_tint);
+        assignFloat("specular_tint", material.specular_tint);
         assignFloat("clearcoat", material.clearcoat);
         assignFloat("clearcoatRoughness", material.clearcoat_roughness);
+        assignFloat("clearcoat_roughness", material.clearcoat_roughness);
         assignFloat("sheen", material.sheen);
         assignFloat("sheenTint", material.sheen_tint);
+        assignFloat("sheen_tint", material.sheen_tint);
         assignFloat("transmission", material.transmission);
         assignFloat("alpha", material.alpha);
         assignFloat("normal_scale", material.normal_scale);
         assignFloat("normal_noise_frequency", material.normal_noise_frequency);
+        assignFloat("texture_uv_scale", material.texture_uv_scale);
 
         if (object.contains("normal_map"))
             material.normal_map = asString(object["normal_map"], "normal_map");
@@ -211,6 +213,16 @@ namespace rc
                 material.normal_map_enabled = enabled.get<bool>();
             else if (enabled.is_number())
                 material.normal_map_enabled = (enabled.get<float>() != 0.0f);
+        }
+        if (object.contains("texture_map"))
+            material.texture_map = asString(object["texture_map"], "texture_map");
+        if (object.contains("texture_map_enabled"))
+        {
+            const json &enabled = object["texture_map_enabled"];
+            if (enabled.is_boolean())
+                material.texture_map_enabled = enabled.get<bool>();
+            else if (enabled.is_number())
+                material.texture_map_enabled = (enabled.get<float>() != 0.0f);
         }
 
         return material;
@@ -290,8 +302,6 @@ namespace rc
 
                 Material *matPtr = new Material(material);
 
-                // Loaded materials are mirrored into the market so they can be
-                // reused from other scenes (see MaterialLibrary).
                 MaterialLibrary::save(*matPtr);
 
                 this->_materials.push_back(matPtr);
@@ -388,7 +398,6 @@ namespace rc
         }
         std::string type = object["type"].get<std::string>();
 
-        // Group node: owns a local transform and builds its children recursively.
         if (type == "group")
         {
             Group *group = new Group();
@@ -398,8 +407,6 @@ namespace rc
                 try { group->setName(asString(object["name"], "name")); }
                 catch (std::exception &e) { std::cerr << LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, std::string("group name: ") + e.what()).what() << std::endl; }
             }
-            // Parent must be set before the local setters so they store LOCAL
-            // (for a root group parent is null and they store world instead).
             if (parent)
                 parent->addChild(group);
             try

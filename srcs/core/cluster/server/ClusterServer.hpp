@@ -40,7 +40,9 @@ namespace rc
             IClusterTileSink *_tileSink = nullptr;
             std::chrono::milliseconds _tileTimeout{5000};
 
+            // Guards _renderCoordinator / _tileSink.
             std::mutex _serverMutex;
+            mutable std::mutex _connectionsMutex;
 
             void handleClientDisconnect(int connectionFd);
             void handleClients();
@@ -55,6 +57,8 @@ namespace rc
             void stop() override;
 
             uint16_t getPort() const override;
+
+            std::vector<ClientInfo> getClients() const override;
 
             IScene *getScene() override;
 

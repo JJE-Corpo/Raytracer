@@ -91,11 +91,12 @@ namespace rc
                 {
                     std::vector<ColorF> pixels;
                     render_kernel::render_tile_sample(scene, camera, job.start_x, job.start_y, job.end_x, job.end_y, pixels);
-                    this->applyTileSample(job, pixels);
-                    this->_coordinator.markComplete(job);
+                    if (this->_coordinator.markComplete(job))
+                        this->applyTileSample(job, pixels);
                     continue;
                 }
 
+                this->_coordinator.requeueTimedOut(this->_tileTimeout);
                 if (this->_coordinator.waitForSampleCompletion(std::chrono::milliseconds(10)))
                     break;
             }
@@ -106,7 +107,8 @@ namespace rc
 
         this->_currentSample = -1;
         this->_rendering = false;
-        server->broadcastServerState(ServerRenderState::IDLING);
+        if (server)
+            server->broadcastServerState(ServerRenderState::IDLING);
     }
 
     void ClusterRenderer::stopRendering()

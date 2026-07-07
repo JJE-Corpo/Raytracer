@@ -5,6 +5,7 @@
 
 #include "../../common/scene/IEditablePrimitive.hpp"
 #include "../../plugins/primitive/mesh/Mesh.hpp"
+#include "../../common/MaterialLibrary.hpp"
 
 namespace rc
 {
@@ -142,9 +143,6 @@ namespace rc
             }
         }
 
-        // Nested objects serialize their LOCAL transform so the hierarchy round-
-        // trips. Roots keep the world values getProperties() wrote above (local ==
-        // world for them), preserving byte-for-byte flat-scene output.
         if (primitive->getParent() != nullptr)
         {
             object["position"] = vector3fJson(primitive->getLocalPosition());
@@ -177,7 +175,6 @@ namespace rc
             default:
                 std::cerr << "Unknown light type, cannot register" << std::endl;
         }
-        // Nested lights serialize their local transform (see primitiveJson).
         if (light->getParent() != nullptr)
         {
             if (light->getKind() == LightKind::DIRECTIONAL)
@@ -231,17 +228,7 @@ namespace rc
 
     json SceneRegister::materialJson(const Material *material)
     {
-        json object;
-
-        object["name"] = material->getName();
-        object["model"] = material->getModelName();
-
-        for (const auto &property : material->getProperties())
-            object[property.first] = property.second;
-
-        object["base_color"] = colorJson(material->getBaseColor().toColor());
-        object["specular"] = colorJson(material->getSpecular().toColor());
-        return object;
+        return MaterialLibrary::toJson(*material);
     }
 
     json SceneRegister::serializeScene(IScene *scene)
@@ -254,8 +241,6 @@ namespace rc
         };
         root["camera"] = cameraJson(&scene->getCamera());
 
-        // Walk the top-level nodes; serializeObject recurses into group children.
-        // Top-level order matches load order, so flat scenes round-trip cleanly.
         root["objects"] = json::array();
         for (ISceneObject *object : scene->getRoots())
         {

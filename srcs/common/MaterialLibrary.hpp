@@ -1,14 +1,3 @@
-//
-// Created by the materials market feature.
-//
-// Shared, header-only persistence for the "materials market": every material
-// created or loaded is written to ~/.raytracer/materials as a standalone JSON
-// file, and the market UI reads that folder back to offer the materials for
-// reuse in any scene. Kept header-only so both the core (which auto-saves on
-// create/load) and the user_interface plugin (which browses the folder) can use
-// it without extra link steps.
-//
-
 #ifndef MATERIALLIBRARY_HPP
 #define MATERIALLIBRARY_HPP
 
@@ -29,9 +18,6 @@ namespace rc
     class MaterialLibrary
     {
         public:
-            // Absolute path to ~/.raytracer/materials, creating it on the way.
-            // Returns "" when HOME is unset or the folder cannot be created, so
-            // callers can silently skip persistence rather than crash.
             static std::string directory()
             {
                 const char *home = std::getenv("HOME");
@@ -47,8 +33,6 @@ namespace rc
                 return (dir.string());
             }
 
-            // Write `material` to <dir>/<name>.json. A material with the same
-            // name overwrites the previous file (names are the market's key).
             static bool save(const Material &material)
             {
                 const std::string dir = directory();
@@ -65,9 +49,6 @@ namespace rc
                 return (true);
             }
 
-            // Delete the market file backing `name` (used when a material is
-            // renamed, so the old entry does not linger). A missing file is not
-            // an error.
             static bool remove(const std::string &name)
             {
                 const std::string dir = directory();
@@ -80,8 +61,6 @@ namespace rc
                 return (std::filesystem::remove(path, ec));
             }
 
-            // Every material found in the market folder, sorted by name so the
-            // UI shows a stable order. Unreadable/invalid files are skipped.
             static std::vector<Material> loadAll()
             {
                 std::vector<Material> materials;
@@ -120,8 +99,6 @@ namespace rc
             }
 
         private:
-            // Keep filenames tame: anything that is not alphanumeric, '-' or '_'
-            // becomes '_'. Falls back to "material" for an otherwise empty name.
             static std::string sanitize(const std::string &name)
             {
                 std::string result;
@@ -164,6 +141,10 @@ namespace rc
                 return (fallback);
             }
 
+        public:
+            // Serialization API shared with the scene saver/loader so a material
+            // round-trips identically whether it lives in the market folder or
+            // embedded in a scene file.
             static nlohmann::json toJson(const Material &material)
             {
                 nlohmann::json object;

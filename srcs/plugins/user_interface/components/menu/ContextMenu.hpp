@@ -1,13 +1,6 @@
 //
 // Created by jazema on 7/5/26.
 //
-// A floating popup menu opened at the cursor (right-click on a hierarchy row or
-// on an object in the viewport). Unlike Menu it has no header/toggle: the owner
-// fills it with (label, action) entries and calls openAt(x, y). It renders and
-// captures above everything else (zlayer::MENU) while shown, so a click on an
-// item runs it and closes, and a click anywhere else just dismisses the menu
-// without leaking to the panels/viewport behind it.
-//
 
 #ifndef CONTEXTMENU_HPP
 #define CONTEXTMENU_HPP
@@ -38,7 +31,6 @@ namespace rc
                     item.setFont(font);
             }
 
-            // Replace the entries and show the menu with its top-left at (x, y).
             void openAt(float x, float y, const std::vector<std::pair<std::string, std::function<void()>>> &entries)
             {
                 this->items.clear();
@@ -125,9 +117,6 @@ namespace rc
                 if (!this->open)
                     return (false);
 
-                // A press on an item runs it and closes; a press anywhere else
-                // dismisses the menu. Either way the press is consumed so it never
-                // reaches the panels or the viewport behind the popup.
                 if (event.type == sf::Event::MouseButtonPressed)
                 {
                     for (auto &item : this->items)

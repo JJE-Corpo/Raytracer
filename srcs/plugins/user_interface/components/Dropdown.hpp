@@ -117,7 +117,6 @@ namespace rc
                 return (header.getGlobalBounds());
             }
 
-            // While open, the pop-up panel is part of the interactive surface.
             bool contains(sf::Vector2i point) const override
             {
                 const sf::Vector2f p = static_cast<sf::Vector2f>(point);
@@ -157,8 +156,6 @@ namespace rc
                 target.draw(text, states);
             }
 
-            // The open list is drawn in the overlay pass so it is never clipped
-            // by a scrolling section.
             void drawOverlay(sf::RenderTarget &target, sf::RenderStates states) const override
             {
                 if (!open)
@@ -204,8 +201,6 @@ namespace rc
                         return (true);
                     }
                 }
-                // Click landed on the open panel (padding/gap): consume it so it
-                // does not fall through to components underneath the pop-up.
                 return (true);
             }
 

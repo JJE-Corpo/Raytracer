@@ -30,7 +30,6 @@ namespace rc
             AABB bounding_box() const override;
 
             std::string getName() const override;
-            // Internal acceleration node: its name is fixed and never user-editable.
             void setName(const std::string &name) override { (void)name; }
             std::string getTypeName() const override;
             Vector3f getPosition() const override;
@@ -47,8 +46,6 @@ namespace rc
             bool isHidden() const override;
             void setHidden(bool hidden) override;
 
-            // Internal acceleration node: never part of the scene graph, so the
-            // hierarchy accessors are inert stubs.
             ISceneObject *getParent() const override { return nullptr; }
             void setParent(ISceneObject *parent) override { (void)parent; }
             const std::vector<ISceneObject *> &getChildren() const override

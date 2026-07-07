@@ -1,20 +1,3 @@
-//
-// Mesh: a triangulated mesh primitive loaded from a Wavefront .obj file.
-//
-// The geometry is loaded once (through the existing ObjParser) into an
-// object-space, INDEXED triangle list: unique vertices plus the vertex-index
-// triplet of every face. The mesh is recentered on its own bounding-box center
-// so `position` places the mesh center (matching the other primitives), then
-// scaled / rotated / translated into world space. A local BVH (the shared
-// BVHNode) is built over the world-space triangles so intersection never scans
-// them linearly, and one global AABB is exposed to the scene BVH.
-//
-// The mesh is editable (IEditablePrimitive): moving a shared vertex moves every
-// incident face and recomputes the affected face and smooth vertex normals.
-// Edits are stored in OBJECT space as `vertex_overrides` so they survive both
-// the mesh transform and a save/reload round-trip (the .obj file is untouched).
-//
-
 #ifndef MESH_HPP
     #define MESH_HPP
 

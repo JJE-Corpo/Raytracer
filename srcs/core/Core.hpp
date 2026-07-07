@@ -40,26 +40,20 @@ namespace rc
 
             std::atomic<bool> _renderRequested{};
 
+            std::atomic<bool> _suppressWatcherReload{false};
+
             std::atomic<bool> _running;
 
             std::atomic<CoreState> _state;
 
             std::string _renderOutputPath = "render.png";
 
-            // Undo/redo: full-scene JSON snapshots. _historyIndex points at the
-            // snapshot matching the live scene; entries after it are the redo
-            // tail. Camera state is diffed out (see historyCapture) and re-applied
-            // on restore so camera moves never create undo steps.
             std::vector<nlohmann::json> _history;
             int _historyIndex = -1;
             static constexpr std::size_t HISTORY_LIMIT = 100;
 
-            // Serialize the current scene, then restore a snapshot by swapping the
-            // live scene for a freshly parsed one (preserving the live camera).
             nlohmann::json snapshotScene() const;
             void restoreSnapshot(const nlohmann::json &snapshot);
-            // The camera-independent part of a snapshot, used to detect whether an
-            // edit actually changed anything worth recording.
             static std::string historySignature(const nlohmann::json &snapshot);
         public:
             Core();

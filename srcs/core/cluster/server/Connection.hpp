@@ -4,6 +4,8 @@
 
 #ifndef CONNECTION_HPP
 #define CONNECTION_HPP
+#include <atomic>
+#include <cstdint>
 #include <mutex>
 #include <string>
 
@@ -22,8 +24,10 @@ namespace rc
             IClusterServer *_serverPtr;
 
             std::string _name = "Unknown user";
+            std::string _address = "?";
             ConnectionState _state = ConnectionState::PENDING;
             int _connectionFd = -1;
+            std::atomic<uint64_t> _tilesRendered{0};
 
             ByteBuffer _readBuffer;
             ByteBuffer _writeBuffer;
@@ -40,8 +44,12 @@ namespace rc
             bool handleRead();
 
             std::string getName();
+            std::string getAddress() const;
 
             int getFd();
+
+            uint64_t getTilesRendered() const;
+            void incrementTilesRendered();
 
             ConnectionState getConnectionState() const override;
             void setConnectionState(ConnectionState connectionState) override;

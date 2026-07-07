@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <deque>
 #include <mutex>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace rc
@@ -29,7 +30,9 @@ namespace rc
 
             void beginSample(uint32_t sample, int width, int height, int tile_size);
             bool popJob(TileJob &job);
-            void markComplete(const TileJob &job);
+            bool popRemoteJob(TileJob &job);
+            bool markComplete(const TileJob &job);
+            void requeueTimedOut(std::chrono::milliseconds timeout);
 
             bool isActive() const;
             bool isSampleComplete() const;
@@ -44,8 +47,10 @@ namespace rc
 
             bool isSampleCompleteLocked() const;
 
-            std::deque<TileJob>               _pending;
-            std::unordered_set<uint32_t>      _completedTiles;
+            std::deque<TileJob>                    _pending;
+            std::unordered_map<uint32_t, InFlight> _inFlight;
+            std::unordered_set<uint32_t>           _completedTiles;
+            std::unordered_set<uint32_t>           _timedOut;
             size_t                            _total         = 0;
             uint32_t                          _currentSample = 0;
             bool                              _active        = false;

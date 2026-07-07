@@ -326,7 +326,6 @@ namespace rc::render_kernel
         const Material &material = hit.material;
         ColorF baseColor = material.baseColor;
 
-        // Albedo texture: sample the PNG/JPG by the hit's UV, replacing baseColor.
         if (material.texture_map_enabled && !material.texture_map.empty())
         {
             const TextureImage &tex = TextureCache::get(material.texture_map);
@@ -500,8 +499,6 @@ namespace rc::render_kernel
                 transparency /= weight_sum;
             }
 
-            // Distribute energy between local (diffuse + direct specular),
-            // indirect specular (reflections) and transmission so they sum to 1.
             float non_trans_weight = 1.0f - transparency;
             float local_scale = non_trans_weight * (1.0f - reflect_weight);
             float refl_scale = non_trans_weight * reflect_weight;

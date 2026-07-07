@@ -30,25 +30,16 @@ namespace rc
             static nlohmann::json primitiveJson(IPrimitive *primitive);
             static nlohmann::json lightJson(ILight *light);
             static nlohmann::json groupJson(ISceneObject *group);
-            // Dispatch one node to the right serializer (recurses into groups).
             static nlohmann::json serializeObject(ISceneObject *object);
             static nlohmann::json materialJson(const Material *material);
         public:
             SceneRegister();
             ~SceneRegister();
 
-            // Serialize a whole scene into a JSON document that SceneParser can
-            // parse back. Exposed so the undo/redo history can snapshot the scene
-            // in memory without going through a file.
             static nlohmann::json serializeScene(IScene *scene);
 
             void saveScene(const std::string &scene_path, IScene *scene);
 
-            /**
-             * Serialize a scene into a JSON string parsable by SceneParser.
-             * @param scene Scene to serialize
-             * @return The scene as a JSON document
-             */
             std::string toString(IScene *scene);
     };
 }

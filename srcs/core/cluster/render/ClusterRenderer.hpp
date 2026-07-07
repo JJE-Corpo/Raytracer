@@ -6,6 +6,7 @@
 #define CLUSTERRENDERER_HPP
 
 #include <atomic>
+#include <chrono>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -50,6 +51,7 @@ namespace rc
             int _width = 0;
             int _height = 0;
             int _tileSize = 32;
+            std::chrono::milliseconds _tileTimeout{5000};
     };
 }
 

@@ -92,7 +92,6 @@ namespace rc
                 return (this->bar.getGlobalBounds());
             }
 
-            // The bar itself plus the open menu's drop-down panel.
             bool contains(sf::Vector2i point) const override
             {
                 const sf::Vector2f p = static_cast<sf::Vector2f>(point);
@@ -120,8 +119,6 @@ namespace rc
 
                 const bool consumed = activeMenu->handleEvent(event, mouse);
 
-                // While a menu is open it owns pointer presses, so a click never
-                // leaks to the panels or viewport behind the drop-down.
                 if (event.type == sf::Event::MouseButtonPressed)
                     return (true);
                 return (consumed);

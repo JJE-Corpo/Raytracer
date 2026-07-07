@@ -104,10 +104,6 @@ namespace rc
                 return true;
             }
 
-            // Deterministic primary ray through the CENTRE of render pixel
-            // (px, py) -- unlike ICamera::generateRay it adds no sub-pixel
-            // jitter, so it is stable frame to frame (needed for dragging a
-            // vertex without it shivering). Matches the viewport camera basis.
             static Ray rayThroughPixel(const ICamera &camera, int px, int py, int width, int height)
             {
                 const Vector3f origin = camera.getPosition();

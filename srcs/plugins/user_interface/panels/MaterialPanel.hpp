@@ -26,8 +26,6 @@ namespace rc
             void setFont(sf::Font &font) override;
             void layout(float x, float y, float width);
 
-            // Rebuilds the model selector, base-color picker and property sliders
-            // from currentObject's material (or clears them if it has none).
             void rebuild(const ISceneObject *currentObject);
 
             CursorType getCursor() override;
@@ -38,14 +36,9 @@ namespace rc
             void drawOverlay(sf::RenderTarget &target, sf::RenderStates states) const override;
 
         private:
-            // Opens the inline editor over the name label and commits the typed
-            // text back to the material.
             void beginNameEdit();
             void commitName(const std::string &value);
 
-            // Mirror the currently shown material back to the materials market
-            // (~/.raytracer/materials) so UI edits persist there. No-op when no
-            // material is shown.
             void persistMaterial();
 
             sf::Text _materialName;
@@ -53,12 +46,8 @@ namespace rc
             ColorPicker _baseColorPicker;
             std::vector<Slider> _materialSliders;
 
-            // The material behind _materialName, kept so an inline rename can
-            // write straight back to it. Null when no material is shown.
             Material *_material = nullptr;
 
-            // Double-click the name label to rename it, mirroring the hierarchy
-            // panel's object rename and a slider value's inline edit.
             InlineEditField _nameField;
             sf::FloatRect _nameRect;
             bool _nameHovered = false;

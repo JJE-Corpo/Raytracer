@@ -239,8 +239,6 @@ namespace rc
         return (vz);
     }
 
-    // Per-component conversion of an euler triple from degrees to radians. Scene
-    // objects author rotation in degrees; rotate() consumes radians.
     inline Vector3f degToRad(const Vector3f &deg)
     {
         return {
@@ -250,10 +248,6 @@ namespace rc
         };
     }
 
-    // Exact inverse of rotate(): rotate() applies R = Rz(z)*Ry(y)*Rx(x), so the
-    // inverse is Rx(-x)*Ry(-y)*Rz(-z) (reverse order, negated). Note that
-    // rotate(v, -rot) is NOT the inverse for multi-axis rotations. rot is in
-    // radians, matching rotate().
     inline Vector3f inverseRotate(const Vector3f &v, const Vector3f &rot)
     {
         float cx = std::cos(rot.x), sx = std::sin(rot.x);

@@ -17,10 +17,6 @@ namespace rc
 {
     namespace
     {
-        // Above this triangle count the local BVH is not rebuilt on every drag
-        // frame (only on release, via onGeometryChanged) so a dense mesh stays
-        // responsive -- the viewport just renders a slightly stale surface until
-        // the vertex is dropped.
         constexpr std::size_t LIVE_REBUILD_MAX = 4000;
     }
 
@@ -100,8 +96,6 @@ namespace rc
         if (len <= 0.0f)
             return;
         const Vector3f averaged = sum * (1.0f / len);
-        // Smooth this vertex across every incident face: assign the averaged
-        // normal to the corresponding corner and mark those faces smooth.
         for (const auto &ref : this->_incident[vertex])
         {
             this->_cornerObjNormal[ref.first][ref.second] = averaged;
@@ -248,8 +242,6 @@ namespace rc
         if (touchedVertices.empty())
             return;
 
-        // Recompute normals in the edited region so a reloaded edit matches what
-        // the interactive edit produced.
         std::set<int> touchedFaces;
         for (int v : touchedVertices)
             for (const auto &ref : this->_incident[v])
@@ -445,15 +437,12 @@ namespace rc
         this->_overrides[index] = objPos;
         this->_worldVertices[index] = worldPos;
 
-        // Faces whose geometry moved (this vertex is one of their corners).
         std::set<int> movedFaces;
         for (const auto &ref : this->_incident[index])
             movedFaces.insert(ref.first);
         for (int f : movedFaces)
             this->recomputeFaceObjNormal(f);
 
-        // Vertices whose averaged normal changed (the moved faces' corners), and
-        // then every face those vertices touch (their display normals shift).
         std::set<int> affectedVertices;
         for (int f : movedFaces)
             for (int c = 0; c < 3; ++c)
@@ -476,8 +465,6 @@ namespace rc
                     tri->setCornerNormal(c, this->normalObjToWorld(this->_cornerObjNormal[f][c]));
         }
 
-        // Keep the mesh AABB (scene BVH leaf) covering the moved vertex during the
-        // drag; the exact box is recomputed by onGeometryChanged() on release.
         this->_bounds = BoundingBoxUtils::surrounding_box(this->_bounds, AABB{worldPos, worldPos});
 
         if (this->_triangles.size() <= LIVE_REBUILD_MAX)
