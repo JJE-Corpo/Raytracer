@@ -357,6 +357,34 @@ namespace rc
                 }
                 b.withVertexOverrides(overrides);
             }},
+            {"vertices", [](SceneObjectBuilder &b, const json &v) {
+                if (!v.is_array())
+                    throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "vertices must be a list");
+                std::vector<Vector3f> vertices;
+                for (const auto &entry : v)
+                    vertices.push_back(parseVector3f(entry));
+                b.withVertices(vertices);
+            }},
+            {"faces", [](SceneObjectBuilder &b, const json &v) {
+                if (!v.is_array())
+                    throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "faces must be a list");
+                std::vector<std::array<int, 3>> faces;
+                for (const auto &entry : v)
+                {
+                    if (!entry.is_array() || entry.size() != 3)
+                        throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "a face must be an array of 3 vertex indices");
+                    faces.push_back({asInt(entry[0], "face index"), asInt(entry[1], "face index"), asInt(entry[2], "face index")});
+                }
+                b.withFaces(faces);
+            }},
+            {"normals", [](SceneObjectBuilder &b, const json &v) {
+                if (!v.is_array())
+                    throw LoadingSceneException(LoadingSceneException::ExceptionType::WRONG_FILE_CONTENT, "normals must be a list");
+                std::vector<Vector3f> normals;
+                for (const auto &entry : v)
+                    normals.push_back(parseVector3f(entry));
+                b.withNormals(normals);
+            }},
             {"power",      [](SceneObjectBuilder &b, const json &v) { b.withPower(asFloat(v, "power")); }},
             {"threshold",  [](SceneObjectBuilder &b, const json &v) { b.withThreshold(asFloat(v, "threshold")); }},
             {"intensity",  [](SceneObjectBuilder &b, const json &v) { b.withIntensity(asFloat(v, "intensity")); }},

@@ -4,6 +4,7 @@
 #include <iostream>
 
 #include "../../common/scene/IEditablePrimitive.hpp"
+#include "../../plugins/primitive/mesh/Mesh.hpp"
 #include "../../common/MaterialLibrary.hpp"
 
 namespace rc
@@ -96,7 +97,36 @@ namespace rc
         for (const auto &property : primitive->getProperties())
             writeProperty(object, property.first, property.second.first, property.second.second);
 
-        if (const IEditablePrimitive *editable = dynamic_cast<const IEditablePrimitive *>(primitive))
+        // A mesh baked from a primitive has no backing .obj file: serialize its
+        // geometry inline (object-space vertices, faces and per-vertex normals) so
+        // it round-trips without any external file.
+        const Mesh *inlineMesh = dynamic_cast<const Mesh *>(primitive);
+        if (inlineMesh && inlineMesh->hasInlineGeometry())
+        {
+            object.erase("file"); // the empty "file" property is meaningless here
+            json vertices = json::array();
+            for (const Vector3f &v : inlineMesh->getBaseVertices())
+                vertices.push_back(vector3fJson(v));
+            object["vertices"] = vertices;
+            json faces = json::array();
+            for (const std::array<int, 3> &f : inlineMesh->getBaseFaces())
+                faces.push_back(json::array({f[0], f[1], f[2]}));
+            object["faces"] = faces;
+            const std::vector<Vector3f> normals = inlineMesh->getVertexNormals();
+            if (!normals.empty())
+            {
+                json normalsJson = json::array();
+                for (const Vector3f &n : normals)
+                    normalsJson.push_back(vector3fJson(n));
+                object["normals"] = normalsJson;
+            }
+        }
+
+        // An editable primitive (Mesh, Cube, ...) persists its interactive vertex
+        // edits as object-space overrides re-applied on top of the base geometry.
+        // Inline meshes bake edits straight into their vertices, so skip overrides.
+        const IEditablePrimitive *editable = dynamic_cast<const IEditablePrimitive *>(primitive);
+        if (editable && !(inlineMesh && inlineMesh->hasInlineGeometry()))
         {
             const std::map<std::size_t, Vector3f> overrides = editable->getVertexOverrides();
             if (!overrides.empty())

@@ -18,12 +18,17 @@ namespace rc
     class BVHNode : public IPrimitive
     {
         private:
-            IPrimitive *_left;
-            IPrimitive *_right;
+            IPrimitive *_left = nullptr;
+            IPrimitive *_right = nullptr;
             AABB _bbox;
             bool _hidden = false;
+            // True when _left/_right are child BVHNodes this node allocated (and
+            // therefore owns); false for leaves, which point at primitives owned
+            // elsewhere (the scene / the mesh's triangles) and must not be freed.
+            bool _internal = false;
         public:
             BVHNode(std::vector<BVHBuildItem> &objects, int start, int end);
+            ~BVHNode();
 
             bool intersect(const Ray &ray, float tMin, float tMax, Intersection &hit) const override;
             bool isFinite() const override;

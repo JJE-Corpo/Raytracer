@@ -32,8 +32,7 @@ namespace rc
             std::unique_ptr<BVHNode> _bvhRoot;
             std::mutex _mutex;
 
-            int _meshExportCounter = 0;
-
+            // Root-list helpers (callers already hold, or don't need, _mutex).
             void addRoot(ISceneObject *object);
             void insertRoot(ISceneObject *object, int index);
             void removeRoot(ISceneObject *object);

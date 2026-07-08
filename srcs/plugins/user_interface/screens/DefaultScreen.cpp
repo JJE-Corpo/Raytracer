@@ -13,7 +13,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdio>
 #include <limits>
+#include <string>
 
 #include "../EventRouter.hpp"
 #include "../components/menu/Menu.hpp"
@@ -613,6 +615,11 @@ namespace rc
             this->_objectPanel.setGizmoMode(mode);
         };
         this->_objectPanel.setGizmoMode(static_cast<int>(this->_gizmoMode));
+        this->_objectPanel.onGizmoSpaceChanged = [this](bool local)
+        {
+            this->_gizmoLocal = local;
+        };
+        this->_objectPanel.setGizmoSpace(this->_gizmoLocal);
         this->_materialPanel.setFont(*this->_font);
 
         this->_sidebarResize.onResize = [this](float width)
@@ -775,10 +782,19 @@ namespace rc
             this->drawEditOverlay(window);
             switch (this->_gizmoMode)
             {
-                case GizmoMode::MOVE: this->drawMoveGizmo(window); break;
-                case GizmoMode::ROTATE: this->drawRotationRings(window); break;
-                case GizmoMode::SCALE: this->drawScaleGizmo(window); break;
+                case GizmoMode::MOVE:
+                    this->drawPlaneHandles(window);
+                    this->drawMoveGizmo(window);
+                    break;
+                case GizmoMode::ROTATE:
+                    this->drawViewRotationRing(window);
+                    this->drawRotationRings(window);
+                    break;
+                case GizmoMode::SCALE:
+                    this->drawScaleGizmo(window);
+                    break;
             }
+            this->drawGizmoReadout(window);
             this->drawMarker(window);
             this->drawAxisGizmo(window);
         }
@@ -1130,9 +1146,29 @@ namespace rc
         if (this->handleShortcut(event))
             return;
 
+        // G / R / S pick the gizmo tool, T toggles World/Local (viewport only,
+        // object selected). Consumes the key so it doesn't leak elsewhere.
+        if (this->handleGizmoShortcut(event, mouse))
+            return;
+
+        // Right mouse over the viewport is overloaded: a drag rotates the camera
+        // (independently of the component routing below), while a plain click
+        // (released without dragging past the threshold) opens the object
+        // context menu. A right-press on a panel must not grab the camera, and
+        // is handled by the hierarchy panel via consumeContextMenuRequest below.
         if (event.type == sf::Event::MouseButtonPressed &&
             event.mouseButton.button == sf::Mouse::Right)
         {
+            // Ctrl + right-click in the viewport drops a 3D marker under the
+            // cursor instead of orbiting or opening the context menu; the next
+            // primitive added from the menu spawns there.
+            if (this->isViewportCaptured(mouse)
+                && (sf::Keyboard::isKeyPressed(sf::Keyboard::LControl)
+                    || sf::Keyboard::isKeyPressed(sf::Keyboard::RControl)))
+            {
+                this->placeMarker(mouse);
+                return;
+            }
             this->_rightPressInViewport = this->isViewportCaptured(mouse);
             this->_rightDragged = false;
             this->_rightPressMouse = mouse;
@@ -1145,14 +1181,6 @@ namespace rc
 
         if (event.type == sf::Event::MouseMoved && this->_rightMouseHeld && !this->_rightDragged)
         {
-            if (sf::Keyboard::isKeyPressed(sf::Keyboard::LShift)
-                || sf::Keyboard::isKeyPressed(sf::Keyboard::RShift))
-            {
-                this->placeMarker(mouse);
-                return;
-            }
-            this->_rightMouseHeld = true;
-            this->_lastMouse = sf::Mouse::getPosition(window);
             const int dx = mouse.x - this->_rightPressMouse.x;
             const int dy = mouse.y - this->_rightPressMouse.y;
             if (dx * dx + dy * dy > RIGHT_CLICK_DRAG * RIGHT_CLICK_DRAG)
@@ -1245,6 +1273,51 @@ namespace rc
             }
         }
 
+        // Planar move / uniform scale / screen rotation drags, same pattern.
+        if (this->_planeDragActive)
+        {
+            if (event.type == sf::Event::MouseMoved)
+            {
+                this->applyPlaneDrag(mouse);
+                return;
+            }
+            if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left)
+            {
+                this->endPlaneDrag();
+                return;
+            }
+        }
+
+        if (this->_uscaleDragActive)
+        {
+            if (event.type == sf::Event::MouseMoved)
+            {
+                this->applyUniformScaleDrag(mouse);
+                return;
+            }
+            if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left)
+            {
+                this->endUniformScaleDrag();
+                return;
+            }
+        }
+
+        if (this->_viewRotActive)
+        {
+            if (event.type == sf::Event::MouseMoved)
+            {
+                this->applyViewRotationDrag(mouse);
+                return;
+            }
+            if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left)
+            {
+                this->endViewRotationDrag();
+                return;
+            }
+        }
+
+        // Object move: keep driving an in-progress object drag and end it on
+        // release, handled before component routing (same as the vertex drag).
         if (this->_objectDragActive)
         {
             if (event.type == sf::Event::MouseMoved)
@@ -1314,20 +1387,11 @@ namespace rc
                         this->syncVertexEditorField();
                     }
                 }
-                else if (int axis = (this->_gizmoMode == GizmoMode::MOVE) ? this->pickGizmoAxis(mouse) : -1;
-                         axis >= 0)
+                else if (this->beginGizmoDrag(this->singleSelectedObject(), mouse))
                 {
-                    this->beginAxisDrag(this->singleSelectedObject(), axis, mouse);
-                }
-                else if (int axis = (this->_gizmoMode == GizmoMode::ROTATE) ? this->pickRotationRing(mouse) : -1;
-                         axis >= 0)
-                {
-                    this->beginRotationDrag(this->singleSelectedObject(), axis, mouse);
-                }
-                else if (int axis = (this->_gizmoMode == GizmoMode::SCALE) ? this->pickGizmoAxis(mouse) : -1;
-                         axis >= 0)
-                {
-                    this->beginScaleDrag(this->singleSelectedObject(), axis, mouse);
+                    // A gizmo handle (arrow / plane / ring / centre / view-ring) was
+                    // grabbed for the active tool; the drag is now running and the
+                    // selection is kept. Nothing else to do on this press.
                 }
                 else
                 {
@@ -1465,9 +1529,11 @@ namespace rc
         }
         if (event.type == sf::Event::KeyReleased)
             this->setFlyKey(event.key.code, false);
-        else if (event.type == sf::Event::KeyPressed && !this->_vertexDragActive && !this->_objectDragActive
-                 && !this->_axisDragActive && !this->_rotDragActive && !this->_scaleDragActive && !event.key.control &&
-                 this->_movementMode && (this->_rightMouseHeld || this->isViewportCaptured(mouse)))
+        else if (event.type == sf::Event::KeyPressed && !event.key.control && this->_movementMode
+                 && !this->_vertexDragActive && !this->_objectDragActive
+                 && !this->_axisDragActive && !this->_rotDragActive && !this->_scaleDragActive
+                 && !this->_planeDragActive && !this->_uscaleDragActive && !this->_viewRotActive &&
+                 (this->_rightMouseHeld || this->isViewportCaptured(mouse)))
             this->setFlyKey(event.key.code, true);
     }
 
@@ -2111,6 +2177,64 @@ namespace rc
             const sf::Vector2f d(p.x - proj.x, p.y - proj.y);
             return std::sqrt(d.x * d.x + d.y * d.y);
         }
+
+        constexpr float SNAP_MOVE = 1.0f;    // world units
+        constexpr float SNAP_ROT = 15.0f;    // degrees
+        constexpr float SNAP_SCALE = 0.1f;   // scale factor / value
+
+        bool snapHeld()
+        {
+            return (sf::Keyboard::isKeyPressed(sf::Keyboard::LControl)
+                || sf::Keyboard::isKeyPressed(sf::Keyboard::RControl));
+        }
+
+        float snapTo(float value, float step)
+        {
+            return (step > 0.0f) ? std::round(value / step) * step : value;
+        }
+
+        std::string fmtNum(float v)
+        {
+            char buf[32];
+            std::snprintf(buf, sizeof(buf), "%.2f", v);
+            return (std::string(buf));
+        }
+
+        // Rotate the Euler triple `startDeg` (applied as Rz*Ry*Rx) by `angleDeg`
+        // about the world unit axis `axis`, and return the resulting Euler triple
+        // in degrees (same ZYX convention as rotate()).
+        Vector3f eulerCompose(const Vector3f &startDeg, const Vector3f &axis, float angleDeg)
+        {
+            const Vector3f r = degToRad(startDeg);
+            const float cx = std::cos(r.x), sx = std::sin(r.x);
+            const float cy = std::cos(r.y), sy = std::sin(r.y);
+            const float cz = std::cos(r.z), sz = std::sin(r.z);
+            const float R0[3][3] = {
+                {cz * cy, cz * sy * sx - sz * cx, cz * sy * cx + sz * sx},
+                {sz * cy, sz * sy * sx + cz * cx, sz * sy * cx - cz * sx},
+                {-sy, cy * sx, cy * cx},
+            };
+            const float len = std::sqrt(dot(axis, axis));
+            if (len < 1e-6f)
+                return (startDeg);
+            const float ax = axis.x / len, ay = axis.y / len, az = axis.z / len;
+            const float a = angleDeg * 3.14159265358979323846f / 180.0f;
+            const float c = std::cos(a), s = std::sin(a), t = 1.0f - c;
+            const float Rd[3][3] = {
+                {t * ax * ax + c, t * ax * ay - s * az, t * ax * az + s * ay},
+                {t * ax * ay + s * az, t * ay * ay + c, t * ay * az - s * ax},
+                {t * ax * az - s * ay, t * ay * az + s * ax, t * az * az + c},
+            };
+            float R[3][3];
+            for (int i = 0; i < 3; ++i)
+                for (int j = 0; j < 3; ++j)
+                    R[i][j] = Rd[i][0] * R0[0][j] + Rd[i][1] * R0[1][j] + Rd[i][2] * R0[2][j];
+            const float deg = 180.0f / 3.14159265358979323846f;
+            const float ry = std::atan2(-R[2][0], std::sqrt(R[0][0] * R[0][0] + R[1][0] * R[1][0]));
+            const float rx = std::atan2(R[2][1], R[2][2]);
+            const float rz = std::atan2(R[1][0], R[0][0]);
+            return {rx * deg, ry * deg, rz * deg};
+        }
     }
 
     ISceneObject *DefaultScreen::singleSelectedObject() const
@@ -2171,7 +2295,7 @@ namespace rc
             length = 1.0f;
         if (!this->projectToViewport(objPos, origin))
             return (false);
-        if (!this->projectToViewport(objPos + axisVector(axis) * length, tip))
+        if (!this->projectToViewport(objPos + this->gizmoAxisDir(axis) * length, tip))
             return (false);
         return (true);
     }
@@ -2287,7 +2411,7 @@ namespace rc
         this->_axisDragTarget = object;
         this->_axisDragAxis = axis;
         this->_axisDragObjStart = object->getPosition();
-        this->_axisDragDir = axisVector(axis);
+        this->_axisDragDir = this->gizmoAxisDir(axis);
         float t = 0.0f;
         this->_axisDragGrabT =
             this->axisParamFromMouse(mouse, this->_axisDragObjStart, this->_axisDragDir, t) ? t : 0.0f;
@@ -2300,9 +2424,14 @@ namespace rc
         float t = 0.0f;
         if (!this->axisParamFromMouse(mouse, this->_axisDragObjStart, this->_axisDragDir, t))
             return;
-        const Vector3f newPos = this->_axisDragObjStart + this->_axisDragDir * (t - this->_axisDragGrabT);
+        float delta = t - this->_axisDragGrabT;
+        if (snapHeld())
+            delta = snapTo(delta, SNAP_MOVE);
+        const Vector3f newPos = this->_axisDragObjStart + this->_axisDragDir * delta;
         this->_axisDragTarget->setLocalPosition(newPos);
         this->_axisDragMoved = true;
+        const char axisName[3] = {'X', 'Y', 'Z'};
+        this->_gizmoReadout = std::string(1, axisName[this->_axisDragAxis]) + " " + fmtNum(delta);
         this->markViewportBvhDirty();
         this->forceViewportRetrace();
     }
@@ -2321,29 +2450,11 @@ namespace rc
         this->_axisDragMoved = false;
         this->_axisDragTarget = nullptr;
         this->_axisDragAxis = -1;
+        this->_gizmoReadout.clear();
     }
 
     namespace
     {
-        void ringBasis(int axis, Vector3f &u, Vector3f &v)
-        {
-            if (axis == 0) // X ring lives in the YZ plane
-            {
-                u = {0.0f, 1.0f, 0.0f};
-                v = {0.0f, 0.0f, 1.0f};
-            }
-            else if (axis == 1) // Y ring in the ZX plane
-            {
-                u = {0.0f, 0.0f, 1.0f};
-                v = {1.0f, 0.0f, 0.0f};
-            }
-            else // Z ring in the XY plane
-            {
-                u = {1.0f, 0.0f, 0.0f};
-                v = {0.0f, 1.0f, 0.0f};
-            }
-        }
-
         constexpr int RING_SEGMENTS = 48;
     }
 
@@ -2382,9 +2493,10 @@ namespace rc
         float radius = std::sqrt(dot(toCam, toCam)) * 0.19f; // just outside the move arrows
         if (radius < 1e-4f)
             radius = 1.2f;
-        Vector3f u;
-        Vector3f v;
-        ringBasis(axis, u, v);
+        // The ring for `axis` lies in the plane spanned by the other two axes
+        // (world axes, or the object's local axes when Local space is on).
+        const Vector3f u = this->gizmoAxisDir((axis + 1) % 3);
+        const Vector3f v = this->gizmoAxisDir((axis + 2) % 3);
 
         constexpr float PI = 3.14159265358979323846f;
         pts.assign(RING_SEGMENTS + 1, {0.0f, 0.0f});
@@ -2475,7 +2587,7 @@ namespace rc
         this->_rotDragAxis = axis;
         this->_rotDragStartRot = object->getLocalRotation();
         this->_rotDragObjPos = object->getPosition();
-        this->_rotDragAxisN = axisVector(axis);
+        this->_rotDragAxisN = this->gizmoAxisDir(axis);
         Vector3f grab;
         this->_rotDragValid = false;
         if (this->rayPlanePoint(mouse, this->_rotDragObjPos, this->_rotDragAxisN, grab))
@@ -2507,17 +2619,29 @@ namespace rc
         constexpr float PI = 3.14159265358979323846f;
         const float sine = dot(this->_rotDragGrabVec.cross(cur), this->_rotDragAxisN);
         const float cosine = dot(this->_rotDragGrabVec, cur);
-        const float angleDeg = std::atan2(sine, cosine) * 180.0f / PI;
+        float angleDeg = std::atan2(sine, cosine) * 180.0f / PI;
+        if (snapHeld())
+            angleDeg = snapTo(angleDeg, SNAP_ROT);
 
-        Vector3f rotation = this->_rotDragStartRot;
-        if (this->_rotDragAxis == 0)
-            rotation.x += angleDeg;
-        else if (this->_rotDragAxis == 1)
-            rotation.y += angleDeg;
+        // In Local space the ring normal is the rotated axis, so compose the
+        // rotation properly; in World space it reduces to bumping one Euler angle.
+        Vector3f rotation;
+        if (this->_gizmoLocal)
+            rotation = eulerCompose(this->_rotDragStartRot, this->_rotDragAxisN, angleDeg);
         else
-            rotation.z += angleDeg;
+        {
+            rotation = this->_rotDragStartRot;
+            if (this->_rotDragAxis == 0)
+                rotation.x += angleDeg;
+            else if (this->_rotDragAxis == 1)
+                rotation.y += angleDeg;
+            else
+                rotation.z += angleDeg;
+        }
         this->_rotDragTarget->setLocalRotation(rotation);
         this->_rotDragMoved = true;
+        const char axisName[3] = {'X', 'Y', 'Z'};
+        this->_gizmoReadout = std::string(1, axisName[this->_rotDragAxis]) + " " + fmtNum(angleDeg) + " deg";
         this->markViewportBvhDirty();
         this->forceViewportRetrace();
     }
@@ -2537,6 +2661,7 @@ namespace rc
         this->_rotDragValid = false;
         this->_rotDragTarget = nullptr;
         this->_rotDragAxis = -1;
+        this->_gizmoReadout.clear();
     }
 
     void DefaultScreen::drawScaleGizmo(sf::RenderWindow &window) const
@@ -2597,7 +2722,7 @@ namespace rc
         this->_scaleDragAxis = axis;
         this->_scaleDragStartScale = object->getLocalScale();
         this->_scaleDragObjStart = object->getPosition();
-        this->_scaleDragDir = axisVector(axis);
+        this->_scaleDragDir = this->gizmoAxisDir(axis);
         float t = 0.0f;
         this->_scaleDragGrabT =
             this->axisParamFromMouse(mouse, this->_scaleDragObjStart, this->_scaleDragDir, t) ? t : 0.0f;
@@ -2612,7 +2737,9 @@ namespace rc
         float t = 0.0f;
         if (!this->axisParamFromMouse(mouse, this->_scaleDragObjStart, this->_scaleDragDir, t))
             return;
-        const float factor = t / this->_scaleDragGrabT;
+        float factor = t / this->_scaleDragGrabT;
+        if (snapHeld())
+            factor = std::max(SNAP_SCALE, snapTo(factor, SNAP_SCALE));
         Vector3f scale = this->_scaleDragStartScale;
         if (this->_scaleDragAxis == 0)
             scale.x = std::max(0.001f, this->_scaleDragStartScale.x * factor);
@@ -2622,6 +2749,8 @@ namespace rc
             scale.z = std::max(0.001f, this->_scaleDragStartScale.z * factor);
         this->_scaleDragTarget->setLocalScale(scale);
         this->_scaleDragMoved = true;
+        const char axisName[3] = {'X', 'Y', 'Z'};
+        this->_gizmoReadout = std::string(1, axisName[this->_scaleDragAxis]) + " " + fmtNum(factor) + "x";
         this->markViewportBvhDirty();
         this->forceViewportRetrace();
     }
@@ -2640,6 +2769,443 @@ namespace rc
         this->_scaleDragMoved = false;
         this->_scaleDragTarget = nullptr;
         this->_scaleDragAxis = -1;
+        this->_gizmoReadout.clear();
+    }
+
+    bool DefaultScreen::beginGizmoDrag(ISceneObject *object, const sf::Vector2i &mouse)
+    {
+        if (!object)
+            return (false);
+        if (this->_gizmoMode == GizmoMode::MOVE)
+        {
+            const int axis = this->pickGizmoAxis(mouse);
+            if (axis >= 0) { this->beginAxisDrag(object, axis, mouse); return (true); }
+            const int plane = this->pickPlaneHandle(mouse);
+            if (plane >= 0) { this->beginPlaneDrag(object, plane, mouse); return (true); }
+        }
+        else if (this->_gizmoMode == GizmoMode::ROTATE)
+        {
+            const int axis = this->pickRotationRing(mouse);
+            if (axis >= 0) { this->beginRotationDrag(object, axis, mouse); return (true); }
+            if (this->pickViewRotation(mouse)) { this->beginViewRotationDrag(object, mouse); return (true); }
+        }
+        else if (this->_gizmoMode == GizmoMode::SCALE)
+        {
+            if (this->pickUniformScale(mouse)) { this->beginUniformScaleDrag(object, mouse); return (true); }
+            const int axis = this->pickGizmoAxis(mouse);
+            if (axis >= 0) { this->beginScaleDrag(object, axis, mouse); return (true); }
+        }
+        return (false);
+    }
+
+    Vector3f DefaultScreen::gizmoAxisDir(int axis) const
+    {
+        const Vector3f world = axisVector(axis);
+        if (!this->_gizmoLocal)
+            return (world);
+        ISceneObject *object = this->singleSelectedObject();
+        if (!object)
+            return (world);
+        return (rotate(world, degToRad(object->getRotation())));
+    }
+
+    void DefaultScreen::setGizmoTool(GizmoMode mode)
+    {
+        this->_gizmoMode = mode;
+        this->_objectPanel.setGizmoMode(static_cast<int>(mode));
+        this->_gizmoReadout.clear();
+    }
+
+    bool DefaultScreen::handleGizmoShortcut(const sf::Event &event, const sf::Vector2i &mouse)
+    {
+        if (event.type != sf::Event::KeyPressed || event.key.control)
+            return (false);
+        // Only when the viewport owns input, an object is selected, we are not in
+        // vertex-edit mode, and movement mode is off (so G/R/S don't fight the
+        // ZQSD fly keys).
+        if (this->_editMode || this->_movementMode || this->anyUiCapturing())
+            return (false);
+        if (!this->isViewportCaptured(mouse) || !this->singleSelectedObject())
+            return (false);
+        switch (event.key.code)
+        {
+            case sf::Keyboard::G: this->setGizmoTool(GizmoMode::MOVE); return (true);
+            case sf::Keyboard::R: this->setGizmoTool(GizmoMode::ROTATE); return (true);
+            case sf::Keyboard::S: this->setGizmoTool(GizmoMode::SCALE); return (true);
+            case sf::Keyboard::T:
+                this->_gizmoLocal = !this->_gizmoLocal;
+                this->_objectPanel.setGizmoSpace(this->_gizmoLocal);
+                return (true);
+            default: return (false);
+        }
+    }
+
+    void DefaultScreen::drawGizmoReadout(sf::RenderWindow &window) const
+    {
+        if (this->_gizmoReadout.empty() || !this->_font || !this->singleSelectedObject())
+            return;
+        sf::Vector2f anchor;
+        if (!this->projectToViewport(this->singleSelectedObject()->getPosition(), anchor))
+            return;
+        sf::Text text(this->_gizmoReadout, *this->_font, 13);
+        text.setFillColor(sf::Color::White);
+        const sf::FloatRect b = text.getLocalBounds();
+        const sf::Vector2f pos(anchor.x + 14.0f, anchor.y - 26.0f);
+        sf::RectangleShape bg({b.width + 12.0f, b.height + 10.0f});
+        bg.setPosition(pos.x - 6.0f, pos.y - 5.0f);
+        bg.setFillColor(sf::Color(20, 22, 28, 200));
+        bg.setOutlineThickness(1.0f);
+        bg.setOutlineColor(sf::Color(90, 90, 100, 200));
+        text.setPosition(pos.x - b.left, pos.y - b.top);
+        window.draw(bg);
+        window.draw(text);
+    }
+
+    bool DefaultScreen::gizmoPlaneHandle(int plane, sf::Vector2f &out) const
+    {
+        ISceneObject *object = this->singleSelectedObject();
+        if (!object || !this->_coreAccess)
+            return (false);
+        IScene *scene = this->_coreAccess->getScene();
+        if (!scene)
+            return (false);
+        const Vector3f objPos = object->getPosition();
+        const Vector3f toCam = objPos - scene->getCamera().getPosition();
+        float length = std::sqrt(dot(toCam, toCam)) * 0.16f;
+        if (length < 1e-4f)
+            length = 1.0f;
+        const Vector3f a = this->gizmoAxisDir(plane);
+        const Vector3f b = this->gizmoAxisDir((plane + 1) % 3);
+        return (this->projectToViewport(objPos + (a + b) * (length * 0.42f), out));
+    }
+
+    int DefaultScreen::pickPlaneHandle(const sf::Vector2i &mouse) const
+    {
+        if (this->_editMode || !this->singleSelectedObject())
+            return (-1);
+        if (!this->_rendererPanel.viewportBounds.contains(mouse))
+            return (-1);
+        const sf::Vector2f m(static_cast<float>(mouse.x), static_cast<float>(mouse.y));
+        for (int plane = 0; plane < 3; ++plane)
+        {
+            sf::Vector2f handle;
+            if (!this->gizmoPlaneHandle(plane, handle))
+                continue;
+            const float dx = m.x - handle.x;
+            const float dy = m.y - handle.y;
+            if (dx * dx + dy * dy <= 9.0f * 9.0f)
+                return (plane);
+        }
+        return (-1);
+    }
+
+    void DefaultScreen::drawPlaneHandles(sf::RenderWindow &window) const
+    {
+        if (this->_editMode || !this->singleSelectedObject())
+            return;
+        // Blended colour of the two in-plane axes: XY=yellow, YZ=cyan, ZX=magenta.
+        const sf::Color colors[3] = {sf::Color(230, 220, 90), sf::Color(90, 215, 215), sf::Color(215, 100, 215)};
+        for (int plane = 0; plane < 3; ++plane)
+        {
+            sf::Vector2f handle;
+            if (!this->gizmoPlaneHandle(plane, handle))
+                continue;
+            const bool active = this->_planeDragActive && this->_planeDragPlane == plane;
+            sf::Color fill = active ? sf::Color(255, 235, 90) : colors[plane];
+            sf::RectangleShape square({11.0f, 11.0f});
+            square.setOrigin(5.5f, 5.5f);
+            square.setPosition(handle);
+            sf::Color body = fill;
+            body.a = 130;
+            square.setFillColor(body);
+            square.setOutlineThickness(1.5f);
+            square.setOutlineColor(fill);
+            window.draw(square);
+        }
+    }
+
+    void DefaultScreen::beginPlaneDrag(ISceneObject *object, int plane, const sf::Vector2i &mouse)
+    {
+        if (!object)
+            return;
+        this->_planeDragActive = true;
+        this->_planeDragMoved = false;
+        this->_planeDragTarget = object;
+        this->_planeDragPlane = plane;
+        this->_planeDragObjStart = object->getPosition();
+        this->_planeDragNormal = this->gizmoAxisDir((plane + 2) % 3);
+        Vector3f grab;
+        if (this->rayPlanePoint(mouse, this->_planeDragObjStart, this->_planeDragNormal, grab))
+            this->_planeDragOffset = this->_planeDragObjStart - grab;
+        else
+            this->_planeDragOffset = {0.0f, 0.0f, 0.0f};
+    }
+
+    void DefaultScreen::applyPlaneDrag(const sf::Vector2i &mouse)
+    {
+        if (!this->_planeDragTarget)
+            return;
+        Vector3f point;
+        if (!this->rayPlanePoint(mouse, this->_planeDragObjStart, this->_planeDragNormal, point))
+            return;
+        Vector3f newPos = point + this->_planeDragOffset;
+
+        const Vector3f dirA = this->gizmoAxisDir(this->_planeDragPlane);
+        const Vector3f dirB = this->gizmoAxisDir((this->_planeDragPlane + 1) % 3);
+        const Vector3f delta = newPos - this->_planeDragObjStart;
+        float da = dot(delta, dirA);
+        float db = dot(delta, dirB);
+        if (snapHeld())
+        {
+            da = snapTo(da, SNAP_MOVE);
+            db = snapTo(db, SNAP_MOVE);
+            newPos = this->_planeDragObjStart + dirA * da + dirB * db;
+        }
+        this->_planeDragTarget->setLocalPosition(newPos);
+        this->_planeDragMoved = true;
+        this->_gizmoReadout = fmtNum(da) + ", " + fmtNum(db);
+        this->markViewportBvhDirty();
+        this->forceViewportRetrace();
+    }
+
+    void DefaultScreen::endPlaneDrag()
+    {
+        if (!this->_planeDragActive)
+            return;
+        this->_planeDragActive = false;
+        if (this->_planeDragMoved && this->_planeDragTarget)
+        {
+            this->_objectPanel.rebuild(this->_planeDragTarget);
+            this->markViewportBvhDirty();
+            this->forceViewportRetrace();
+        }
+        this->_planeDragMoved = false;
+        this->_planeDragTarget = nullptr;
+        this->_planeDragPlane = -1;
+        this->_gizmoReadout.clear();
+    }
+
+    bool DefaultScreen::pickUniformScale(const sf::Vector2i &mouse) const
+    {
+        ISceneObject *object = this->singleSelectedObject();
+        if (this->_editMode || !object)
+            return (false);
+        if (!this->_rendererPanel.viewportBounds.contains(mouse))
+            return (false);
+        sf::Vector2f center;
+        if (!this->projectToViewport(object->getPosition(), center))
+            return (false);
+        const float dx = static_cast<float>(mouse.x) - center.x;
+        const float dy = static_cast<float>(mouse.y) - center.y;
+        return (dx * dx + dy * dy <= 8.0f * 8.0f);
+    }
+
+    void DefaultScreen::beginUniformScaleDrag(ISceneObject *object, const sf::Vector2i &mouse)
+    {
+        if (!object)
+            return;
+        this->_uscaleDragActive = true;
+        this->_uscaleDragMoved = false;
+        this->_uscaleDragTarget = object;
+        this->_uscaleStartScale = object->getLocalScale();
+        if (!this->projectToViewport(object->getPosition(), this->_uscaleCenter))
+            this->_uscaleCenter = {static_cast<float>(mouse.x), static_cast<float>(mouse.y)};
+        const float dx = static_cast<float>(mouse.x) - this->_uscaleCenter.x;
+        const float dy = static_cast<float>(mouse.y) - this->_uscaleCenter.y;
+        this->_uscaleGrabDist = std::max(6.0f, std::sqrt(dx * dx + dy * dy));
+    }
+
+    void DefaultScreen::applyUniformScaleDrag(const sf::Vector2i &mouse)
+    {
+        if (!this->_uscaleDragTarget)
+            return;
+        const float dx = static_cast<float>(mouse.x) - this->_uscaleCenter.x;
+        const float dy = static_cast<float>(mouse.y) - this->_uscaleCenter.y;
+        float factor = std::sqrt(dx * dx + dy * dy) / this->_uscaleGrabDist;
+        if (snapHeld())
+            factor = std::max(SNAP_SCALE, snapTo(factor, SNAP_SCALE));
+        Vector3f scale = {
+            std::max(0.001f, this->_uscaleStartScale.x * factor),
+            std::max(0.001f, this->_uscaleStartScale.y * factor),
+            std::max(0.001f, this->_uscaleStartScale.z * factor),
+        };
+        this->_uscaleDragTarget->setLocalScale(scale);
+        this->_uscaleDragMoved = true;
+        this->_gizmoReadout = fmtNum(factor) + "x";
+        this->markViewportBvhDirty();
+        this->forceViewportRetrace();
+    }
+
+    void DefaultScreen::endUniformScaleDrag()
+    {
+        if (!this->_uscaleDragActive)
+            return;
+        this->_uscaleDragActive = false;
+        if (this->_uscaleDragMoved && this->_uscaleDragTarget)
+        {
+            this->_objectPanel.rebuild(this->_uscaleDragTarget);
+            this->markViewportBvhDirty();
+            this->forceViewportRetrace();
+        }
+        this->_uscaleDragMoved = false;
+        this->_uscaleDragTarget = nullptr;
+        this->_gizmoReadout.clear();
+    }
+
+    bool DefaultScreen::pickViewRotation(const sf::Vector2i &mouse) const
+    {
+        ISceneObject *object = this->singleSelectedObject();
+        if (this->_editMode || !object || !this->_coreAccess)
+            return (false);
+        if (!this->_rendererPanel.viewportBounds.contains(mouse))
+            return (false);
+        IScene *scene = this->_coreAccess->getScene();
+        if (!scene)
+            return (false);
+        const Vector3f objPos = object->getPosition();
+        const ICamera &camera = scene->getCamera();
+        const Vector3f right = camera.getRight();
+        const Vector3f up = right.cross(camera.getForward()).unit_vector();
+        const Vector3f toCam = objPos - camera.getPosition();
+        const float radius = std::sqrt(dot(toCam, toCam)) * 0.19f * 1.28f;
+        const sf::Vector2f m(static_cast<float>(mouse.x), static_cast<float>(mouse.y));
+        constexpr float PI = 3.14159265358979323846f;
+        float best = 8.0f;
+        sf::Vector2f prev;
+        bool havePrev = false;
+        for (int i = 0; i <= 48; ++i)
+        {
+            const float theta = 2.0f * PI * static_cast<float>(i) / 48.0f;
+            const Vector3f world = objPos + (right * std::cos(theta) + up * std::sin(theta)) * radius;
+            sf::Vector2f screen;
+            const bool ok = this->projectToViewport(world, screen);
+            if (ok && havePrev)
+            {
+                const sf::Vector2f ab(screen.x - prev.x, screen.y - prev.y);
+                const sf::Vector2f ap(m.x - prev.x, m.y - prev.y);
+                const float len2 = ab.x * ab.x + ab.y * ab.y;
+                float t = (len2 > 1e-6f) ? (ap.x * ab.x + ap.y * ab.y) / len2 : 0.0f;
+                t = std::max(0.0f, std::min(1.0f, t));
+                const float px = prev.x + ab.x * t, py = prev.y + ab.y * t;
+                best = std::min(best, std::hypot(m.x - px, m.y - py));
+            }
+            prev = screen;
+            havePrev = ok;
+        }
+        return (best < 7.0f);
+    }
+
+    void DefaultScreen::drawViewRotationRing(sf::RenderWindow &window) const
+    {
+        ISceneObject *object = this->singleSelectedObject();
+        if (this->_editMode || !object || !this->_coreAccess)
+            return;
+        IScene *scene = this->_coreAccess->getScene();
+        if (!scene)
+            return;
+        const Vector3f objPos = object->getPosition();
+        const ICamera &camera = scene->getCamera();
+        const Vector3f right = camera.getRight();
+        const Vector3f up = right.cross(camera.getForward()).unit_vector();
+        const Vector3f toCam = objPos - camera.getPosition();
+        const float radius = std::sqrt(dot(toCam, toCam)) * 0.19f * 1.28f;
+        constexpr float PI = 3.14159265358979323846f;
+        const sf::Color color = this->_viewRotActive ? sf::Color(255, 235, 90) : sf::Color(210, 210, 220);
+        const float thick = this->_viewRotActive ? 3.0f : 2.0f;
+        sf::Vector2f prev;
+        bool havePrev = false;
+        for (int i = 0; i <= 48; ++i)
+        {
+            const float theta = 2.0f * PI * static_cast<float>(i) / 48.0f;
+            const Vector3f world = objPos + (right * std::cos(theta) + up * std::sin(theta)) * radius;
+            sf::Vector2f screen;
+            const bool ok = this->projectToViewport(world, screen);
+            if (ok && havePrev)
+            {
+                const sf::Vector2f d(screen.x - prev.x, screen.y - prev.y);
+                const float len = std::sqrt(d.x * d.x + d.y * d.y);
+                if (len >= 0.5f)
+                {
+                    sf::RectangleShape seg({len, thick});
+                    seg.setOrigin(0.0f, thick / 2.0f);
+                    seg.setPosition(prev);
+                    seg.setRotation(std::atan2(d.y, d.x) * 180.0f / PI);
+                    seg.setFillColor(color);
+                    window.draw(seg);
+                }
+            }
+            prev = screen;
+            havePrev = ok;
+        }
+    }
+
+    void DefaultScreen::beginViewRotationDrag(ISceneObject *object, const sf::Vector2i &mouse)
+    {
+        if (!object || !this->_coreAccess)
+            return;
+        IScene *scene = this->_coreAccess->getScene();
+        if (!scene)
+            return;
+        this->_viewRotActive = true;
+        this->_viewRotMoved = false;
+        this->_viewRotValid = false;
+        this->_viewRotTarget = object;
+        this->_viewRotStartRot = object->getLocalRotation();
+        this->_viewRotObjPos = object->getPosition();
+        this->_viewRotAxis = scene->getCamera().getForward();
+        Vector3f grab;
+        if (this->rayPlanePoint(mouse, this->_viewRotObjPos, this->_viewRotAxis, grab))
+        {
+            const Vector3f gv = grab - this->_viewRotObjPos;
+            const float len = std::sqrt(dot(gv, gv));
+            if (len > 1e-5f)
+            {
+                this->_viewRotGrabVec = gv * (1.0f / len);
+                this->_viewRotValid = true;
+            }
+        }
+    }
+
+    void DefaultScreen::applyViewRotationDrag(const sf::Vector2i &mouse)
+    {
+        if (!this->_viewRotTarget || !this->_viewRotValid)
+            return;
+        Vector3f point;
+        if (!this->rayPlanePoint(mouse, this->_viewRotObjPos, this->_viewRotAxis, point))
+            return;
+        const Vector3f cv = point - this->_viewRotObjPos;
+        const float len = std::sqrt(dot(cv, cv));
+        if (len < 1e-5f)
+            return;
+        const Vector3f cur = cv * (1.0f / len);
+        constexpr float PI = 3.14159265358979323846f;
+        const float sine = dot(this->_viewRotGrabVec.cross(cur), this->_viewRotAxis);
+        const float cosine = dot(this->_viewRotGrabVec, cur);
+        float angleDeg = std::atan2(sine, cosine) * 180.0f / PI;
+        if (snapHeld())
+            angleDeg = snapTo(angleDeg, SNAP_ROT);
+        this->_viewRotTarget->setLocalRotation(eulerCompose(this->_viewRotStartRot, this->_viewRotAxis, angleDeg));
+        this->_viewRotMoved = true;
+        this->_gizmoReadout = fmtNum(angleDeg) + " deg";
+        this->markViewportBvhDirty();
+        this->forceViewportRetrace();
+    }
+
+    void DefaultScreen::endViewRotationDrag()
+    {
+        if (!this->_viewRotActive)
+            return;
+        this->_viewRotActive = false;
+        if (this->_viewRotMoved && this->_viewRotTarget)
+        {
+            this->_objectPanel.rebuild(this->_viewRotTarget);
+            this->markViewportBvhDirty();
+            this->forceViewportRetrace();
+        }
+        this->_viewRotMoved = false;
+        this->_viewRotValid = false;
+        this->_viewRotTarget = nullptr;
+        this->_gizmoReadout.clear();
     }
 
     bool DefaultScreen::computeMarker(const sf::Vector2i &mouse, Vector3f &out)

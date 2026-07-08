@@ -8,8 +8,40 @@
 #include "../../common/cluster/IClusterClient.hpp"
 #include "Theme.hpp"
 
+#include <cctype>
+#include <chrono>
+#include <cstdlib>
+#include <fstream>
+#include <string>
+
+#include "windows/Window.hpp"
+
+// Make Xlib thread-safe (declared here to avoid pulling in <X11/Xlib.h>, whose
+// macros clash with SFML's enums). Linked via -lX11.
+extern "C" int XInitThreads();
+
 namespace rc
 {
+    namespace
+    {
+        // True when running under WSL, where WSLg's hardware OpenGL crashes with a
+        // second GL context (see UserInterface::create).
+        bool runningUnderWsl()
+        {
+            if (const char *distro = std::getenv("WSL_DISTRO_NAME"); distro && distro[0] != '\0')
+                return (true);
+            std::ifstream version("/proc/version");
+            std::string line;
+            if (version && std::getline(version, line))
+            {
+                for (char &c : line)
+                    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                return (line.find("microsoft") != std::string::npos || line.find("wsl") != std::string::npos);
+            }
+            return (false);
+        }
+    }
+
     UserInterface::UserInterface() : _running(false), _coreAccess(nullptr)
     {
     }
@@ -29,44 +61,68 @@ namespace rc
     void UserInterface::eventLoop()
     {
         {
-            std::lock_guard lock(this->_windowMutex);
+            std::lock_guard<std::mutex> lock(gWindowXLock());
             this->_window.setActive(true);
-            this->_window.setFramerateLimit(60);
         }
         while (!this->shouldExit())
         {
             AScreen &screen = this->activeScreen();
 
-            sf::Event event;
-            while (this->_window.pollEvent(event) && !this->shouldExit())
             {
-                if (event.type == sf::Event::Closed)
+                // Event polling reads from the shared X connection, so it takes
+                // the same lock the pop-up windows use (see gWindowXLock).
+                std::lock_guard<std::mutex> lock(gWindowXLock());
+                sf::Event event;
+                while (this->_window.pollEvent(event) && !this->shouldExit())
                 {
-                    this->_running = false;
-                    this->_coreAccess->stop();
-                    break;
+                    if (event.type == sf::Event::Closed)
+                    {
+                        this->_running = false;
+                        this->_coreAccess->stop();
+                        break;
+                    }
+                    if (event.type == sf::Event::Resized)
+                    {
+                        sf::FloatRect visibleArea(0, 0, static_cast<float>(event.size.width), static_cast<float>(event.size.height));
+                        this->_window.setView(sf::View(visibleArea));
+                    }
+                    screen.handleEvent(this->_window, event);
                 }
-                if (event.type == sf::Event::Resized)
-                {
-                    sf::FloatRect visibleArea(0, 0, static_cast<float>(event.size.width), static_cast<float>(event.size.height));
-                    this->_window.setView(sf::View(visibleArea));
-                }
-                screen.handleEvent(this->_window, event);
             }
             if (this->shouldExit())
                 break;
 
             screen.prepareFrame();
             {
-                std::lock_guard lock(this->_windowMutex);
+                std::lock_guard<std::mutex> lock(gWindowXLock());
                 screen.tick(this->_window);
             }
+            // Pace the UI (~60 FPS) with the X lock released; replaces the window
+            // framerate limit, whose internal sleep would otherwise hold the
+            // shared lock and starve the pop-up windows.
+            std::this_thread::sleep_for(std::chrono::milliseconds(12));
         }
-        this->_window.setActive(false);
+        {
+            std::lock_guard<std::mutex> lock(gWindowXLock());
+            this->_window.setActive(false);
+        }
     }
 
     void UserInterface::create(ICoreAccess &core_access)
     {
+        // The UI event loop and every pop-up window run on their own threads and
+        // all talk to X, so Xlib must be made thread-safe before any window is
+        // created; without it WSLg aborts with an xcb assertion (native Linux
+        // only tolerated it by timing luck).
+        XInitThreads();
+        // WSLg's hardware OpenGL (d3d12-backed Mesa) segfaults as soon as a second
+        // GL context renders textures, i.e. whenever a pop-up window opens.
+        // Software rendering (llvmpipe) handles multiple contexts fine, so force
+        // it ONLY under WSL - native Linux keeps fast hardware GL and is untouched.
+        // Must happen before the first window/context is created.
+        if (runningUnderWsl())
+            setenv("LIBGL_ALWAYS_SOFTWARE", "1", 1);
+
         this->_coreAccess = &core_access;
         if (!this->_font.loadFromFile("assets/font.ttf"))
             throw (std::runtime_error("Failed to load font"));
@@ -108,6 +164,11 @@ namespace rc
 
     void UserInterface::destroy()
     {
+        // Idempotent: Core::unloadUserInterface() calls this on shutdown, then
+        // the PluginLoader deletes the instance and ~UserInterface calls it again.
+        if (this->_destroyed)
+            return;
+        this->_destroyed = true;
         this->_running = false;
         if (this->_uiThread.joinable())
             this->_uiThread.join();

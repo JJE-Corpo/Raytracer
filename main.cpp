@@ -5,6 +5,18 @@
 #include "srcs/core/Core.hpp"
 #include "srcs/config/Options.hpp"
 
+// AddressSanitizer default options, applied unless overridden by the ASAN_OPTIONS
+// environment variable. We turn OFF leak reporting by default: the WSL Mesa /
+// swrast software-GL driver makes a small one-time allocation it never frees, on
+// its own worker threads and in an unsymbolizable driver .so, so it cannot be
+// suppressed by name or with __lsan_disable(). All the important ASan checks
+// (use-after-free, buffer overflow, double-free, ...) stay ON. To run a real
+// leak audit (our own code is leak-free), override it, e.g. headless:
+//     ASAN_OPTIONS=detect_leaks=1 ./raytracer -r out.png scene.json
+extern "C" const char *__asan_default_options(void)
+{
+    return "detect_leaks=0";
+}
 
 int main(int argc, char **argv)
 {

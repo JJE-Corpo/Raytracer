@@ -85,6 +85,14 @@ namespace rc
         this->_gizmoScaleButton.setFont(font);
         this->_gizmoScaleButton.setLabel("Scale");
         this->_gizmoScaleButton.onClick = [this]() { if (this->onGizmoModeChanged) this->onGizmoModeChanged(2); };
+        this->_gizmoSpaceButton.setFont(font);
+        this->_gizmoSpaceButton.setLabel("Space: World");
+        this->_gizmoSpaceButton.onClick = [this]()
+        {
+            this->setGizmoSpace(!this->_gizmoSpaceLocal);
+            if (this->onGizmoSpaceChanged)
+                this->onGizmoSpaceChanged(this->_gizmoSpaceLocal);
+        };
 
         this->_materialLabel.setFont(font);
         this->_materialLabel.setCharacterSize(12);
@@ -112,6 +120,8 @@ namespace rc
             this->_gizmoMoveButton.layout(layout.x, layout.y, toolW, toolH);
             this->_gizmoRotateButton.layout(layout.x + toolW + toolGap, layout.y, toolW, toolH);
             this->_gizmoScaleButton.layout(layout.x + 2.0f * (toolW + toolGap), layout.y, toolW, toolH);
+            layout.next(26);
+            this->_gizmoSpaceButton.layout(layout.x, layout.y, width, toolH);
             layout.next(28);
         }
 
@@ -190,6 +200,13 @@ namespace rc
         this->_gizmoScaleButton.active = (mode == 2);
     }
 
+    void ObjectPanel::setGizmoSpace(bool local)
+    {
+        this->_gizmoSpaceLocal = local;
+        this->_gizmoSpaceButton.active = local;
+        this->_gizmoSpaceButton.setLabel(local ? "Space: Local" : "Space: World");
+    }
+
     void ObjectPanel::setVertexEditor(bool visible, const Vector3f &value)
     {
         this->_showVertexEditor = visible;
@@ -222,6 +239,7 @@ namespace rc
         this->_gizmoMoveButton.update(mouse);
         this->_gizmoRotateButton.update(mouse);
         this->_gizmoScaleButton.update(mouse);
+        this->_gizmoSpaceButton.update(mouse);
         this->_positionField.update(mouse);
         this->_rotationField.update(mouse);
         this->_scaleField.update(mouse);
@@ -460,6 +478,7 @@ namespace rc
         children.push_back(&this->_gizmoMoveButton);
         children.push_back(&this->_gizmoRotateButton);
         children.push_back(&this->_gizmoScaleButton);
+        children.push_back(&this->_gizmoSpaceButton);
         children.push_back(&this->_positionField);
         children.push_back(&this->_rotationField);
         children.push_back(&this->_scaleField);
@@ -491,6 +510,7 @@ namespace rc
         target.draw(this->_gizmoMoveButton, states);
         target.draw(this->_gizmoRotateButton, states);
         target.draw(this->_gizmoScaleButton, states);
+        target.draw(this->_gizmoSpaceButton, states);
         target.draw(this->_positionField, states);
         target.draw(this->_rotationField, states);
         target.draw(this->_scaleField, states);
@@ -564,8 +584,8 @@ namespace rc
         }
 
         std::vector<Component *> fields = {&this->_gizmoMoveButton, &this->_gizmoRotateButton,
-            &this->_gizmoScaleButton, &this->_positionField, &this->_rotationField, &this->_scaleField,
-            &this->_scaleDownButton, &this->_scaleUpButton};
+            &this->_gizmoScaleButton, &this->_gizmoSpaceButton, &this->_positionField, &this->_rotationField,
+            &this->_scaleField, &this->_scaleDownButton, &this->_scaleUpButton};
         if (this->_showConvertToMesh)
             fields.push_back(&this->_convertToMeshButton);
         if (this->_showVertexNav)

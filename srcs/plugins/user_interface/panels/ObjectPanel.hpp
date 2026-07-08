@@ -41,6 +41,11 @@ namespace rc
             std::function<void(int mode)> onGizmoModeChanged;
             void setGizmoMode(int mode);
 
+            // Gizmo space toggle (World / Local). onGizmoSpaceChanged(local) fires
+            // on click; setGizmoSpace reflects the owner's current space.
+            std::function<void(bool local)> onGizmoSpaceChanged;
+            void setGizmoSpace(bool local);
+
             void setFont(sf::Font &font) override;
             void layout(float x, float y, float width);
             void setScene(IScene *scene);
@@ -76,10 +81,13 @@ namespace rc
             VectorField _rotationField;
             VectorField _scaleField;
 
-            // Gizmo tool selector row (Move / Rotate / Scale) at the top.
+            // Gizmo tool selector row (Move / Rotate / Scale) at the top, plus a
+            // World/Local space toggle just below it.
             Button _gizmoMoveButton;
             Button _gizmoRotateButton;
             Button _gizmoScaleButton;
+            Button _gizmoSpaceButton;
+            bool _gizmoSpaceLocal = false;
 
             // Vertex navigator (< Point N / total >), shown above the size row.
             sf::Text _vertexNavLabel;

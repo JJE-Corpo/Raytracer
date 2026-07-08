@@ -81,8 +81,20 @@ namespace rc
             std::nth_element(objects.begin() + start, objects.begin() + mid, objects.begin() + end, comparator);
             this->_left = new BVHNode(objects, start, mid);
             this->_right = new BVHNode(objects, mid, end);
+            this->_internal = true;
             this->_bbox = BoundingBoxUtils::surrounding_box(this->_left->bounding_box(), this->_right->bounding_box());
             return;
+        }
+    }
+
+    BVHNode::~BVHNode()
+    {
+        // Only internal nodes own their children (allocated with new above);
+        // leaf children point at primitives owned elsewhere, so leave them be.
+        if (this->_internal)
+        {
+            delete static_cast<BVHNode *>(this->_left);
+            delete static_cast<BVHNode *>(this->_right);
         }
     }
 

@@ -1,6 +1,7 @@
 #ifndef PRIMITIVEBUILDER_HPP
 #define PRIMITIVEBUILDER_HPP
 
+#include <array>
 #include <utility>
 #include <vector>
 
@@ -35,6 +36,10 @@ namespace rc
             Axis _axis = Axis::Z;
             std::string _file;
             std::vector<std::pair<int, Vector3f>> _vertexOverrides;
+            // Inline mesh geometry (used when a mesh has no backing .obj file).
+            std::vector<Vector3f> _vertices;
+            std::vector<std::array<int, 3>> _faces;
+            std::vector<Vector3f> _normals;
             const Material *_material = nullptr;
         public:
             PrimitiveBuilder() = default;
@@ -54,6 +59,9 @@ namespace rc
             PrimitiveBuilder &withSize(float size);
             PrimitiveBuilder &withFile(const std::string &file);
             PrimitiveBuilder &withVertexOverrides(const std::vector<std::pair<int, Vector3f>> &overrides);
+            PrimitiveBuilder &withVertices(const std::vector<Vector3f> &vertices);
+            PrimitiveBuilder &withFaces(const std::vector<std::array<int, 3>> &faces);
+            PrimitiveBuilder &withNormals(const std::vector<Vector3f> &normals);
             PrimitiveBuilder &withMaterial(const Material *material);
             PrimitiveBuilder &withPower(float power);
             PrimitiveBuilder &withIterations(int iterations);

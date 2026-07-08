@@ -91,7 +91,7 @@ namespace rc
         void beginObjectDrag(ISceneObject *object, const sf::Vector2i &mouse);
         void applyObjectDrag(const sf::Vector2i &mouse);
         void endObjectDrag();
-        // Placement marker (Shift+right-click) helpers.
+        // Placement marker (Ctrl+right-click) helpers.
         bool computeMarker(const sf::Vector2i &mouse, Vector3f &out);
         void placeMarker(const sf::Vector2i &mouse);
         bool markerWindowPos(sf::Vector2f &out) const;
@@ -120,6 +120,36 @@ namespace rc
         void beginScaleDrag(ISceneObject *object, int axis, const sf::Vector2i &mouse);
         void applyScaleDrag(const sf::Vector2i &mouse);
         void endScaleDrag();
+        // Try to grab any gizmo handle under the cursor for the active tool
+        // (arrow / plane / ring / centre / view-ring) and start its drag; returns
+        // true if one was grabbed, so the click doesn't fall through to selection.
+        bool beginGizmoDrag(ISceneObject *object, const sf::Vector2i &mouse);
+        // World axis, or the object's local (rotated) axis when _gizmoLocal is on.
+        Vector3f gizmoAxisDir(int axis) const;
+        // Switch the active gizmo tool and reflect it on the Object-panel buttons.
+        void setGizmoTool(GizmoMode mode);
+        // G / R / S switch tool, T toggles Local/World; consumes the key if used.
+        bool handleGizmoShortcut(const sf::Event &event, const sf::Vector2i &mouse);
+        // Live value readout shown near the gizmo while a drag is in progress.
+        void drawGizmoReadout(sf::RenderWindow &window) const;
+        // Planar move handles (XY / YZ / ZX squares between the arrows).
+        bool gizmoPlaneHandle(int plane, sf::Vector2f &out) const;
+        int pickPlaneHandle(const sf::Vector2i &mouse) const;
+        void drawPlaneHandles(sf::RenderWindow &window) const;
+        void beginPlaneDrag(ISceneObject *object, int plane, const sf::Vector2i &mouse);
+        void applyPlaneDrag(const sf::Vector2i &mouse);
+        void endPlaneDrag();
+        // Uniform scale: a grabbable centre box that scales all three axes.
+        bool pickUniformScale(const sf::Vector2i &mouse) const;
+        void beginUniformScaleDrag(ISceneObject *object, const sf::Vector2i &mouse);
+        void applyUniformScaleDrag(const sf::Vector2i &mouse);
+        void endUniformScaleDrag();
+        // Screen-space rotation ring (rotate about the camera-forward axis).
+        bool pickViewRotation(const sf::Vector2i &mouse) const;
+        void drawViewRotationRing(sf::RenderWindow &window) const;
+        void beginViewRotationDrag(ISceneObject *object, const sf::Vector2i &mouse);
+        void applyViewRotationDrag(const sf::Vector2i &mouse);
+        void endViewRotationDrag();
         void drawEditOverlay(sf::RenderWindow &window);
         void applyImport();
         void updateViewportCamera(sf::RenderWindow &window);
@@ -208,6 +238,8 @@ namespace rc
         Vector3f _objectDragPlaneOrigin = {0.0f, 0.0f, 0.0f};
         Vector3f _objectDragOffset = {0.0f, 0.0f, 0.0f};
 
+        // Placement marker: Ctrl+right-click drops a 3D point; newly added
+        // primitives spawn there instead of at the origin.
         bool _markerActive = false;
         Vector3f _markerPos = {0.0f, 0.0f, 0.0f};
 
@@ -240,6 +272,38 @@ namespace rc
 
         // Active transform gizmo (Move / Rotate / Scale).
         GizmoMode _gizmoMode = GizmoMode::MOVE;
+        // Gizmo axes follow the object's rotation (local) instead of the world.
+        bool _gizmoLocal = false;
+        // Live "+2.35 X" style readout while a gizmo drag is running ("" = none).
+        std::string _gizmoReadout;
+
+        // Planar-move drag (XY/YZ/ZX): the object slides in a fixed plane.
+        bool _planeDragActive = false;
+        bool _planeDragMoved = false;
+        ISceneObject *_planeDragTarget = nullptr;
+        int _planeDragPlane = -1;
+        Vector3f _planeDragNormal = {0.0f, 0.0f, 0.0f};
+        Vector3f _planeDragObjStart = {0.0f, 0.0f, 0.0f};
+        Vector3f _planeDragOffset = {0.0f, 0.0f, 0.0f};
+
+        // Uniform-scale drag (centre box): all three axes scale together by the
+        // ratio of the cursor's screen distance from the object centre.
+        bool _uscaleDragActive = false;
+        bool _uscaleDragMoved = false;
+        ISceneObject *_uscaleDragTarget = nullptr;
+        Vector3f _uscaleStartScale = {1.0f, 1.0f, 1.0f};
+        sf::Vector2f _uscaleCenter = {0.0f, 0.0f};
+        float _uscaleGrabDist = 0.0f;
+
+        // Screen-space rotation drag (rotate about the camera-forward axis).
+        bool _viewRotActive = false;
+        bool _viewRotMoved = false;
+        bool _viewRotValid = false;
+        ISceneObject *_viewRotTarget = nullptr;
+        Vector3f _viewRotStartRot = {0.0f, 0.0f, 0.0f};
+        Vector3f _viewRotObjPos = {0.0f, 0.0f, 0.0f};
+        Vector3f _viewRotAxis = {0.0f, 0.0f, 0.0f};
+        Vector3f _viewRotGrabVec = {0.0f, 0.0f, 0.0f};
 
         // viewport
         sf::Vector2i _lastMouse;

@@ -83,13 +83,13 @@ all: $(NAME)
 
 $(NAME): $(OBJECTS) $(USERINTERFACE_OBJECTS) $(DEFAULTRENDERER_OBJECTS) $(VIEWPORTRENDERER_OBJECTS)
 		mkdir -p $(PLUGINS_PATH)
-		clang++ -Wall -Wextra -Werror $(OBJECTS) -o $(NAME) -std=c++17
-		clang++ -Wall -Wextra -Werror $(USERINTERFACE_OBJECTS) -o $(PLUGINS_PATH)/$(USERINTERFACE_NAME) -std=c++17 -lsfml-graphics -lsfml-window -lsfml-system -lsfml-network -fPIC -shared
-		clang++ -Wall -Wextra -Werror $(DEFAULTRENDERER_OBJECTS) -o $(PLUGINS_PATH)/$(DEFAULTRENDERER_NAME) -std=c++17 -fPIC -shared
-		clang++ -Wall -Wextra -Werror $(VIEWPORTRENDERER_OBJECTS) -o $(PLUGINS_PATH)/$(VIEWPORTRENDERER_NAME) -std=c++17 -fPIC -shared
+		clang++ -Wall -Wextra -Werror $(OBJECTS) -o $(NAME) -std=c++17 -fsanitize=address
+		clang++ -Wall -Wextra -Werror $(USERINTERFACE_OBJECTS) -o $(PLUGINS_PATH)/$(USERINTERFACE_NAME) -std=c++17 -lsfml-graphics -lsfml-window -lsfml-system -lsfml-network -lX11 -fPIC -shared -fsanitize=address
+		clang++ -Wall -Wextra -Werror $(DEFAULTRENDERER_OBJECTS) -o $(PLUGINS_PATH)/$(DEFAULTRENDERER_NAME) -std=c++17 -fPIC -shared -fsanitize=address
+		clang++ -Wall -Wextra -Werror $(VIEWPORTRENDERER_OBJECTS) -o $(PLUGINS_PATH)/$(VIEWPORTRENDERER_NAME) -std=c++17 -fPIC -shared -fsanitize=address
 
 %.o: %.cpp
-		clang++ -Wall -Wextra -Werror -isystem srcs/external $< -o ${<:.cpp=.o} -c -std=c++17 -fPIC -g
+		clang++ -Wall -Wextra -Werror -isystem srcs/external $< -o ${<:.cpp=.o} -c -std=c++17 -fPIC -g -fsanitize=address
 
 clean:
 		rm -rf $(OBJECTS)
