@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Référence des classes — Raytracer</title>
+<meta name="description" content="Référence des interfaces, classes principales et types mathématiques du Raytracer C++17.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+    <button class="menu-toggle" data-menu-toggle aria-label="Menu">☰</button>
+    <a class="brand" href="index.html"><span class="logo">◐</span> Raytracer <small>docs</small></a>
+    <div class="search">
+        <input id="search-input" type="search" autocomplete="off" spellcheck="false" aria-label="Rechercher">
+        <div id="search-results" class="search-results" role="listbox"></div>
+    </div>
+    <a class="lang-toggle" href="reference.en.html" aria-label="English" title="English">🌐 EN</a>
+</header>
+
+<div class="layout">
+    <aside class="sidebar">
+            <h4>Démarrer</h4>
+            <ul>
+                <li><a href="index.html">Accueil</a></li>
+                <li><a href="installation.html">Installation</a></li>
+                <li><a href="utilisation.html">Utilisation</a></li>
+            </ul>
+            <h4>Scène &amp; contenu</h4>
+            <ul>
+                <li><a href="format-scene.html">Format de scène</a></li>
+                <li><a href="primitives.html">Primitives</a></li>
+                <li><a href="materiaux.html">Matériaux</a></li>
+                <li><a href="fonctionnalites.html">Fonctionnalités</a></li>
+            </ul>
+            <h4>Moteur</h4>
+            <ul>
+                <li><a href="architecture.html">Architecture</a></li>
+                <li><a href="rendu.html">Pipeline de rendu</a></li>
+                <li><a href="plugins.html">Système de plugins</a></li>
+                <li><a href="cluster.html">Rendu en cluster</a></li>
+            </ul>
+            <h4>Interface</h4>
+            <ul>
+                <li><a href="interface.html">Interface graphique</a></li>
+            </ul>
+            <h4>Référence</h4>
+            <ul>
+                <li><a href="reference.html" class="active">Référence des classes</a></li>
+                <li><a href="faq.html">FAQ</a></li>
+            </ul>
+        </aside>
+
+    <main class="content has-toc">
+        <article class="article">
+            <p class="crumbs"><a href="index.html">Accueil</a> / Référence des classes</p>
+            <h1>Référence des classes</h1>
+            <p class="lead">Interfaces, classes concrètes et types de base du moteur. Les interfaces (préfixe
+                <code>I…</code>) définissent les contrats et vivent dans <code>srcs/common/</code>&nbsp;; les
+                implémentations concrètes vivent dans <code>srcs/core/</code> et <code>srcs/plugins/</code>.
+                Tout le code appartient au namespace <code>rc</code>. Les signatures ci-dessous sont reprises
+                fidèlement des en-têtes du dépôt.</p>
+
+            <div class="note"><p>Chaque interface est un contrat de méthodes virtuelles pures. Une classe est
+                repérée par son <span class="pill gray">chemin d’en-tête</span> à côté de son nom.</p></div>
+
+            <h2 id="interfaces">Interfaces principales</h2>
+
+            <h3 id="iplugin"><code>IPlugin</code> <span class="pill gray">srcs/common/IPlugin.hpp</span></h3>
+            <p>Contrat de base de tout plugin dynamique (chargé en <code>.so</code>). L’enum
+                <code>PluginType</code> ne contient que <code>RENDERER</code> et <code>USER_INTERFACE</code>.</p>
+            <dl class="api">
+                <dt>virtual PluginType getType() const = 0</dt>
+                <dd>Retourne le type du plugin&nbsp;: <code>RENDERER</code> ou <code>USER_INTERFACE</code>.</dd>
+            </dl>
+
+            <h3 id="isceneRenderer"><code>ISceneRenderer</code> <span class="pill gray">srcs/common/ISceneRenderer.hpp</span></h3>
+            <p>Contrat d’un renderer (hérite de <code>IPlugin</code>). Le rendu produit une structure
+                <code>Render</code> (<code>size_x</code>, <code>size_y</code>, <code>std::vector&lt;Color&gt; pixels</code>).</p>
+            <dl class="api">
+                <dt>virtual void renderScene(const IScene &amp;scene) = 0</dt><dd>Rend la scène fournie.</dd>
+                <dt>virtual void setPixel(int x, int y, Color color) = 0</dt><dd>Écrit un pixel dans le tampon.</dd>
+                <dt>virtual void markSceneDirty()</dt><dd>Signale que la scène a changé (implémentation par défaut vide).</dd>
+                <dt>virtual void stopRendering() = 0</dt><dd>Interrompt le rendu en cours.</dd>
+                <dt>virtual bool isRendering() const = 0</dt><dd>Indique si un rendu est en cours.</dd>
+                <dt>virtual int getCurrentSample() const = 0</dt><dd>Numéro de l’échantillon courant (rendu progressif).</dd>
+                <dt>virtual Render getRender() const = 0</dt><dd>Retourne le rendu (dimensions + pixels).</dd>
+                <dt>virtual std::string getRendererName() const = 0</dt><dd>Nom du renderer (« Default », « Viewport »…).</dd>
+            </dl>
+
+            <h3 id="iscene"><code>IScene</code> <span class="pill gray">srcs/common/scene/IScene.hpp</span></h3>
+            <p>Conteneur des données de scène (primitives, lumières, matériaux, caméra, hiérarchie) et point
+                d’intersection global via le BVH.</p>
+            <dl class="api">
+                <dt>virtual void addPrimitive(IPrimitive *primitive) = 0</dt><dd>Ajoute une primitive.</dd>
+                <dt>virtual void addLight(ILight *light) = 0</dt><dd>Ajoute une lumière.</dd>
+                <dt>virtual void addDefaultPrimitive(std::string type) = 0</dt><dd>Crée une primitive par défaut à partir d’un type.</dd>
+                <dt>virtual void addDefaultLight(std::string type) = 0</dt><dd>Crée une lumière par défaut à partir d’un type.</dd>
+                <dt>virtual ISceneObject *addGroup() = 0</dt><dd>Crée un groupe (nœud de hiérarchie).</dd>
+                <dt>virtual void reparent(ISceneObject *child, ISceneObject *newParent, int index = -1) = 0</dt><dd>Change le parent d’un objet.</dd>
+                <dt>virtual void removeObject(ISceneObject *object) = 0</dt><dd>Supprime un objet.</dd>
+                <dt>virtual IPrimitive *convertToMesh(IPrimitive *primitive) = 0</dt><dd>Convertit une primitive en maillage éditable.</dd>
+                <dt>virtual Material *getMaterial(const std::string &amp;name) = 0</dt><dd>Récupère un matériau par nom.</dd>
+                <dt>virtual Material *createMaterial(const std::string &amp;name) / createMaterial() = 0</dt><dd>Crée un matériau (nommé ou anonyme).</dd>
+                <dt>virtual void clear() = 0</dt><dd>Vide la scène.</dd>
+                <dt>virtual float getAmbientCoefficient() / getDiffuseCoefficient() const = 0</dt><dd>Coefficients d’éclairage global (+ setters correspondants).</dd>
+                <dt>virtual ICamera &amp;getCamera() const = 0</dt><dd>Accès à la caméra.</dd>
+                <dt>virtual const std::vector&lt;IPrimitive *&gt; &amp;getPrimitives() const = 0</dt><dd>Liste des primitives.</dd>
+                <dt>virtual const std::vector&lt;ILight *&gt; &amp;getLights() const = 0</dt><dd>Liste des lumières.</dd>
+                <dt>virtual const std::map&lt;std::string, Material&gt; &amp;getMaterials() const = 0</dt><dd>Table des matériaux.</dd>
+                <dt>virtual const std::vector&lt;ISceneObject *&gt; &amp;getRoots() const = 0</dt><dd>Racines de la hiérarchie.</dd>
+                <dt>virtual void buildBvh() = 0</dt><dd>(Re)construit la structure d’accélération BVH.</dd>
+                <dt>virtual bool intersect(const Ray &amp;ray, float tMin, float tMax, Intersection &amp;hit) const = 0</dt><dd>Teste l’intersection la plus proche dans <code>[tMin, tMax]</code>.</dd>
+            </dl>
+
+            <h3 id="icamera"><code>ICamera</code> <span class="pill gray">srcs/common/scene/ICamera.hpp</span></h3>
+            <p>Caméra perspective&nbsp;: paramètres, base orthonormée et génération des rayons primaires.</p>
+            <dl class="api">
+                <dt>virtual Vector2i getResolution() const = 0</dt><dd>Résolution du rendu (+ <code>setResolution</code>).</dd>
+                <dt>virtual Vector3f getPosition() / getRotation() const = 0</dt><dd>Pose de la caméra (+ setters).</dd>
+                <dt>virtual double getFov() const = 0</dt><dd>Champ de vision (+ <code>setFov</code>).</dd>
+                <dt>virtual Vector3f getForward() / getRight() const = 0</dt><dd>Vecteurs de base de la caméra.</dd>
+                <dt>virtual int getSamplesPerPixel() const = 0</dt><dd>Échantillons par pixel (+ <code>setSamplesPerPixel</code>).</dd>
+                <dt>virtual double getPixelSamplesScale() const = 0</dt><dd>Facteur d’accumulation anti-aliasing.</dd>
+                <dt>virtual Ray generateRay(int i, int j) const = 0</dt><dd>Génère le rayon primaire du pixel <code>(i, j)</code>.</dd>
+            </dl>
+
+            <h3 id="isceneobject"><code>ISceneObject</code> <span class="pill gray">srcs/common/scene/ISceneObject.hpp</span></h3>
+            <p>Base commune de tout objet de scène (primitive, lumière ou groupe). Porte la transformation
+                (locale et monde), le nom, la visibilité et les liens de hiérarchie parent/enfants. L’enum
+                <code>ObjectType</code> vaut <code>PRIMITIVE</code>, <code>LIGHT</code> ou <code>GROUP</code>.</p>
+            <dl class="api">
+                <dt>virtual ObjectType getObjectType() const = 0</dt><dd>Nature de l’objet.</dd>
+                <dt>virtual Vector3f getPosition() / getRotation() / getScale() const = 0</dt><dd>Transformation monde (+ setters).</dd>
+                <dt>virtual Vector3f getLocalPosition() / getLocalRotation() / getLocalScale() const = 0</dt><dd>Transformation locale (+ setters).</dd>
+                <dt>virtual bool isHidden() const = 0</dt><dd>Visibilité (+ <code>setHidden</code>).</dd>
+                <dt>virtual std::string getName() / getTypeName() const = 0</dt><dd>Nom d’instance et nom de type (+ <code>setName</code>).</dd>
+                <dt>virtual ISceneObject *getParent() const = 0</dt><dd>Parent hiérarchique (+ <code>setParent</code>).</dd>
+                <dt>virtual const std::vector&lt;ISceneObject *&gt; &amp;getChildren() const = 0</dt><dd>Enfants (+ <code>addChild</code>, <code>insertChild</code>, <code>removeChild</code>).</dd>
+            </dl>
+
+            <h3 id="iprimitive"><code>IPrimitive</code> <span class="pill gray">srcs/common/scene/IPrimitive.hpp</span></h3>
+            <p>Contrat de toute surface intersectable (hérite virtuellement de <code>ISceneObject</code>&nbsp;;
+                <code>getObjectType()</code> renvoie <code>PRIMITIVE</code>).</p>
+            <dl class="api">
+                <dt>virtual bool intersect(const Ray &amp;ray, float tMin, float tMax, Intersection &amp;hit) const = 0</dt><dd>Teste l’intersection dans <code>[tMin, tMax]</code> et remplit le <code>hit</code>.</dd>
+                <dt>virtual AABB bounding_box() const = 0</dt><dd>Boîte englobante (pour le BVH).</dd>
+                <dt>virtual bool isFinite() const = 0</dt><dd>Faux pour un objet infini (ex. un plan).</dd>
+                <dt>virtual std::map&lt;std::string, std::pair&lt;std::string, PropertyType&gt;&gt; getProperties() const = 0</dt><dd>Propriétés éditables (nom → valeur textuelle + type).</dd>
+                <dt>virtual void setPropertyFloat(const std::string &amp;key, float value) = 0</dt><dd>Modifie une propriété scalaire.</dd>
+                <dt>virtual const Material *getMaterial() const = 0</dt><dd>Matériau associé (+ <code>setMaterial</code>).</dd>
+            </dl>
+            <p>Types de propriété (<code>enum class PropertyType</code>)&nbsp;: <code>COLOR</code>,
+                <code>VECTOR3F</code>, <code>VECTOR3I</code>, <code>VECTOR2F</code>, <code>VECTOR2I</code>,
+                <code>FLOAT</code>, <code>INT</code>, <code>STRING</code>.</p>
+
+            <h3 id="ieditable"><code>IEditablePrimitive</code> <span class="pill gray">srcs/common/scene/IEditablePrimitive.hpp</span></h3>
+            <p>Capacité optionnelle&nbsp;: une primitive éditable au sommet (Triangle, Mesh). Elle est découverte
+                à l’exécution via <code>dynamic_cast&lt;IEditablePrimitive*&gt;</code>, ce qui laisse
+                <code>IPrimitive</code> inchangé. Interface indépendante (n’hérite pas de <code>IPrimitive</code>).</p>
+            <dl class="api">
+                <dt>virtual std::size_t getVertexCount() const = 0</dt><dd>Nombre de sommets éditables (les sommets soudés/partagés comptent une fois).</dd>
+                <dt>virtual Vector3f getVertex(std::size_t index) const = 0</dt><dd>Position monde d’un sommet.</dd>
+                <dt>virtual void setVertex(std::size_t index, const Vector3f &amp;worldPos) = 0</dt><dd>Déplace un sommet en coordonnées monde.</dd>
+                <dt>virtual void onGeometryChanged() = 0</dt><dd>Notifie que la géométrie a changé (recalcul des normales/boîte).</dd>
+                <dt>virtual std::map&lt;std::size_t, Vector3f&gt; getVertexOverrides() const</dt><dd>Surcharges de sommets (défaut&nbsp;: map vide).</dd>
+            </dl>
+
+            <h3 id="ilight"><code>ILight</code> <span class="pill gray">srcs/common/scene/ILight.hpp</span></h3>
+            <p>Contrat d’une source lumineuse (hérite virtuellement de <code>ISceneObject</code>&nbsp;;
+                <code>getObjectType()</code> renvoie <code>LIGHT</code>). L’enum <code>LightKind</code> vaut
+                <code>POINT</code>, <code>DIRECTIONAL</code> ou <code>UNKNOWN</code>.</p>
+            <dl class="api">
+                <dt>virtual LightKind getKind() const = 0</dt><dd>Nature de la lumière.</dd>
+                <dt>virtual float getIntensity() const = 0</dt><dd>Intensité (+ <code>setIntensity</code>).</dd>
+                <dt>virtual ColorF getColorF() const = 0</dt><dd>Couleur flottante (+ <code>setColorF</code>).</dd>
+                <dt>bool isHidden() const override = 0 / void setHidden(bool) override = 0</dt><dd>Visibilité (redéclarée pure).</dd>
+            </dl>
+
+            <h3 id="iplugin-loader"><code>IPluginLoader</code> <span class="pill gray">srcs/common/IPluginLoader.hpp</span></h3>
+            <p>Contrat du chargeur de plugins. Le type imbriqué <code>PluginHandle</code> regroupe le handle
+                <code>dlopen</code>, l’instance <code>IPlugin*</code> et le pointeur de destruction.</p>
+            <dl class="api">
+                <dt>virtual bool load(const std::string &amp;path) = 0</dt><dd>Charge un plugin <code>.so</code>.</dd>
+                <dt>virtual void unloadAll() = 0</dt><dd>Décharge tous les plugins.</dd>
+                <dt>virtual const std::vector&lt;PluginHandle&gt; &amp;getPlugins() const = 0</dt><dd>Tous les plugins chargés.</dd>
+                <dt>virtual const std::vector&lt;PluginHandle&gt; getPlugins(PluginType pluginType) const = 0</dt><dd>Plugins filtrés par type.</dd>
+            </dl>
+
+            <h3 id="icoreaccess"><code>ICoreAccess</code> <span class="pill gray">srcs/common/ICoreAccess.hpp</span></h3>
+            <p>Façade que le cœur expose aux plugins&nbsp;: gestion de scène, accès aux renderers, au chargeur
+                de plugins, au module cluster et à l’historique d’annulation. L’enum <code>CoreState</code> vaut
+                <code>INITIALIZING</code>, <code>LOADING_SCENE</code>, <code>RENDERING</code>,
+                <code>READY</code>, <code>EXITING</code>.</p>
+            <dl class="api">
+                <dt>virtual void clearScene() = 0</dt><dd>Vide la scène courante.</dd>
+                <dt>virtual void loadScene(const std::string &amp;scene_path) = 0</dt><dd>Charge une scène (+ <code>loadNewScene</code>, <code>saveScene</code>).</dd>
+                <dt>virtual ISceneRenderer *getRenderer() / getViewportRenderer() const = 0</dt><dd>Renderer principal et renderer de viewport.</dd>
+                <dt>virtual IPluginLoader *getPluginLoader() const = 0</dt><dd>Accès au chargeur de plugins.</dd>
+                <dt>virtual IClusterModule *getClusterModule() const = 0</dt><dd>Accès au module de rendu en cluster.</dd>
+                <dt>virtual std::string getCurrentScenePath() = 0</dt><dd>Chemin de la scène courante.</dd>
+                <dt>virtual IScene *getScene() const = 0</dt><dd>Scène courante.</dd>
+                <dt>virtual CoreState getState() const = 0</dt><dd>État interne du cœur.</dd>
+                <dt>virtual void requestRender() / stop() = 0</dt><dd>Déclenche / arrête un rendu.</dd>
+                <dt>virtual void historyReset() / historyCapture() / historyUndo() / historyRedo() = 0</dt><dd>Gestion de l’historique (annuler/rétablir).</dd>
+            </dl>
+
+            <h2 id="classes">Classes principales</h2>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Classe</th><th>Emplacement</th><th>Rôle</th></tr></thead>
+                <tbody>
+                    <tr><td><code>Core</code></td><td><code>srcs/core/Core.*</code></td><td>Orchestration&nbsp;: plugins, scène, rendu, UI, historique, cluster. Implémente <code>ICoreAccess</code>.</td></tr>
+                    <tr><td><code>PluginLoader</code></td><td><code>srcs/core/PluginLoader.*</code></td><td>Implémente <code>IPluginLoader</code>&nbsp;: <code>dlopen</code>/<code>dlclose</code>, résolution de <code>create_plugin</code>/<code>destroy_plugin</code>.</td></tr>
+                    <tr><td><code>Scene</code></td><td><code>srcs/core/scene/Scene.*</code></td><td>Implémentation de <code>IScene</code>&nbsp;: primitives, lumières, matériaux, hiérarchie, BVH.</td></tr>
+                    <tr><td><code>SceneParser</code></td><td><code>srcs/core/scene/SceneParser.*</code></td><td>Lecture d’un fichier JSON en objets de scène.</td></tr>
+                    <tr><td><code>SceneRegister</code></td><td><code>srcs/core/scene/SceneRegister.*</code></td><td>Sérialisation de la scène en JSON.</td></tr>
+                    <tr><td><code>SceneObjectBuilder</code></td><td><code>srcs/core/scene/builder/</code></td><td>Répartiteur primitive / lumière lors de la construction.</td></tr>
+                    <tr><td><code>PrimitiveBuilder</code></td><td><code>srcs/core/scene/builder/</code></td><td>Construction concrète des primitives depuis leurs données.</td></tr>
+                    <tr><td><code>LightBuilder</code></td><td><code>srcs/core/scene/builder/</code></td><td>Construction concrète des lumières depuis leurs données.</td></tr>
+                    <tr><td><code>SceneBuilder</code></td><td><code>srcs/core/scene/builder/</code></td><td>Agrège caméra + matériaux + objets → <code>Scene</code>.</td></tr>
+                    <tr><td><code>PrimitiveFactory</code></td><td><code>srcs/core/scene/factory/</code></td><td>Création d’une primitive par défaut selon une chaîne de type.</td></tr>
+                    <tr><td><code>LightFactory</code></td><td><code>srcs/core/scene/factory/</code></td><td>Création d’une lumière par défaut selon une chaîne de type.</td></tr>
+                    <tr><td><code>Camera</code></td><td><code>srcs/core/scene/camera/</code></td><td>Caméra perspective (implémente <code>ICamera</code>).</td></tr>
+                    <tr><td><code>BVHNode</code></td><td><code>srcs/core/scene/bvh/</code></td><td>Nœud de la hiérarchie de volumes englobants (accélération des intersections).</td></tr>
+                    <tr><td><code>Material</code></td><td><code>srcs/common/Material.hpp</code></td><td>Paramètres de matériau (PHONG / PBR)&nbsp;: couleur, spéculaire, réflectivité, IOR, textures…</td></tr>
+                    <tr><td><code>MaterialLibrary</code></td><td><code>srcs/common/MaterialLibrary.hpp</code></td><td>Bibliothèque persistante (<code>~/.raytracer/materials</code>)&nbsp;: <code>save</code>, <code>remove</code>, <code>loadAll</code>, <code>toJson</code>/<code>fromJson</code>.</td></tr>
+                    <tr><td><code>ObjParser</code></td><td><code>srcs/core/obj/</code></td><td>Import de fichiers Wavefront <code>.obj</code>.</td></tr>
+                    <tr><td><code>RenderExporter</code></td><td><code>srcs/core/utils/</code></td><td>Export du rendu en PNG (via stb_image).</td></tr>
+                    <tr><td><code>FileObserver</code></td><td><code>srcs/core/utils/</code></td><td>Surveille le fichier de scène pour rechargement à chaud.</td></tr>
+                    <tr><td><code>ClusterModule</code></td><td><code>srcs/core/cluster/</code></td><td>Rendu distribué (implémente <code>IClusterModule</code>)&nbsp;: <code>startServer</code>, <code>joinCluster</code>, <code>leaveCluster</code>.</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <h2 id="math">Types mathématiques &amp; utilitaires</h2>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Type</th><th>Emplacement</th><th>Rôle</th></tr></thead>
+                <tbody>
+                    <tr><td><code>Vector2f</code>, <code>Vector3f</code>, <code>Vector2i</code>, <code>Vector3i</code></td><td><code>srcs/common/Vector.hpp</code></td><td>Vecteurs 2D/3D flottants et entiers, avec opérateurs, <code>dot</code>, <code>cross</code>, <code>normalize</code>, <code>rotate</code>…</td></tr>
+                    <tr><td><code>Matrix</code></td><td><code>srcs/common/Matrix.hpp</code></td><td>Matrice de transformation.</td></tr>
+                    <tr><td><code>Ray</code></td><td><code>srcs/common/Ray.hpp</code></td><td>Rayon <code>origin</code>/<code>direction</code> avec <code>at(t) = origin + t·direction</code>.</td></tr>
+                    <tr><td><code>AABB</code></td><td><code>srcs/common/AABB.hpp</code></td><td>Boîte englobante alignée sur les axes (<code>min</code>/<code>max</code>, <code>hit()</code>) + <code>BoundingBoxUtils::surrounding_box</code>.</td></tr>
+                    <tr><td><code>Color</code> / <code>ColorF</code></td><td><code>srcs/common/Color.hpp</code></td><td>Couleur entière RGBA 0–255 / couleur flottante RGB (<code>fromColor</code>, <code>toColor</code>).</td></tr>
+                    <tr><td><code>Intersection</code></td><td><code>srcs/common/Intersection.hpp</code></td><td>Enregistrement d’un impact&nbsp;: <code>t</code>, <code>point</code>, <code>normal</code>, <code>front_face</code>, <code>uv</code>, <code>material</code>, <code>primitive</code>.</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <div class="note"><p>Les signatures ci-dessus reprennent fidèlement les en-têtes d’interface du
+                dépôt (namespace <code>rc</code>). Pour les détails d’implémentation, se reporter aux fichiers
+                correspondants sous <code>srcs/</code> et à la documentation Markdown du dossier
+                <code>docs/</code>.</p></div>
+        </article>
+
+        <nav class="toc" aria-label="Sommaire">
+            <strong>Sur cette page</strong>
+            <ul>
+                <li><a href="#interfaces">Interfaces principales</a></li>
+                <li class="sub"><a href="#iplugin">IPlugin</a></li>
+                <li class="sub"><a href="#isceneRenderer">ISceneRenderer</a></li>
+                <li class="sub"><a href="#iscene">IScene</a></li>
+                <li class="sub"><a href="#icamera">ICamera</a></li>
+                <li class="sub"><a href="#isceneobject">ISceneObject</a></li>
+                <li class="sub"><a href="#iprimitive">IPrimitive</a></li>
+                <li class="sub"><a href="#ieditable">IEditablePrimitive</a></li>
+                <li class="sub"><a href="#ilight">ILight</a></li>
+                <li class="sub"><a href="#iplugin-loader">IPluginLoader</a></li>
+                <li class="sub"><a href="#icoreaccess">ICoreAccess</a></li>
+                <li><a href="#classes">Classes principales</a></li>
+                <li><a href="#math">Maths &amp; utilitaires</a></li>
+            </ul>
+        </nav>
+    </main>
+</div>
+
+<footer class="site-footer">
+    <span>Raytracer — documentation technique</span>
+    <span>C++17 · SFML · Architecture à plugins</span>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="assets/search-index.js"></script>
+<script src="assets/search.js"></script>
+<script src="assets/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Raytracer — Technical documentation</title>
+<meta name="description" content="Technical documentation of the Raytracer: a modular ray-tracing renderer in C++17.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+    <button class="menu-toggle" data-menu-toggle aria-label="Menu">☰</button>
+    <a class="brand" href="index.en.html"><span class="logo">◐</span> Raytracer <small>docs</small></a>
+    <div class="search">
+        <input id="search-input" type="search" autocomplete="off" spellcheck="false" aria-label="Search">
+        <div id="search-results" class="search-results" role="listbox"></div>
+    </div>
+    <a class="lang-toggle" href="index.html" aria-label="Français" title="Français">🌐 FR</a>
+</header>
+
+<div class="layout">
+    <aside class="sidebar">
+            <h4>Get started</h4>
+            <ul>
+                <li><a href="index.en.html" class="active">Home</a></li>
+                <li><a href="installation.en.html">Installation</a></li>
+                <li><a href="utilisation.en.html">Usage</a></li>
+            </ul>
+            <h4>Scene &amp; content</h4>
+            <ul>
+                <li><a href="format-scene.en.html">Scene format</a></li>
+                <li><a href="primitives.en.html">Primitives</a></li>
+                <li><a href="materiaux.en.html">Materials</a></li>
+                <li><a href="fonctionnalites.en.html">Features</a></li>
+            </ul>
+            <h4>Engine</h4>
+            <ul>
+                <li><a href="architecture.en.html">Architecture</a></li>
+                <li><a href="rendu.en.html">Rendering pipeline</a></li>
+                <li><a href="plugins.en.html">Plugin system</a></li>
+                <li><a href="cluster.en.html">Cluster rendering</a></li>
+            </ul>
+            <h4>Interface</h4>
+            <ul>
+                <li><a href="interface.en.html">Graphical interface</a></li>
+            </ul>
+            <h4>Reference</h4>
+            <ul>
+                <li><a href="reference.en.html">Class reference</a></li>
+                <li><a href="faq.en.html">FAQ</a></li>
+            </ul>
+        </aside>
+
+    <main class="content">
+        <article class="article">
+            <section class="hero">
+                <h1>Raytracer</h1>
+                <p>A modular ray-tracing renderer written in C++17. It produces synthetic images by casting rays from a virtual camera, intersecting geometric primitives, and evaluating direct lighting.</p>
+                <div class="actions">
+                    <a class="btn primary" href="installation.en.html">Installation &rarr;</a>
+                    <a class="btn ghost" href="utilisation.en.html">Render a scene</a>
+                </div>
+            </section>
+
+            <div class="badges">
+                <span class="pill">C++17</span>
+                <span class="pill gray">Makefile</span>
+                <span class="pill gray">SFML</span>
+                <span class="pill gray">.so plugins</span>
+                <span class="pill green">Real-time &amp; headless rendering</span>
+            </div>
+
+            <h2 id="objectif">Project goal</h2>
+            <p>The Raytracer turns a scene description (a JSON file) into an image. For each pixel, the engine:</p>
+            <ol>
+                <li>generates a primary ray from the camera;</li>
+                <li>finds the closest valid hit across scene geometry;</li>
+                <li>computes shading from lights and material response;</li>
+                <li>writes the final color to the image buffer (exported as PNG).</li>
+            </ol>
+            <p>The project stands out with an <strong>interface-driven architecture</strong> and a
+                <strong>runtime plugin system</strong> (<code>.so</code>) for rendering and the graphical
+                interface, plus an interactive UI to edit the scene — including mesh vertices.</p>
+
+            <div class="tip"><p>Use the <strong>search bar</strong> at the top (shortcut <kbd>/</kbd>) to quickly
+                find an option, a class or a scene key. The documentation is available in
+                <strong>French</strong> and <strong>English</strong> (<span class="pill gray">🌐 FR</span> button).</p></div>
+
+            <h2 id="apercu">Feature overview</h2>
+            <div class="cards">
+                <a class="card" href="fonctionnalites.en.html#primitives"><div class="icon">🔷</div><h3>10 primitives</h3><p>Sphere, plane, cube, cylinder, cone, triangle, torus, tanglecube, fractal, <code>.obj</code> mesh.</p></a>
+                <a class="card" href="fonctionnalites.en.html#lumieres"><div class="icon">💡</div><h3>Lights &amp; shadows</h3><p>Point and directional lights, shadow rays for visibility.</p></a>
+                <a class="card" href="fonctionnalites.en.html#materiaux"><div class="icon">🎨</div><h3>PHONG / PBR materials</h3><p>Color, specular, reflectivity, transparency, IOR, metallic, roughness, textures…</p></a>
+                <a class="card" href="fonctionnalites.en.html#bvh"><div class="icon">⚡</div><h3>BVH acceleration</h3><p>Bounding-volume hierarchy built before rendering; per-mesh local BVH.</p></a>
+                <a class="card" href="architecture.en.html#plugins"><div class="icon">🧩</div><h3>.so plugins</h3><p>Renderers and interface loaded dynamically via <code>dlopen</code>.</p></a>
+                <a class="card" href="interface.en.html#edition-sommets"><div class="icon">✏️</div><h3>Vertex editing</h3><p>Interactively move the vertices of a triangle or mesh in the viewport.</p></a>
+                <a class="card" href="architecture.en.html#cluster"><div class="icon">🌐</div><h3>Cluster rendering</h3><p>Client/server infrastructure to distribute tile rendering over the network.</p></a>
+                <a class="card" href="utilisation.en.html#headless"><div class="icon">🖼️</div><h3>Headless mode</h3><p>Render straight to a PNG file without the UI (<code>-r output.png</code>).</p></a>
+            </div>
+
+            <h2 id="demarrage">Quick start</h2>
+            <pre><code class="language-bash"># Build (produces ./raytracer and the plugins in ./plugins)
+make
+
+# Interactive render of a scene
+./raytracer tests/configs/subject.json
+
+# Direct render to a PNG (no UI)
+./raytracer -r output.png tests/configs/subject.json</code></pre>
+            <p>See <a href="installation.en.html">Installation</a> for prerequisites and
+               <a href="utilisation.en.html">Usage</a> for options and the scene format.</p>
+
+            <h2 id="structure">Documentation map</h2>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Section</th><th>Content</th></tr></thead>
+                <tbody>
+                    <tr><td><a href="installation.en.html">Installation</a></td><td>Prerequisites, dependencies, build, troubleshooting.</td></tr>
+                    <tr><td><a href="utilisation.en.html">Usage</a></td><td>Command line, scene file format, real examples.</td></tr>
+                    <tr><td><a href="architecture.en.html">Architecture</a></td><td>Code organization, modules, tools and interactions, rendering pipeline, cluster.</td></tr>
+                    <tr><td><a href="fonctionnalites.en.html">Features</a></td><td>Primitives, lights, materials, shadows, reflections, BVH, meshes.</td></tr>
+                    <tr><td><a href="interface.en.html">Graphical interface</a></td><td>Panels, components, windows, gizmos, vertex editing, shortcuts.</td></tr>
+                    <tr><td><a href="reference.en.html">Reference</a></td><td>Interfaces, main classes, math types.</td></tr>
+                    <tr><td><a href="faq.en.html">FAQ</a></td><td>Common problems and solutions.</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <div class="note"><p>This documentation is generated from the project's real code (Makefile, headers,
+               scene parser, examples in <code>tests/configs/</code>) and the Markdown docs in the
+               <code>docs/</code> folder.</p></div>
+        </article>
+    </main>
+</div>
+
+<footer class="site-footer">
+    <span>Raytracer — technical documentation</span>
+    <span>C++17 · SFML · Plugin architecture</span>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="assets/search-index.js"></script>
+<script src="assets/search.js"></script>
+<script src="assets/main.js"></script>
+</body>
+</html>

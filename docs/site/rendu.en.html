@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rendering pipeline — Raytracer</title>
+<meta name="description" content="The Raytracer rendering pipeline: rays, camera, sampling, BVH intersection, shading, shadows, reflections, renderers and hand-written PNG export.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+    <button class="menu-toggle" data-menu-toggle aria-label="Menu">☰</button>
+    <a class="brand" href="index.en.html"><span class="logo">◐</span> Raytracer <small>docs</small></a>
+    <div class="search">
+        <input id="search-input" type="search" autocomplete="off" spellcheck="false" aria-label="Search">
+        <div id="search-results" class="search-results" role="listbox"></div>
+    </div>
+    <a class="lang-toggle" href="rendu.html" aria-label="Français" title="Français">🌐 FR</a>
+</header>
+
+<div class="layout">
+    <aside class="sidebar">
+            <h4>Get started</h4>
+            <ul>
+                <li><a href="index.en.html">Home</a></li>
+                <li><a href="installation.en.html">Installation</a></li>
+                <li><a href="utilisation.en.html">Usage</a></li>
+            </ul>
+            <h4>Scene &amp; content</h4>
+            <ul>
+                <li><a href="format-scene.en.html">Scene format</a></li>
+                <li><a href="primitives.en.html">Primitives</a></li>
+                <li><a href="materiaux.en.html">Materials</a></li>
+                <li><a href="fonctionnalites.en.html">Features</a></li>
+            </ul>
+            <h4>Engine</h4>
+            <ul>
+                <li><a href="architecture.en.html">Architecture</a></li>
+                <li><a href="rendu.en.html" class="active">Rendering pipeline</a></li>
+                <li><a href="plugins.en.html">Plugin system</a></li>
+                <li><a href="cluster.en.html">Cluster rendering</a></li>
+            </ul>
+            <h4>Interface</h4>
+            <ul>
+                <li><a href="interface.en.html">Graphical interface</a></li>
+            </ul>
+            <h4>Reference</h4>
+            <ul>
+                <li><a href="reference.en.html">Class reference</a></li>
+                <li><a href="faq.en.html">FAQ</a></li>
+            </ul>
+        </aside>
+
+    <main class="content has-toc">
+        <article class="article">
+            <p class="crumbs"><a href="index.en.html">Home</a> / Rendering pipeline</p>
+            <h1>Rendering pipeline</h1>
+            <p class="lead">The engine produces an image by applying the <strong>same sequence to every pixel</strong>&nbsp;: generate a camera ray, find the closest intersection (accelerated by a BVH), evaluate shading, then accumulate the color into a buffer that is exported as a PNG. This page walks through each stage from the actual code (<code>srcs/common/render/RenderKernel.hpp</code>, <code>srcs/core/scene/camera/Camera.cpp</code>, <code>srcs/plugins/renderer/*</code>).</p>
+
+            <h2 id="vue-ensemble">Overview</h2>
+            <p>The BVH is built <em>once</em> before rendering (<code>scene.buildBvh()</code>). Then, for every pixel, a primary ray traverses the scene. The heart of the shading is the recursive function <code>render_kernel::trace_ray(ray, scene, depth)</code>, started with a depth of <code>10</code>.</p>
+            <pre><code class="language-text">                       ┌──────────────────────────────────────────────┐
+   scene.json ─► Scene ─►  buildBvh()  (global BVH + local/mesh BVH)     │
+                       └───────────────────────┬──────────────────────┘
+                                               │
+                    for each pixel (x, y)      ▼
+   ┌───────────────────────────────────────────────────────────────────┐
+   │  1. camera.generateRay(x, y)        → primary ray P(t)=O+t·D        │
+   │  2. scene.intersect(ray, EPS, INF)  → BVH traversal, closest hit    │
+   │  3. no hit ? → color (0,0,0) (black, no skybox)                    │
+   │  4. hit ?    → shading: ambient + Σ lights (diffuse + specular)     │
+   │             + shadows (ray H+ε·N → light)                           │
+   │             + secondary rays (reflection / refraction), depth-1     │
+   │  5. accumulated color (average of samples) → Render buffer          │
+   └───────────────────────────────────────────────────────────────────┘
+                                               │
+              all pixels computed              ▼
+   Render buffer ─► RenderExporter::saveToFile() ─► render.png (hand-written)</code></pre>
+            <div class="note"><p>There is <strong>no background color and no skybox</strong>&nbsp;: a ray that hits nothing returns black <code>(0,0,0)</code>. Metallic or glassy surfaces without direct light therefore look dark.</p></div>
+
+            <h2 id="rayons">Rays</h2>
+            <p>A ray is an origin / direction pair (<code>srcs/common/Ray.hpp</code>) and follows the canonical parametric equation&nbsp;:</p>
+            <pre><code class="language-text">P(t) = O + t · D        with  t ∈ [t_min, t_max]</code></pre>
+            <pre><code class="language-cpp">class Ray {
+    Vector3f origin;      // O
+    Vector3f direction;   // D (normalized for primary rays)
+    Vector3f at(float t) const { return origin + t * direction; }
+};</code></pre>
+            <p>The <strong>primary ray</strong> starts at the camera position and passes through the target pixel. <strong>Secondary rays</strong> (shadow, reflection, refraction) are spawned at the hit point, always offset by a small <code>ε</code> along the normal to avoid self-intersection (see <a href="#robustesse">Numerical robustness</a>).</p>
+
+            <h2 id="camera">Camera model</h2>
+            <p>The camera (<code>srcs/core/scene/camera/Camera.cpp</code>) is described by a <strong>position</strong>, a <strong>rotation</strong> (Euler angles in degrees), a vertical <strong>field of view</strong> (<code>fieldOfView</code>) and a <strong>resolution</strong>. On every change, <code>update()</code> recomputes the virtual image plane.</p>
+            <p>The camera basis is obtained by rotating the base axes by the rotation&nbsp;: <code>forward = rotate((0,1,0))</code>, <code>right = rotate((1,0,0))</code>, <code>up = rotate((0,0,1))</code>. The viewport dimensions derive from the FOV&nbsp;:</p>
+            <pre><code class="language-text">theta            = fov × π / 180
+viewport_height  = 2 · tan(theta / 2)
+viewport_width   = viewport_height · (resolution.x / resolution.y)   (aspect ratio)
+focal_length     = 1</code></pre>
+            <p>The upper-left corner and per-pixel steps are precomputed once&nbsp;:</p>
+            <pre><code class="language-cpp">viewport_u   = viewport_width  * right;
+viewport_v   = -viewport_height * up;
+pixel_delta_u = viewport_u / resolution.x;
+pixel_delta_v = viewport_v / resolution.y;
+viewport_upper_left = position + focal_length*forward - viewport_u/2 - viewport_v/2;
+pixel00_loc  = viewport_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);</code></pre>
+            <p>The direction for pixel <code>(i, j)</code> is computed by <code>generateRay(i, j)</code>&nbsp;: it targets the pixel center (with a random offset for anti-aliasing, see below), the origin is the camera position and the direction is normalized&nbsp;:</p>
+            <pre><code class="language-cpp">pixel_sample  = pixel00_loc + (i + jitter.x)*pixel_delta_u + (j + jitter.y)*pixel_delta_v;
+ray_origin    = position;
+ray_direction = (pixel_sample - ray_origin).unit_vector();</code></pre>
+
+            <h2 id="echantillonnage">Sampling &amp; anti-aliasing</h2>
+            <p>The camera exposes <code>samplesPerPixel</code> (default <code>5</code>&nbsp;; clamped to at least <code>1</code>). Anti-aliasing is done by <strong>supersampling</strong>&nbsp;: for each sample, <code>sample_square()</code> adds a random offset within the pixel square&nbsp;:</p>
+            <pre><code class="language-cpp">Vector3f Camera::sample_square() const {
+    return Vector3f(random_double() - 0.5, random_double() - 0.5, 0);
+}</code></pre>
+            <p>The <code>DefaultRenderer</code> loops over samples and <strong>accumulates</strong> colors, then divides by the number of samples computed so far — giving a preview that converges (progressive average)&nbsp;:</p>
+            <pre><code class="language-cpp">for (int sample = 0; sample &lt; spp; sample++) {
+    // ... for each pixel: accum[i] += trace_ray(camera.generateRay(x, y), scene, 10);
+    float scale = 1.0f / (sample + 1);
+    pixels[i] = (accum[i] * scale).toColor();   // average of samples seen
+}</code></pre>
+            <p>Because each sample uses a different sub-pixel offset, the average smooths staircase edges (aliasing). Rendering is split into <strong>64×64 tiles</strong> handled by a thread pool (<code>std::thread::hardware_concurrency()</code>), with the tile order shuffled for a more even fill.</p>
+
+            <h2 id="intersection">Intersection &amp; BVH acceleration</h2>
+            <p>Finding what a ray hits amounts to keeping the <strong>closest valid hit</strong> — the smallest <code>t</code> in <code>[t_min, t_max]</code>. A naive search would test every primitive&nbsp;; the engine instead uses a <strong>BVH</strong> (Bounding Volume Hierarchy, <code>srcs/core/scene/bvh/BVHNode.cpp</code>) built before rendering.</p>
+            <p>At build time, primitives are split along the <strong>longest axis</strong> of the box enclosing their centroids, halved by <code>std::nth_element</code> (median), recursively. Each node stores its bounding box (AABB).</p>
+            <p>Traversal first tests the node box&nbsp;; on a hit it descends into both children while <strong>tightening <code>t_max</code></strong> with the best <code>t</code> found so far, which prunes farther subtrees&nbsp;:</p>
+            <pre><code class="language-cpp">bool BVHNode::intersect(const Ray &amp;ray, float tMin, float tMax, Intersection &amp;hit) const {
+    if (!_bbox.hit(ray, tMin, tMax)) return false;
+    bool hit_left  = _left->intersect(ray, tMin, tMax, hit);
+    bool hit_right = _right->intersect(ray, tMin, hit_left ? hit.t : tMax, hit);
+    return hit_left || hit_right;
+}</code></pre>
+            <p>The search starts from <code>trace_ray</code> with <code>scene.intersect(ray, EPS, INF, hit)</code> — <code>t_min = EPS = 0.001</code> discards self-intersections, <code>t_max = ∞</code> leaves the whole scene visible. Each <code>.obj</code> mesh additionally owns its <strong>own local BVH</strong>, nested inside the global BVH. See <a href="fonctionnalites.en.html#bvh">BVH acceleration</a> for build details.</p>
+
+            <h2 id="ombrage">Shading</h2>
+            <p>At the hit point <code>H</code>, the color is built by combining several contributions. The <strong>ambient</strong> term is always present&nbsp;:</p>
+            <pre><code class="language-text">ambient = baseColor · scene_ambient_coefficient        (× ao × (1-metallic) in PBR)</code></pre>
+            <p>Then, for each visible light, a direct contribution is added. Two illumination models coexist depending on the material (<code>material.model</code>) — see <a href="materiaux.en.html">Materials</a>&nbsp;:</p>
+            <p><strong>PHONG model</strong> — Lambertian diffuse + Phong specular&nbsp;:</p>
+            <pre><code class="language-text">NdotL    = max(0, N · L)
+diffuse  = baseColor · lightColor · (intensity · NdotL / π)
+R        = reflection of -L about N
+specular = material.specular · lightColor · (intensity · max(0, V·R)^shininess)
+contribution = diffuse + specular</code></pre>
+            <p><strong>PBR model</strong> — a Cook-Torrance / Disney-style BRDF&nbsp;: GGX distribution (<code>distribution_ggx</code>), Smith geometry term (<code>geometry_smith</code>), Fresnel-Schlick (<code>fresnel_schlick</code>), plus optional <em>clearcoat</em>, <em>sheen</em> and <em>transmission</em> layers. Diffuse and specular are weighted by <code>kD</code>/<code>kS</code> based on metallic and transmission&nbsp;:</p>
+            <pre><code class="language-text">H  = normalize(V + L)
+F  = fresnel_schlick(V·H, F0)
+D  = distribution_ggx(N·H, roughness)
+G  = geometry_smith(N·V, N·L, roughness)
+specular = F · D · G / (4 · (N·V) · (N·L))
+diffuse  = baseColor · (backscatter factors) / π
+layer    = (kD·diffuse + specular + sheen) · radiance · NdotL + clearcoat</code></pre>
+            <p>In both cases, a point light’s contribution is attenuated by <code>1/dist²</code>&nbsp;; a directional light is not attenuated (distance treated as infinite).</p>
+
+            <h2 id="ombres">Shadows</h2>
+            <p>Before counting a light’s contribution, its <strong>visibility</strong> from the hit point is tested with a <strong>shadow ray</strong>. It starts from the slightly offset point <code>H + ε·N</code>, toward the light, over the distance between them&nbsp;:</p>
+            <pre><code class="language-cpp">// Point light: L points toward the light, finite distance
+delta = light.position - H;  dist = |delta|;  L = delta / dist;
+attenuation = 1 / (dist * dist);
+// Directional light: fixed direction, distance ~ infinite
+L = light.rotation.unit_vector();  dist = 1e9;
+
+ColorF trans = shadow_transmittance(scene, H + N*EPS, L, dist);</code></pre>
+            <p>Rather than a plain occluded / visible boolean, <code>shadow_transmittance</code> walks the occluders along the ray&nbsp;: an opaque occluder blocks the light entirely (zero transmittance), while a transparent occluder <strong>tints and attenuates</strong> it according to its transparency and base color — producing colored shadows under glass. The light is counted only if the resulting transmittance is non-zero.</p>
+
+            <h2 id="reflexions">Reflections &amp; refractions</h2>
+            <p>After direct shading, <code>trace_ray</code> spawns <strong>secondary rays</strong> and recurses with <code>depth - 1</code> (initial depth <code>10</code>&nbsp;; <code>depth ≤ 0</code> returns black and stops the recursion).</p>
+            <p><strong>PHONG material.</strong> Reflection is weighted by <code>material.reflectivity</code>, transparency by <code>material.transparency</code> (or its effective equivalent)&nbsp;:</p>
+            <pre><code class="language-cpp">if (reflectivity &gt; 0) {
+    Vector3f reflected = reflect_dir(ray.direction, N);          // mirror about N
+    Ray reflected_ray(H + N*EPS, reflected);
+    surface += trace_ray(reflected_ray, scene, depth - 1) * reflectivity;
+}
+if (transparency &gt; 0) {
+    Ray through_ray(H + dir*EPS, dir);                            // straight-through ray
+    ColorF through = trace_ray(through_ray, scene, depth - 1);
+    return surface * (1 - transparency) + through * transparency;
+}</code></pre>
+            <p><strong>PBR material.</strong> The reflection weight comes directly from the <strong>Fresnel</strong> seen by the camera&nbsp;; refraction uses the index of refraction <code>ior</code>. The <code>eta</code> ratio depends on the traversal direction (<code>front_face</code>), and <strong>total internal reflection</strong> is handled when <code>refract_dir</code> fails&nbsp;:</p>
+            <pre><code class="language-text">eta = front_face ? 1/ior : ior
+if refract_dir(dir, N, eta) succeeds → refracted ray (H - N·ε), tinted by baseColor
+otherwise                            → fall back to reflection (total internal reflection)</code></pre>
+            <p>The <code>roughness</code> perturbs the reflected direction through GGX sampling (<code>perturb_direction_ggx</code>) for glossy reflections. The reflection / refraction / diffuse weights are renormalized so no energy is created (<code>weight_sum</code>).</p>
+
+            <h2 id="renderers">The two renderers</h2>
+            <p>Rendering is provided by <code>.so</code> plugins (see <a href="plugins.en.html">Plugin system</a>). Both share the same <code>trace_ray</code> shading kernel, but pursue different goals&nbsp;:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th></th><th><code>renderer_default</code></th><th><code>renderer_viewport</code></th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Purpose</strong></td><td>Full, final-quality render</td><td>Interactive preview in the interface</td></tr>
+                    <tr><td><strong>Name</strong></td><td>“Default”</td><td>“Viewport”</td></tr>
+                    <tr><td><strong>Strategy</strong></td><td>Loop over <code>samplesPerPixel</code>, accumulation + progressive average</td><td>Progressive quality passes (draft → full → anti-aliasing)</td></tr>
+                    <tr><td><strong>Parallelism</strong></td><td>64×64 tiles, shuffled order, thread pool</td><td>64×64 tiles, thread pool, base-color cache</td></tr>
+                    <tr><td><strong>Reactivity</strong></td><td>Renders the whole image then stops</td><td>Re-renders on camera move / selection / hover&nbsp;; interruptible</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p>The <code>ViewportRenderer</code> picks a <strong>quality</strong> based on state&nbsp;: <em>Draft</em> (coarse block rendering while the camera moves, to stay fluid), <em>Full</em> (one pass per pixel), then <em>Aa</em> (an anti-aliasing pass targeted at detected edges, comparing primitive identity and color distance of neighboring pixels). It keeps a <code>_baseColors</code> cache and per-pixel primitive identity to avoid recomputing everything, and honors <code>_stopRequested</code> to interrupt a stale render. The <code>DefaultRenderer</code>, on the other hand, computes the final image directly and then writes it out as PNG.</p>
+
+            <h2 id="export">Hand-written PNG export</h2>
+            <p>Once the <code>Render</code> buffer (width, height, pixels) is filled, <code>RenderExporter::saveToFile(render, path)</code> (<code>srcs/core/utils/RenderExporter.cpp</code>) encodes it as PNG <strong>without any external image library</strong> — the file is built byte by byte.</p>
+            <ul>
+                <li><strong>PNG signature</strong> — the 8 bytes <code>137 80 78 71 13 10 26 10</code>.</li>
+                <li><strong>IHDR chunk</strong> — width and height in <em>big-endian</em>, bit depth <code>8</code>, color type <code>2</code> (truecolor RGB), compression / filter / interlace all <code>0</code>.</li>
+                <li><strong>Raw data</strong> — each scanline is prefixed with a filter byte <code>0</code> (None) followed by <code>R G B</code> triplets.</li>
+                <li><strong>IDAT chunk</strong> — the data goes through a <code>zlib</code> stream in “stored” mode (<code>zlibStore</code>)&nbsp;: header <code>0x78 0x01</code>, <strong>uncompressed</strong> blocks of at most 65535 bytes (with <code>LEN</code>/<code>NLEN</code>), then an <strong>Adler-32</strong> checksum.</li>
+                <li><strong>IEND chunk</strong> — empty end marker.</li>
+                <li><strong>CRC32</strong> — every chunk ends with a CRC32 (polynomial <code>0xEDB88320</code>) computed over its type + data.</li>
+            </ul>
+            <pre><code class="language-cpp">writeChunk(png, "IHDR", ihdr);          // dimensions + format
+writeChunk(png, "IDAT", zlibStore(raw)); // filtered scanlines, zlib "stored"
+writeChunk(png, "IEND", {});             // end of file</code></pre>
+            <p>A failure to open the file raises <code>ExportRenderException</code>. The result is a valid 8-bit RGB PNG readable by any viewer, produced without external dependencies.</p>
+
+            <h2 id="robustesse">Numerical robustness</h2>
+            <p>Several safeguards avoid the classic ray-tracing artifacts&nbsp;:</p>
+            <ul>
+                <li><strong>Anti-acne (epsilon).</strong> Secondary and shadow rays start from <code>H + ε·N</code> (with <code>EPS = 0.001</code>), and <code>scene.intersect</code> enforces <code>t &gt; EPS</code>&nbsp;: this prevents a surface from shadowing itself (<em>shadow acne</em>) through self-intersection.</li>
+                <li><strong>Clamping.</strong> Coefficients and colors are bounded to <code>[0, 1]</code> via <code>clamp01</code> before conversion to bytes, avoiding color overflow.</li>
+                <li><strong>Degenerate cases.</strong> BRDF denominators are guarded with small constants (<code>+ 1e-7</code>), refraction detects <strong>total internal reflection</strong> (<code>refract_dir</code> returns <code>false</code>) and falls back to reflection, and the recursion depth (<code>depth</code>) bounds the number of bounces.</li>
+                <li><strong>Normalization.</strong> Vectors used in shading dot products are normalized to stay physically meaningful.</li>
+                <li><strong><code>t</code> bounds.</strong> The <code>t ∈ [t_min, t_max]</code> test is applied consistently, including when tightening <code>t_max</code> during BVH traversal.</li>
+            </ul>
+
+            <div class="cards">
+                <a class="card" href="materiaux.en.html"><div class="icon">🎨</div><h3>Materials</h3><p>PHONG and PBR parameters used by shading&nbsp;: color, specular, reflectivity, IOR, metallic, roughness…</p></a>
+                <a class="card" href="plugins.en.html"><div class="icon">🧩</div><h3>Plugin system</h3><p>How the <code>.so</code> renderers are loaded and selected at runtime.</p></a>
+                <a class="card" href="fonctionnalites.en.html#bvh"><div class="icon">⚡</div><h3>BVH acceleration</h3><p>Building the bounding-volume hierarchy and the per-mesh local BVH.</p></a>
+            </div>
+        </article>
+
+        <nav class="toc" aria-label="On this page">
+            <strong>On this page</strong>
+            <ul>
+                <li><a href="#vue-ensemble">Overview</a></li>
+                <li><a href="#rayons">Rays</a></li>
+                <li><a href="#camera">Camera model</a></li>
+                <li><a href="#echantillonnage">Sampling &amp; AA</a></li>
+                <li><a href="#intersection">Intersection &amp; BVH</a></li>
+                <li><a href="#ombrage">Shading</a></li>
+                <li><a href="#ombres">Shadows</a></li>
+                <li><a href="#reflexions">Reflections &amp; refractions</a></li>
+                <li><a href="#renderers">The two renderers</a></li>
+                <li><a href="#export">PNG export</a></li>
+                <li><a href="#robustesse">Numerical robustness</a></li>
+            </ul>
+        </nav>
+    </main>
+</div>
+
+<footer class="site-footer">
+    <span>Raytracer — technical documentation</span>
+    <span>C++17 · SFML · Plugin architecture</span>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="assets/search-index.js"></script>
+<script src="assets/search.js"></script>
+<script src="assets/main.js"></script>
+</body>
+</html>

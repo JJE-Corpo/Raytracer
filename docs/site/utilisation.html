@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Utilisation — Raytracer</title>
+<meta name="description" content="Ligne de commande, mode headless et format complet des fichiers de scène JSON du Raytracer.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+    <button class="menu-toggle" data-menu-toggle aria-label="Menu">☰</button>
+    <a class="brand" href="index.html"><span class="logo">◐</span> Raytracer <small>docs</small></a>
+    <div class="search">
+        <input id="search-input" type="search" autocomplete="off" spellcheck="false" aria-label="Rechercher">
+        <div id="search-results" class="search-results" role="listbox"></div>
+    </div>
+    <a class="lang-toggle" href="utilisation.en.html" aria-label="English" title="English">🌐 EN</a>
+</header>
+
+<div class="layout">
+    <aside class="sidebar">
+            <h4>Démarrer</h4>
+            <ul>
+                <li><a href="index.html">Accueil</a></li>
+                <li><a href="installation.html">Installation</a></li>
+                <li><a href="utilisation.html" class="active">Utilisation</a></li>
+            </ul>
+            <h4>Scène &amp; contenu</h4>
+            <ul>
+                <li><a href="format-scene.html">Format de scène</a></li>
+                <li><a href="primitives.html">Primitives</a></li>
+                <li><a href="materiaux.html">Matériaux</a></li>
+                <li><a href="fonctionnalites.html">Fonctionnalités</a></li>
+            </ul>
+            <h4>Moteur</h4>
+            <ul>
+                <li><a href="architecture.html">Architecture</a></li>
+                <li><a href="rendu.html">Pipeline de rendu</a></li>
+                <li><a href="plugins.html">Système de plugins</a></li>
+                <li><a href="cluster.html">Rendu en cluster</a></li>
+            </ul>
+            <h4>Interface</h4>
+            <ul>
+                <li><a href="interface.html">Interface graphique</a></li>
+            </ul>
+            <h4>Référence</h4>
+            <ul>
+                <li><a href="reference.html">Référence des classes</a></li>
+                <li><a href="faq.html">FAQ</a></li>
+            </ul>
+        </aside>
+
+    <main class="content has-toc">
+        <article class="article">
+            <p class="crumbs"><a href="index.html">Accueil</a> / Utilisation</p>
+            <h1>Utilisation</h1>
+            <p class="lead">Lancer le programme, comprendre les options de la ligne de commande, le mode
+               de rendu <em>headless</em> et le format complet des fichiers de scène JSON.</p>
+
+            <h2 id="ligne-commande">Ligne de commande</h2>
+            <pre><code class="language-bash">./raytracer [OPTIONS] [FICHIER_SCENE]</code></pre>
+            <p>Le <code>FICHIER_SCENE</code> est optionnel&nbsp;: sans lui, une scène vierge par défaut est
+               chargée. Les arguments sont analysés par la structure <code>Options</code>
+               (<code>srcs/config/Options.hpp</code>).</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Option</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td><code>-h</code>, <code>--help</code></td><td>Affiche l’aide d’utilisation et quitte.</td></tr>
+                    <tr><td><code>-v</code>, <code>--version</code></td><td>Affiche la version (<code>raytracer version 1.0.0</code>) et quitte.</td></tr>
+                    <tr><td><code>-r</code>, <code>--render [NOM].png</code></td><td>Mode <em>headless</em>&nbsp;: rend la scène dans un fichier PNG <strong>sans</strong> lancer l’interface graphique. Le <code>NOM</code> optionnel doit finir par <code>.png</code> et fixe la sortie (par défaut <code>render.png</code>).</td></tr>
+                    <tr><td><code>--server [PORT]</code></td><td>Lance l’interface <strong>et</strong> démarre un serveur de cluster. Le <code>PORT</code> optionnel (0–65535) fixe le port d’écoute&nbsp;; sinon un port automatique est choisi.</td></tr>
+                    <tr><td><code>--connect IP PORT</code></td><td>Lance l’interface et rejoint le serveur de cluster à l’adresse <code>IP</code> sur le <code>PORT</code>. Les deux arguments sont obligatoires.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <div class="note"><p><strong>Exclusions mutuelles.</strong> <code>--render</code> (headless) ne peut pas
+               être combiné avec <code>--server</code> ni <code>--connect</code>, et <code>--server</code>
+               et <code>--connect</code> ne peuvent pas être utilisés ensemble. Toute option inconnue ou un
+               second argument de scène provoque une erreur.</p></div>
+
+            <h3 id="exemples-commandes">Exemples de commandes</h3>
+            <pre><code class="language-bash"># Interface graphique sur une scène d'exemple
+./raytracer tests/configs/subject.json
+
+# Rendu direct vers un PNG (sans interface)
+./raytracer -r output.png tests/configs/subject.json
+
+# Rendu headless avec le nom de sortie par défaut (render.png)
+./raytracer --render tests/configs/cube.json
+
+# Interface + serveur de cluster sur le port 8080
+./raytracer --server 8080 tests/configs/subject.json
+
+# Interface + connexion à un serveur de cluster
+./raytracer --connect 127.0.0.1 8080 tests/configs/subject.json</code></pre>
+
+            <h3 id="headless">Mode headless (rendu PNG)</h3>
+            <p>Le mode <code>-r</code>&nbsp;/&nbsp;<code>--render</code> ne charge pas l’interface&nbsp;: il
+               construit la scène, calcule l’image, l’exporte en PNG, puis quitte. Idéal pour les scripts
+               et l’intégration continue.</p>
+            <pre><code class="language-bash">./raytracer -r sortie.png tests/configs/cube.json
+# Sortie console attendue :
+#   Loaded 2 renderer plugin(s)
+#    - Viewport
+#    - Default
+#   Finished rendering scene! Saving to file..
+#   Render has been saved to file 'sortie.png'</code></pre>
+            <div class="tip"><p>Si aucun nom n’est fourni (ou s’il ne finit pas par <code>.png</code>), la
+               sortie par défaut est <code>render.png</code>.</p></div>
+
+            <h2 id="format-scene">Format des fichiers de scène</h2>
+            <p>Une scène est un fichier <strong>JSON</strong> (extension <code>.json</code> obligatoire) lu par
+               <code>SceneParser</code>. Les sections <code>camera</code> et <code>objects</code> sont
+               <strong>obligatoires</strong>&nbsp;; <code>environment</code> et <code>materials</code> sont
+               facultatives. Les clés inconnues sont simplement ignorées.</p>
+
+            <h3 id="squelette">Squelette général</h3>
+            <pre><code class="language-json">{
+  "environment": { "ambient": 0.4, "diffuse": 0.6 },
+  "camera": {
+    "resolution": [1920, 1080],
+    "position":   [0.0, -100.0, 20.0],
+    "rotation":   [0.0, 0.0, 0.0],
+    "fieldOfView": 72.0,
+    "samplesPerPixel": 128
+  },
+  "objects": [
+    { "name": "Sphere A", "type": "sphere", "position": [60, 5, 40], "radius": 25, "material": "Material A" }
+  ],
+  "materials": [
+    { "name": "Material A", "model": "pbr", "base_color": [230, 60, 60], "roughness": 0.5 }
+  ]
+}</code></pre>
+
+            <h3 id="environment">Section <code>environment</code></h3>
+            <p>Facultative. Contrôle l’éclairage global.</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Clé</th><th>Type</th><th>Défaut</th><th>Rôle</th></tr></thead>
+                <tbody>
+                    <tr><td><code>ambient</code></td><td>nombre</td><td><code>0.4</code></td><td>Coefficient de lumière ambiante global.</td></tr>
+                    <tr><td><code>diffuse</code></td><td>nombre</td><td><code>0.6</code></td><td>Coefficient de contribution diffuse global.</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <h3 id="camera">Section <code>camera</code></h3>
+            <p>Obligatoire. Définit le point de vue et la qualité du rendu.</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Clé</th><th>Type</th><th>Rôle</th></tr></thead>
+                <tbody>
+                    <tr><td><code>resolution</code></td><td><code>[largeur, hauteur]</code></td><td>Dimensions de l’image en pixels (2 entiers). <strong>Obligatoire.</strong></td></tr>
+                    <tr><td><code>position</code></td><td><code>[x, y, z]</code></td><td>Position de la caméra dans le monde. <strong>Obligatoire.</strong></td></tr>
+                    <tr><td><code>rotation</code></td><td><code>[x, y, z]</code></td><td>Orientation en angles d’Euler, exprimés en <strong>degrés</strong>. <strong>Obligatoire.</strong></td></tr>
+                    <tr><td><code>fieldOfView</code></td><td>nombre</td><td>Champ de vision (degrés). <strong>Obligatoire.</strong></td></tr>
+                    <tr><td><code>samplesPerPixel</code></td><td>entier &gt; 0</td><td>Échantillons par pixel (anti-aliasing / bruit). Défaut&nbsp;: <code>5</code>. Alias accepté&nbsp;: <code>samples_per_pixel</code>.</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <h3 id="objects">Section <code>objects</code></h3>
+            <p>Obligatoire. Liste des primitives, des lumières et des groupes. Chaque objet possède un
+               <code>type</code> (obligatoire) et un <code>name</code> (facultatif). Les primitives peuvent
+               référencer un <code>material</code> par son nom. Le <code>SceneParser</code> ne lit que les
+               clés pertinentes pour le type&nbsp;; les clés inconnues sont ignorées. Types disponibles&nbsp;:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th><code>type</code></th><th>Clés principales</th></tr></thead>
+                <tbody>
+                    <tr><td><code>sphere</code></td><td><code>position</code>, <code>radius</code>, <code>scale</code>, <code>material</code></td></tr>
+                    <tr><td><code>plane</code></td><td><code>axis</code> (<code>"x"</code>&nbsp;/&nbsp;<code>"y"</code>&nbsp;/&nbsp;<code>"z"</code>), <code>position</code>, <code>size</code>, <code>material</code></td></tr>
+                    <tr><td><code>cube</code></td><td><code>position</code>, <code>rotation</code>, <code>scale</code>, <code>size</code>, <code>material</code></td></tr>
+                    <tr><td><code>cylinder</code></td><td><code>position</code>, <code>rotation</code>, <code>radius</code>, <code>height</code>, <code>material</code></td></tr>
+                    <tr><td><code>cone</code></td><td><code>position</code>, <code>rotation</code>, <code>radius</code>, <code>height</code>, <code>material</code></td></tr>
+                    <tr><td><code>triangle</code></td><td><code>vertex0</code>, <code>vertex1</code>, <code>vertex2</code>, <code>material</code></td></tr>
+                    <tr><td><code>torus</code></td><td><code>position</code>, <code>rotation</code>, <code>radius</code>, <code>height</code>, <code>material</code></td></tr>
+                    <tr><td><code>tanglecube</code></td><td><code>position</code>, <code>rotation</code>, <code>size</code>, <code>threshold</code>, <code>material</code></td></tr>
+                    <tr><td><code>fractal</code></td><td><code>position</code>, <code>size</code>, <code>power</code>, <code>iterations</code>, <code>material</code></td></tr>
+                    <tr><td><code>mesh</code></td><td><code>file</code> (<code>.obj</code>) <em>ou</em> <code>vertices</code>&nbsp;/&nbsp;<code>faces</code>&nbsp;/&nbsp;<code>normals</code>, <code>position</code>, <code>rotation</code>, <code>scale</code>, <code>vertex_overrides</code>, <code>material</code></td></tr>
+                    <tr><td><code>point_light</code></td><td><code>position</code>, <code>color</code>, <code>intensity</code></td></tr>
+                    <tr><td><code>directional_light</code></td><td><code>direction</code>, <code>color</code>, <code>intensity</code></td></tr>
+                </tbody>
+            </table>
+            </div>
+            <div class="warn"><p><strong>Attention&nbsp;: le plan se définit par <code>axis</code></strong>, pas par
+               <code>normal</code>/<code>origin</code>. La clé <code>axis</code> attend une chaîne
+               <code>"x"</code>, <code>"y"</code> ou <code>"z"</code>. Toute autre clé (comme <code>normal</code>
+               ou <code>origin</code>) est ignorée par le parseur.</p></div>
+            <div class="note"><p>Il existe aussi un type <code>group</code> (avec un tableau <code>children</code>
+               et ses propres <code>position</code>/<code>rotation</code>/<code>scale</code>) pour composer des
+               hiérarchies d’objets. Voir la page
+               <a href="fonctionnalites.html#primitives">Fonctionnalités</a> pour le détail de chaque
+               primitive.</p></div>
+
+            <h4 id="couleurs">Couleurs et vecteurs</h4>
+            <ul>
+                <li>Un <strong>vecteur</strong> est un tableau <code>[x, y, z]</code> de 3 nombres (position, rotation en degrés, échelle, direction…).</li>
+                <li>Une <strong>couleur</strong> est un tableau <code>[r, g, b]</code> de 3 composantes entières comprises entre <code>0</code> et <code>255</code>.</li>
+            </ul>
+
+            <h3 id="materials">Section <code>materials</code></h3>
+            <p>Facultative. Chaque matériau porte un <code>name</code> (référencé par les objets via
+               <code>material</code>) et un <code>model</code> (<code>"phong"</code> ou <code>"pbr"</code>).
+               Les champs lus par <code>parseMaterial</code>&nbsp;:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Clé</th><th>Type</th><th>Défaut</th><th>Rôle</th></tr></thead>
+                <tbody>
+                    <tr><td><code>model</code></td><td><code>"phong"</code> / <code>"pbr"</code></td><td><code>phong</code></td><td>Modèle d’éclairage du matériau.</td></tr>
+                    <tr><td><code>base_color</code></td><td><code>[r, g, b]</code></td><td><code>[230,230,230]</code></td><td>Couleur de base (albédo).</td></tr>
+                    <tr><td><code>specular</code></td><td><code>[r, g, b]</code></td><td><code>[0,0,0]</code></td><td>Couleur spéculaire (Phong).</td></tr>
+                    <tr><td><code>shininess</code></td><td>nombre</td><td><code>32.0</code></td><td>Netteté des reflets spéculaires (Phong).</td></tr>
+                    <tr><td><code>reflectivity</code></td><td>nombre</td><td><code>0.0</code></td><td>Part de réflexion miroir.</td></tr>
+                    <tr><td><code>transparency</code></td><td>nombre</td><td><code>0.0</code></td><td>Transparence.</td></tr>
+                    <tr><td><code>ior</code></td><td>nombre</td><td><code>1.5</code></td><td>Indice de réfraction.</td></tr>
+                    <tr><td><code>metallic</code></td><td>nombre 0–1</td><td><code>0.0</code></td><td>Caractère métallique (PBR).</td></tr>
+                    <tr><td><code>roughness</code></td><td>nombre 0–1</td><td><code>0.5</code></td><td>Rugosité de la surface (PBR).</td></tr>
+                    <tr><td><code>ao</code></td><td>nombre 0–1</td><td><code>1.0</code></td><td>Occlusion ambiante.</td></tr>
+                    <tr><td><code>clearcoat</code></td><td>nombre 0–1</td><td><code>0.0</code></td><td>Intensité du vernis (couche claire).</td></tr>
+                    <tr><td><code>sheen</code></td><td>nombre 0–1</td><td><code>0.0</code></td><td>Reflet velouté (tissu).</td></tr>
+                    <tr><td><code>transmission</code></td><td>nombre 0–1</td><td><code>0.0</code></td><td>Transmission de la lumière (verre).</td></tr>
+                    <tr><td><code>alpha</code></td><td>nombre 0–1</td><td><code>1.0</code></td><td>Opacité globale.</td></tr>
+                    <tr><td><code>texture_map</code></td><td>chaîne</td><td><code>""</code></td><td>Chemin d’une image utilisée comme couleur de base.</td></tr>
+                    <tr><td><code>texture_map_enabled</code></td><td>booléen</td><td><code>false</code></td><td>Active l’échantillonnage de <code>texture_map</code>.</td></tr>
+                    <tr><td><code>texture_uv_scale</code></td><td>nombre</td><td><code>1.0</code></td><td>Facteur de répétition des coordonnées UV.</td></tr>
+                    <tr><td><code>normal_map</code></td><td>chaîne</td><td><code>""</code></td><td>Chemin d’une carte de normales.</td></tr>
+                    <tr><td><code>normal_map_enabled</code></td><td>booléen</td><td><code>false</code></td><td>Active la carte de normales.</td></tr>
+                    <tr><td><code>normal_scale</code></td><td>nombre 0–1</td><td><code>1.0</code></td><td>Force de l’effet de la carte de normales.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <div class="tip"><p>Champs additionnels reconnus&nbsp;: <code>specular_level</code>,
+               <code>specular_tint</code>, <code>clearcoat_roughness</code>, <code>sheen_tint</code>,
+               <code>normal_noise_frequency</code>. Plusieurs acceptent aussi une variante en
+               <em>camelCase</em> (par ex. <code>clearcoatRoughness</code>, <code>specularLevel</code>).</p></div>
+            <pre><code class="language-json">{
+  "name": "GoldMetal",
+  "model": "pbr",
+  "base_color": [255, 198, 92],
+  "metallic": 0.9,
+  "roughness": 0.22,
+  "clearcoat": 0.0,
+  "transmission": 0.0,
+  "ior": 1.5
+}</code></pre>
+
+            <h2 id="exemple-complet">Exemple complet commenté</h2>
+            <p>Extrait fidèle de <code>tests/configs/subject.json</code> (deux sphères, un plan et une lumière)&nbsp;:</p>
+            <pre><code class="language-json">{
+  "environment": { "ambient": 0.4, "diffuse": 0.6 },
+
+  "camera": {
+    "resolution": [1920, 1080],      // largeur x hauteur en pixels (obligatoire)
+    "position":   [0.0, -100.0, 20.0],
+    "rotation":   [0.0, 0.0, 0.0],   // degrés (obligatoire)
+    "fieldOfView": 72.0,             // degrés (obligatoire)
+    "samplesPerPixel": 128           // anti-aliasing (défaut 5)
+  },
+
+  "objects": [
+    {
+      "name": "Sphere A",
+      "type": "sphere",
+      "position": [60.0, 5.0, 40.0],
+      "radius": 25,
+      "material": "Material A"       // référence par nom
+    },
+    {
+      "name": "Plane",
+      "type": "plane",
+      "axis": "z",                    // "x" | "y" | "z" — PAS "normal"/"origin"
+      "position": [0.0, 0.0, -20.0],
+      "material": "Material C"
+    },
+    {
+      "name": "Point light",
+      "type": "point_light",
+      "intensity": 1000000.0,
+      "position": [400.0, 100.0, 500.0]
+    }
+  ],
+
+  "materials": [
+    // La clé reconnue est "model" (phong | pbr) ; "base_color" en [r,g,b] 0-255.
+    { "name": "Material A", "model": "phong", "base_color": [255, 64, 64] },
+    { "name": "Material C", "model": "phong", "base_color": [64, 64, 255] }
+  ]
+}</code></pre>
+            <div class="note"><p>Dans le fichier d’origine, les matériaux utilisent une clé <code>type</code>&nbsp;;
+               or le parseur lit le modèle depuis <code>model</code>. Une clé <code>type</code> pour un
+               matériau est donc ignorée et le modèle retombe sur le défaut <code>phong</code>. Préférez
+               <code>model</code>.</p></div>
+            <div class="tip"><p>De nombreuses scènes prêtes à l’emploi se trouvent dans
+               <code>tests/configs/</code>&nbsp;: <code>cube.json</code>, <code>cone.json</code>,
+               <code>torus.json</code>, <code>fractal.json</code>, <code>tanglecube.json</code>,
+               <code>mesh_showcase.json</code>, <code>vertex_edit.json</code>, etc.</p></div>
+
+            <h2 id="maillages">Importer un maillage <code>.obj</code></h2>
+            <p>Un objet de type <code>mesh</code> charge un fichier <code>.obj</code> via la clé
+               <code>file</code>. Les fichiers d’exemple sont dans <code>tests/obj/</code>
+               (<code>cube.obj</code>, <code>poly.obj</code>, <code>slt.obj</code>).</p>
+            <pre><code class="language-json">{
+  "name": "Polished Metal",
+  "type": "mesh",
+  "file": "tests/obj/slt.obj",
+  "position": [34.0, 4.0, 6.0],
+  "rotation": [0.0, 0.0, -18.0],
+  "scale": [110.0, 110.0, 110.0],
+  "material": "GoldMetal"
+}</code></pre>
+            <p>Un maillage peut aussi être défini <em>en ligne</em> (sans fichier externe) via
+               <code>vertices</code>, <code>faces</code> et <code>normals</code>, ou porter des modifications
+               de sommets ponctuelles avec <code>vertex_overrides</code> (liste d’entrées
+               <code>{ "index": n, "position": [x,y,z] }</code>) — voir
+               <a href="fonctionnalites.html#edition-sommets">Édition de sommets</a>.</p>
+
+            <h2 id="sauvegarde">Sauvegarde de scène</h2>
+            <p>Depuis l’interface, la scène peut être ré-exportée en JSON&nbsp;: <code>SceneRegister</code>
+               sérialise la caméra (<code>resolution</code>, <code>position</code>, <code>rotation</code>,
+               <code>fieldOfView</code>, <code>samplesPerPixel</code>), les objets (avec leurs transformations
+               locales, et pour les maillages leurs <code>vertices</code>/<code>faces</code>/<code>normals</code>
+               ou <code>vertex_overrides</code>) et les matériaux. Le cycle
+               <em>charger → éditer → sauvegarder → recharger</em> restitue fidèlement la scène.</p>
+        </article>
+
+        <nav class="toc" aria-label="Sommaire">
+            <strong>Sur cette page</strong>
+            <ul>
+                <li><a href="#ligne-commande">Ligne de commande</a></li>
+                <li class="sub"><a href="#exemples-commandes">Exemples</a></li>
+                <li class="sub"><a href="#headless">Mode headless</a></li>
+                <li><a href="#format-scene">Format de scène</a></li>
+                <li class="sub"><a href="#environment">environment</a></li>
+                <li class="sub"><a href="#camera">camera</a></li>
+                <li class="sub"><a href="#objects">objects</a></li>
+                <li class="sub"><a href="#materials">materials</a></li>
+                <li><a href="#exemple-complet">Exemple complet</a></li>
+                <li><a href="#maillages">Maillages .obj</a></li>
+                <li><a href="#sauvegarde">Sauvegarde</a></li>
+            </ul>
+        </nav>
+    </main>
+</div>
+
+<footer class="site-footer">
+    <span>Raytracer — documentation technique</span>
+    <span>C++17 · SFML · Architecture à plugins</span>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="assets/search-index.js"></script>
+<script src="assets/search.js"></script>
+<script src="assets/main.js"></script>
+</body>
+</html>

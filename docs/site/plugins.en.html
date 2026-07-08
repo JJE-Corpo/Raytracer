@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plugin system — Raytracer</title>
+<meta name="description" content="The Raytracer plugin system: C ABI, dynamic .so loading via dlopen, PluginType, lifecycle and how to write a renderer.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+    <button class="menu-toggle" data-menu-toggle aria-label="Menu">☰</button>
+    <a class="brand" href="index.en.html"><span class="logo">◐</span> Raytracer <small>docs</small></a>
+    <div class="search">
+        <input id="search-input" type="search" autocomplete="off" spellcheck="false" aria-label="Search">
+        <div id="search-results" class="search-results" role="listbox"></div>
+    </div>
+    <a class="lang-toggle" href="plugins.html" aria-label="Français" title="Français">🌐 FR</a>
+</header>
+
+<div class="layout">
+    <aside class="sidebar">
+            <h4>Get started</h4>
+            <ul>
+                <li><a href="index.en.html">Home</a></li>
+                <li><a href="installation.en.html">Installation</a></li>
+                <li><a href="utilisation.en.html">Usage</a></li>
+            </ul>
+            <h4>Scene &amp; content</h4>
+            <ul>
+                <li><a href="format-scene.en.html">Scene format</a></li>
+                <li><a href="primitives.en.html">Primitives</a></li>
+                <li><a href="materiaux.en.html">Materials</a></li>
+                <li><a href="fonctionnalites.en.html">Features</a></li>
+            </ul>
+            <h4>Engine</h4>
+            <ul>
+                <li><a href="architecture.en.html">Architecture</a></li>
+                <li><a href="rendu.en.html">Rendering pipeline</a></li>
+                <li><a href="plugins.en.html" class="active">Plugin system</a></li>
+                <li><a href="cluster.en.html">Cluster rendering</a></li>
+            </ul>
+            <h4>Interface</h4>
+            <ul>
+                <li><a href="interface.en.html">Graphical interface</a></li>
+            </ul>
+            <h4>Reference</h4>
+            <ul>
+                <li><a href="reference.en.html">Class reference</a></li>
+                <li><a href="faq.en.html">FAQ</a></li>
+            </ul>
+        </aside>
+
+    <main class="content has-toc">
+        <article class="article">
+            <p class="crumbs"><a href="index.en.html">Home</a> / Plugin system</p>
+            <h1>Plugin system</h1>
+            <p class="lead">Rendering and the graphical interface are not compiled into the executable: they are
+               <strong>shared libraries (<code>.so</code>)</strong> loaded at runtime from <code>./plugins</code>.
+               The <code>Core</code> discovers them, opens them with <code>dlopen</code> and talks to them through a
+               minimal <strong>C ABI</strong> contract. This page describes that contract, the type enumeration, the
+               full lifecycle and how to write your own renderer.</p>
+
+            <h2 id="pourquoi">Why plugins?</h2>
+            <p>The goal is to <strong>decouple</strong> three responsibilities that evolve at different paces:</p>
+            <ul>
+                <li><strong>The core</strong> (<code>srcs/core/*</code>) — scene loading, BVH construction,
+                    orchestration, export. It depends on no concrete rendering or interface implementation.</li>
+                <li><strong>Rendering</strong> (<code>srcs/plugins/renderer/*</code>) — the algorithm that turns a scene
+                    into pixels. Several strategies coexist (full render, progressive render for the viewport).</li>
+                <li><strong>The interface</strong> (<code>srcs/plugins/user_interface/*</code>) — the SFML window, the
+                    panels, the gizmos. Entirely optional: the engine runs without it.</li>
+            </ul>
+            <p>By loading these modules <strong>at runtime</strong>, a renderer can be added, removed or replaced without
+               recompiling the core, and the engine can run headless (rendering to a PNG) simply by not shipping the
+               interface plugin. The <code>Core</code> only ever knows the <em>interfaces</em> (<code>IPlugin</code>,
+               <code>ISceneRenderer</code>, <code>IUserInterface</code>), never the concrete classes.</p>
+
+            <h2 id="abi">The C ABI contract</h2>
+            <p>A plugin must export <strong>exactly two symbols</strong>, both declared <code>extern "C"</code>:</p>
+            <pre><code class="language-cpp">extern "C" IPlugin *create_plugin();
+extern "C" void      destroy_plugin(IPlugin *plugin);</code></pre>
+            <p>In the shipped plugins their bodies are trivial — the factory allocates the concrete implementation, the
+               destroy function frees it:</p>
+            <pre><code class="language-cpp">extern "C" IPlugin *create_plugin()
+{
+    return new DefaultRenderer();
+}
+
+extern "C" void destroy_plugin(IPlugin *plugin)
+{
+    delete plugin;
+}</code></pre>
+            <p><strong>Why a C ABI?</strong> C++ symbol names are <em>mangled</em> in a way specific to each compiler, so
+               <code>dlsym</code> could not reliably find them. <code>extern "C"</code> disables that mangling and
+               guarantees stable symbol names (<code>create_plugin</code>, <code>destroy_plugin</code>) that the loader
+               can resolve with certainty. The two functions only exchange an <code>IPlugin*</code> pointer — a purely
+               virtual interface — which keeps the binary boundary simple.</p>
+            <div class="note"><p>The loader opens each library with <code>dlopen(path, RTLD_NOW)</code>: the
+               <strong><code>RTLD_NOW</code></strong> flag forces <em>immediate</em> resolution of all symbols at load
+               time (rather than on first use). A plugin with a missing dependency therefore fails right at opening, not
+               later in the middle of a render.</p></div>
+
+            <h2 id="plugintype">The <code>PluginType</code> enumeration</h2>
+            <p>Every plugin describes itself via <code>getType()</code>, which returns a value of the
+               <code>PluginType</code> enumeration (<code>srcs/common/IPlugin.hpp</code>). Two types are currently
+               active:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Value</th><th>Expected interface</th><th>Role</th></tr></thead>
+                <tbody>
+                    <tr><td><span class="pill">RENDERER</span></td><td><code>ISceneRenderer</code></td><td>Turns a scene into an image.</td></tr>
+                    <tr><td><span class="pill">USER_INTERFACE</span></td><td><code>IUserInterface</code></td><td>Window and editing interface.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p>The enumeration reserves further entries <strong>as comments</strong> (<code>PRIMITIVE</code>,
+               <code>LIGHT</code>, <code>SCENE_LOADER</code>, <code>OPTICAL_EFFECT</code>): they document envisioned
+               extensions but are not active today. <code>getType()</code> is what lets the <code>Core</code> sort the
+               loaded plugins by category without knowing their real C++ type.</p>
+
+            <h2 id="cycle-de-vie">The <code>IPlugin</code> contract and lifecycle</h2>
+            <p>The whole plugin hierarchy derives from the minimal <code>IPlugin</code> interface:</p>
+            <pre><code class="language-cpp">class IPlugin
+{
+    public:
+        virtual ~IPlugin() = default;
+        virtual PluginType getType() const = 0;
+};</code></pre>
+            <p>Specialised interfaces add their own contract on top. A renderer implements <code>ISceneRenderer</code>
+               (see <a href="#ecrire-un-renderer">Writing a renderer</a>). The graphical interface implements
+               <code>IUserInterface</code>, which adds two lifecycle methods:</p>
+            <pre><code class="language-cpp">class IUserInterface : public IPlugin
+{
+    public:
+        virtual void create(ICoreAccess &amp;core_access) = 0;
+        virtual void destroy() = 0;
+        PluginType getType() const override = 0;
+};</code></pre>
+            <p><code>create(ICoreAccess&amp;)</code> receives a reference to the <code>Core</code> (through the
+               <code>ICoreAccess</code> interface): this is the channel through which the interface queries and drives the
+               engine. The bootstrap sequence performed by the <code>Core</code> is:</p>
+            <ol>
+                <li><code>loadPlugins()</code> walks the <code>./plugins</code> folder and loads every <code>.so</code>
+                    file it finds (through the <code>PluginLoader</code>).</li>
+                <li><code>loadRenderers()</code> fetches the <code>RENDERER</code> plugins, casts them to
+                    <code>ISceneRenderer*</code> and files them by name: the one whose <code>getRendererName()</code>
+                    contains <code>"Default"</code> becomes the full renderer, the one containing <code>"Viewport"</code>
+                    becomes the progressive renderer. If no "Default" renderer is found, startup fails.</li>
+                <li><code>loadUserInterface()</code> takes the first <code>USER_INTERFACE</code> plugin, casts it to
+                    <code>IUserInterface*</code> and calls <code>create(*this)</code>. With no interface, the message
+                    "Could not find any user interface.. Skipping" is printed and the engine keeps running without a UI.</li>
+                <li>On shutdown, <code>unloadUserInterface()</code> calls <code>destroy()</code> on the interface, then
+                    the <code>PluginLoader</code> destroys and closes every <code>.so</code> (see below).</li>
+            </ol>
+
+            <h2 id="loader">The loader: <code>IPluginLoader</code> / <code>PluginLoader</code></h2>
+            <p>The loader (<code>srcs/core/PluginLoader.cpp</code>, contract <code>srcs/common/IPluginLoader.hpp</code>)
+               encapsulates all use of <code>dlopen</code> / <code>dlsym</code> / <code>dlclose</code>. It exposes:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Method</th><th>Role</th></tr></thead>
+                <tbody>
+                    <tr><td><code>bool load(const std::string &amp;path)</code></td><td>Loads a single <code>.so</code>. Returns <code>false</code> on failure.</td></tr>
+                    <tr><td><code>const std::vector&lt;PluginHandle&gt; &amp;getPlugins() const</code></td><td>Returns every loaded plugin.</td></tr>
+                    <tr><td><code>const std::vector&lt;PluginHandle&gt; getPlugins(PluginType type) const</code></td><td>Returns the plugins of a given type (filtered via <code>getType()</code>).</td></tr>
+                    <tr><td><code>void unloadAll()</code></td><td>Destroys each instance then closes each library.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p>Each opened library is recorded in a <code>PluginHandle</code>:</p>
+            <pre><code class="language-cpp">struct PluginHandle
+{
+    void*    handle;                 // value returned by dlopen
+    IPlugin* instance;               // object created by create_plugin()
+    void   (*destroy)(IPlugin*);     // pointer to destroy_plugin
+};</code></pre>
+            <p>The flow of <code>load(path)</code> is:</p>
+            <ol>
+                <li><code>dlopen(path.c_str(), RTLD_NOW)</code>; if the handle is null, the library is skipped (returns
+                    <code>false</code>).</li>
+                <li><code>dlsym(handle, "create_plugin")</code> and <code>dlsym(handle, "destroy_plugin")</code>.
+                    If either symbol is missing, it immediately <code>dlclose(handle)</code> and returns
+                    <code>false</code> — an incomplete <code>.so</code> is never kept.</li>
+                <li>Otherwise <code>create()</code> is called and the triplet <code>{handle, instance, destroy}</code> is
+                    appended to the internal list.</li>
+            </ol>
+            <p><code>unloadAll()</code> walks that list and, for each entry, calls <code>destroy(instance)</code> (which
+               runs the plugin's destructor — the UI's fonts, panels, render textures, etc.) <em>then</em>
+               <code>dlclose(handle)</code>, before clearing the list.</p>
+            <div class="note"><p>The <strong>destructor</strong> of <code>PluginLoader</code> calls
+               <code>unloadAll()</code>. Without it, the plugin objects would live until process exit and AddressSanitizer
+               would report them as leaks on shutdown. Cleanup is therefore automatic and ordered.</p></div>
+
+            <h2 id="plugins-livres">The shipped plugins</h2>
+            <p>The project builds three libraries dropped into <code>./plugins</code>:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>File</th><th>Type</th><th>Role</th><th>Dependencies</th></tr></thead>
+                <tbody>
+                    <tr><td><code>renderer_default.so</code></td><td><span class="pill">RENDERER</span></td><td>"Default" renderer — full image render, exported to a PNG.</td><td><code>ISceneRenderer</code>, internal math.</td></tr>
+                    <tr><td><code>renderer_viewport.so</code></td><td><span class="pill">RENDERER</span></td><td>"Viewport" renderer — progressive/interactive render for the interface (refinement, selection, hover).</td><td><code>ISceneRenderer</code> + <code>ISelectionAwareRenderer</code>.</td></tr>
+                    <tr><td><code>user_interface.so</code></td><td><span class="pill">USER_INTERFACE</span></td><td>SFML graphical interface: viewport, panels, gizmos, windows.</td><td><code>IUserInterface</code>, <code>ICoreAccess</code>, SFML.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p>The two renderers are told apart solely by the string returned by <code>getRendererName()</code>
+               (<code>"Default"</code> and <code>"Viewport"</code>), which <code>loadRenderers()</code> matches as a
+               substring.</p>
+
+            <h2 id="ecrire-un-renderer">Writing a renderer</h2>
+            <p>A renderer implements the <code>ISceneRenderer</code> contract
+               (<code>srcs/common/ISceneRenderer.hpp</code>), which derives from <code>IPlugin</code>. Its methods:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Method</th><th>Role</th></tr></thead>
+                <tbody>
+                    <tr><td><code>void renderScene(const IScene &amp;scene)</code></td><td>Starts rendering the scene (usually in a thread).</td></tr>
+                    <tr><td><code>void setPixel(int x, int y, Color color)</code></td><td>Writes a pixel into the output buffer.</td></tr>
+                    <tr><td><code>void markSceneDirty()</code></td><td>Signals that the scene changed (default empty implementation).</td></tr>
+                    <tr><td><code>void stopRendering()</code></td><td>Interrupts an ongoing render.</td></tr>
+                    <tr><td><code>bool isRendering() const</code></td><td>Reports whether a render is active.</td></tr>
+                    <tr><td><code>int getCurrentSample() const</code></td><td>Current sample (progressive render progress).</td></tr>
+                    <tr><td><code>Render getRender() const</code></td><td>Returns the produced image.</td></tr>
+                    <tr><td><code>std::string getRendererName() const</code></td><td>Name identifying the renderer (used for sorting in the Core).</td></tr>
+                    <tr><td><code>PluginType getType() const</code></td><td>Returns <code>PluginType::RENDERER</code>.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p>The image is carried by the <code>Render</code> struct defined in the same header:</p>
+            <pre><code class="language-cpp">struct Render
+{
+    int                size_x;
+    int                size_y;
+    std::vector&lt;Color&gt; pixels;
+};</code></pre>
+            <p>Here is a complete minimal skeleton of a renderer plugin, with the two exported functions:</p>
+            <pre><code class="language-cpp">#include "../../common/ISceneRenderer.hpp"
+#include &lt;atomic&gt;
+
+namespace rc
+{
+    class MyRenderer : public ISceneRenderer
+    {
+        private:
+            Render            _render = {0, 0, std::vector&lt;Color&gt;()};
+            std::atomic&lt;bool&gt; _rendering = false;
+
+        public:
+            void renderScene(const IScene &amp;scene) override
+            {
+                // Loop over pixels, cast rays, call setPixel(...)
+            }
+
+            void setPixel(int x, int y, Color color) override
+            {
+                _render.pixels[y * _render.size_x + x] = color;
+            }
+
+            void stopRendering() override        { _rendering = false; }
+            bool isRendering() const override     { return (_rendering); }
+            int  getCurrentSample() const override { return (0); }
+            Render getRender() const override      { return (_render); }
+
+            std::string getRendererName() const override { return ("MyRenderer"); }
+            PluginType  getType() const override         { return (PluginType::RENDERER); }
+    };
+
+    // --- C ABI contract: the two mandatory symbols ---
+    extern "C" IPlugin *create_plugin()
+    {
+        return (new MyRenderer());
+    }
+
+    extern "C" void destroy_plugin(IPlugin *plugin)
+    {
+        delete (plugin);
+    }
+}</code></pre>
+            <div class="tip"><p>For the <code>Core</code> to recognise your renderer as the <em>full</em> renderer, make
+               sure <code>getRendererName()</code> contains <code>"Default"</code>; for the <em>progressive</em> viewport
+               renderer, include <code>"Viewport"</code>. Otherwise the plugin is loaded but selected for neither
+               role.</p></div>
+
+            <h2 id="primitives-lumieres">Primitives and lights are not plugins</h2>
+            <div class="warn"><p>Important point: <strong>primitives</strong> (sphere, plane, cube, cone…) and
+               <strong>lights</strong> (point, directional) are <strong>not</strong> <code>.so</code> libraries. Even
+               though they live under <code>srcs/plugins/primitive/*</code> and <code>srcs/plugins/light/*</code>, they
+               are <strong>compiled straight into the main executable</strong> and instantiated via
+               <code>PrimitiveFactory</code> and <code>LightFactory</code> (as well as the builders during scene
+               parsing).</p></div>
+            <p>Only the <strong>renderers</strong> and the <strong>interface</strong> are loaded dynamically at runtime.
+               This matches the <code>PluginType</code> enumeration, whose <code>PRIMITIVE</code> and <code>LIGHT</code>
+               entries stay commented out: turning geometry and lights into dynamic plugins is an envisioned extension,
+               not something implemented today.</p>
+
+            <h2 id="limites">Limits and practical notes</h2>
+            <ul>
+                <li><strong>Relative path</strong>: the scanned folder is <code>./plugins</code>, resolved relative to the
+                    program's <em>launch directory</em> (<code>directory_iterator("./plugins")</code>). Launching the
+                    binary from another folder requires a <code>plugins/</code> directory to be present there.</li>
+                <li><strong>Recompilation</strong>: adding or changing a plugin goes through a rebuild with
+                    <code>make</code>, which regenerates the <code>.so</code> files in <code>./plugins</code>. There is no
+                    hot-reload of plugins (unlike the hot-reload of the scene file).</li>
+                <li><strong>One active type at a time on the Core side</strong>: among the loaded renderers the Core
+                    keeps only a "Default" and a "Viewport" renderer; for the interface, only the first valid
+                    <code>USER_INTERFACE</code> plugin is used.</li>
+            </ul>
+
+            <div class="cards">
+                <a class="card" href="architecture.en.html"><div class="icon">🏛️</div><h3>Architecture</h3><p>Where the plugin loader fits into the Core lifecycle.</p></a>
+                <a class="card" href="rendu.en.html"><div class="icon">🎞️</div><h3>Rendering pipeline</h3><p>What a renderer actually does, pixel by pixel.</p></a>
+                <a class="card" href="reference.en.html"><div class="icon">📚</div><h3>Class reference</h3><p>The <code>IPlugin</code>, <code>ISceneRenderer</code>, <code>IPluginLoader</code> interfaces.</p></a>
+            </div>
+        </article>
+
+        <nav class="toc" aria-label="On this page">
+            <strong>On this page</strong>
+            <ul>
+                <li><a href="#pourquoi">Why plugins?</a></li>
+                <li><a href="#abi">The C ABI contract</a></li>
+                <li><a href="#plugintype">The PluginType enum</a></li>
+                <li><a href="#cycle-de-vie">IPlugin contract &amp; lifecycle</a></li>
+                <li><a href="#loader">The PluginLoader</a></li>
+                <li><a href="#plugins-livres">The shipped plugins</a></li>
+                <li><a href="#ecrire-un-renderer">Writing a renderer</a></li>
+                <li><a href="#primitives-lumieres">Primitives &amp; lights</a></li>
+                <li><a href="#limites">Limits</a></li>
+            </ul>
+        </nav>
+    </main>
+</div>
+
+<footer class="site-footer">
+    <span>Raytracer — technical documentation</span>
+    <span>C++17 · SFML · Plugin architecture</span>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="assets/search-index.js"></script>
+<script src="assets/search.js"></script>
+<script src="assets/main.js"></script>
+</body>
+</html>

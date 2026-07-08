@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Graphical interface — Raytracer</title>
+<meta name="description" content="The Raytracer graphical interface: the user_interface.so plugin, panels, reusable components, windows, toast notifications, transform gizmos and vertex editing.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+    <button class="menu-toggle" data-menu-toggle aria-label="Menu">☰</button>
+    <a class="brand" href="index.en.html"><span class="logo">◐</span> Raytracer <small>docs</small></a>
+    <div class="search">
+        <input id="search-input" type="search" autocomplete="off" spellcheck="false" aria-label="Search">
+        <div id="search-results" class="search-results" role="listbox"></div>
+    </div>
+    <a class="lang-toggle" href="interface.html" aria-label="Français" title="Français">🌐 FR</a>
+</header>
+
+<div class="layout">
+    <aside class="sidebar">
+            <h4>Get started</h4>
+            <ul>
+                <li><a href="index.en.html">Home</a></li>
+                <li><a href="installation.en.html">Installation</a></li>
+                <li><a href="utilisation.en.html">Usage</a></li>
+            </ul>
+            <h4>Scene &amp; content</h4>
+            <ul>
+                <li><a href="format-scene.en.html">Scene format</a></li>
+                <li><a href="primitives.en.html">Primitives</a></li>
+                <li><a href="materiaux.en.html">Materials</a></li>
+                <li><a href="fonctionnalites.en.html">Features</a></li>
+            </ul>
+            <h4>Engine</h4>
+            <ul>
+                <li><a href="architecture.en.html">Architecture</a></li>
+                <li><a href="rendu.en.html">Rendering pipeline</a></li>
+                <li><a href="plugins.en.html">Plugin system</a></li>
+                <li><a href="cluster.en.html">Cluster rendering</a></li>
+            </ul>
+            <h4>Interface</h4>
+            <ul>
+                <li><a href="interface.en.html" class="active">Graphical interface</a></li>
+            </ul>
+            <h4>Reference</h4>
+            <ul>
+                <li><a href="reference.en.html">Class reference</a></li>
+                <li><a href="faq.en.html">FAQ</a></li>
+            </ul>
+        </aside>
+
+    <main class="content has-toc">
+        <article class="article">
+            <p class="crumbs"><a href="index.en.html">Home</a> / Graphical interface</p>
+            <h1>Graphical interface</h1>
+            <p class="lead">The Raytracer's interactive interface is a runtime plugin
+                (<code>user_interface.so</code>). It shows the scene, the editing panels and the render viewport, and
+                lets you manipulate objects with the mouse — down to editing the individual vertices of a mesh.</p>
+
+            <div class="badges">
+                <span class="pill">SFML</span>
+                <span class="pill gray">.so plugin</span>
+                <span class="pill gray">ICoreAccess</span>
+                <span class="pill green">Interactive editing</span>
+            </div>
+
+            <h2 id="apercu">Overview</h2>
+            <p>The graphical interface is implemented as a <strong>runtime plugin</strong>
+                (<code>user_interface.so</code>) loaded by the core's plugin loader. The entry point is the
+                <code>UserInterface</code> class (which implements <code>IUserInterface</code>), and its plugin type is
+                <code>PluginType::USER_INTERFACE</code>. The source lives in
+                <code>srcs/plugins/user_interface/</code>.</p>
+
+            <p>The runtime integration cycle is as follows:</p>
+            <ol>
+                <li>the core loads plugins from <code>./plugins</code>;</li>
+                <li>the UI plugin is retrieved by its type <code>USER_INTERFACE</code>;</li>
+                <li><code>create(ICoreAccess&amp;)</code> is called;</li>
+                <li>the UI uses <code>ICoreAccess</code> to trigger scene and render actions;</li>
+                <li>on shutdown, <code>destroy()</code> is called and the plugin instance is unloaded.</li>
+            </ol>
+
+            <p><code>UserInterface</code> creates and owns the <strong>SFML window event loop</strong>, builds the
+                menus, side panels and render-viewport widgets, forwards user actions to <code>ICoreAccess</code>,
+                synchronizes viewport selection with panel selection, and displays toasts and auxiliary windows. It
+                provides:</p>
+            <ul>
+                <li>scene lifecycle actions (new / open / save / save as / import);</li>
+                <li>object creation from the menu (primitives / lights);</li>
+                <li>selection and property editing through the panels;</li>
+                <li>render status display and render-view controls;</li>
+                <li>cluster join / start actions through dedicated windows;</li>
+                <li>toast notifications for success and errors.</li>
+            </ul>
+
+            <div class="note"><p>The UI depends on SFML (<code>graphics</code>, <code>window</code>,
+                <code>system</code>, <code>network</code>). If the viewport renderer plugin is missing, the UI reports
+                it through a toast and keeps running.</p></div>
+
+            <h3 id="apercu-composant">The <code>Component</code> contract</h3>
+            <p>Every widget derives from a common abstraction, <code>Component</code>, and shares the same
+                lifecycle:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Stage</th><th>Role</th></tr></thead>
+                <tbody>
+                    <tr><td><code>setFont(...)</code></td><td>Assigns the font used for text.</td></tr>
+                    <tr><td><code>layout(...)</code></td><td>Computes geometry (for widgets that own their position/size).</td></tr>
+                    <tr><td><code>update(mouse)</code></td><td>Computes the <code>hovered</code> state from the mouse position.</td></tr>
+                    <tr><td><code>handleEvent(event, mouse)</code></td><td>Mutates state in reaction to events and fires callbacks.</td></tr>
+                    <tr><td><code>draw(window)</code></td><td>Draws the widget into the window.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p>The base struct exposes the state fields <code>enabled</code>, <code>hovered</code> and
+                <code>visible</code>. Viewport projection and picking helpers (including
+                <code>projectToPixel(...)</code>, <code>pickViewportLight(...)</code> and the material-slider filter
+                <code>isMaterialFloatSlider(name, model)</code>) are grouped in <code>ViewportHelper</code>.</p>
+
+            <h2 id="panneaux">Panels</h2>
+            <p>The panels (in <code>srcs/plugins/user_interface/panels/</code>) form the side inspector column. Each
+                one rebuilds itself dynamically based on the selected object.</p>
+
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Panel</th><th>Role</th></tr></thead>
+                <tbody>
+                    <tr><td><code>HierarchyPanel</code></td><td>Tree-like camera / lights / primitives list, and selection handling.</td></tr>
+                    <tr><td><code>ObjectPanel</code></td><td>Inspector / editor for the selected object's properties.</td></tr>
+                    <tr><td><code>MaterialPanel</code></td><td>Material-focused inspector for the selected primitive.</td></tr>
+                    <tr><td><code>RendererPanel</code></td><td>Render-texture display and render-tab controls.</td></tr>
+                    <tr><td><code>CameraPanel</code></td><td>Editing of the camera resolution, position and rotation.</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <h3 id="hierarchy-panel">HierarchyPanel</h3>
+            <p>Displays the scene as a tree-like list (camera, lights, primitives) and handles selection. It supports
+                <strong>multi-selection</strong>, camera selection, and selection sync with viewport picking. A hide
+                request callback (<code>setOnItemHideRequest</code>) lets an object be hidden, and the panel handles
+                its own internal scroll and scrollbar.</p>
+
+            <h3 id="object-panel">ObjectPanel</h3>
+            <p>Inspector and editor for the selected object's properties. Its key method
+                <code>rebuild(const ISceneObject *currentObject)</code> reconfigures the panel dynamically based on the
+                object's runtime type. It exposes:</p>
+            <ul>
+                <li>the <strong>common transforms</strong> — position, rotation and scale;</li>
+                <li>for primitives — a <strong>material dropdown</strong> and float properties converted to
+                    <strong>sliders</strong>;</li>
+                <li>for lights — a <strong>color picker</strong> and an intensity field.</li>
+            </ul>
+            <p>It is also the anchor for vertex editing: the <span class="pill gray">Convert to Mesh</span> button, the
+                <strong>vertex navigator</strong> <code>&lt; Point N / total &gt;</code>, the <strong>Vertex</strong>
+                field and the <kbd>-</kbd>&nbsp;/&nbsp;<kbd>+</kbd> buttons of the <em>Size</em> row all appear here
+                (see <a href="#edition-sommets">Vertex editing</a>).</p>
+
+            <h3 id="material-panel">MaterialPanel</h3>
+            <p>Material-focused inspector for the selected primitives. Its method
+                <code>rebuild(const ISceneObject *currentObject)</code> builds the controls from the current material
+                state. It provides:</p>
+            <ul>
+                <li>a <strong>model selector</strong> (<code>Phong</code> vs <code>PBR</code>) through a
+                    <code>SegmentedControl</code>;</li>
+                <li>base-color editing through a <code>ColorPicker</code>;</li>
+                <li><strong>dynamic float sliders</strong>, filtered by material model through
+                    <code>ViewportHelper::isMaterialFloatSlider(...)</code>.</li>
+            </ul>
+
+            <h3 id="renderer-panel">RendererPanel</h3>
+            <p>Displays the render output texture and the top render-tab controls: render comment / status text, a
+                close-render button, and pixel-space mapping utilities (<code>getViewportPixel(...)</code>). It keeps
+                the viewport scale and bounds synchronized with the current render dimensions.</p>
+
+            <h3 id="camera-panel">CameraPanel</h3>
+            <p>Lets you edit the active camera: the <strong>resolution</strong> (width and height), the
+                <strong>position</strong> and the <strong>rotation</strong>, through text fields and vector fields. Its
+                method <code>rebuild(ICamera *camera)</code> populates the fields from the current camera.</p>
+
+            <h2 id="composants">Reusable components</h2>
+            <p>Reusable widgets are defined in <code>srcs/plugins/user_interface/components/</code>. They are assembled
+                by the panels and windows.</p>
+
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Component</th><th>Role</th></tr></thead>
+                <tbody>
+                    <tr><td><code>Button</code></td><td>Clickable button, fires an <code>onClick</code> callback.</td></tr>
+                    <tr><td><code>Checkbox</code></td><td>Boolean checkbox.</td></tr>
+                    <tr><td><code>ColorPicker</code></td><td>Color picker (material color, light color).</td></tr>
+                    <tr><td><code>Dropdown</code></td><td>Selection dropdown (e.g. material).</td></tr>
+                    <tr><td><code>Slider</code></td><td>Slider for a float value (material properties).</td></tr>
+                    <tr><td><code>SegmentedControl</code></td><td>Segmented selector (e.g. Phong / PBR model).</td></tr>
+                    <tr><td><code>TextField</code></td><td>Text / value input field.</td></tr>
+                    <tr><td><code>VectorField</code></td><td>Three-component vector input (position, rotation, scale).</td></tr>
+                    <tr><td><code>Separator</code></td><td>Visual separator between sections.</td></tr>
+                    <tr><td>Menu system</td><td>Menu bar and menu items (<code>components/menu/</code>).</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <p>Most widgets follow the same <strong>shared pattern</strong>:</p>
+            <ol>
+                <li>they store geometry in SFML shapes / text;</li>
+                <li>they compute the <code>hovered</code> state in <code>update(...)</code>;</li>
+                <li>they mutate state in <code>handleEvent(...)</code>;</li>
+                <li>they expose <strong>callbacks</strong> (<code>onClick</code>, <code>onChange</code>, etc.);</li>
+                <li>they return a cursor hint through <code>getCursor()</code>.</li>
+            </ol>
+
+            <div class="tip"><p>This uniform pattern (<code>setFont</code> / <code>layout</code> / <code>update</code> /
+                <code>handleEvent</code> / <code>draw</code> + callbacks) makes adding a new widget very mechanical:
+                just implement the <code>Component</code> contract.</p></div>
+
+            <h2 id="fenetres">Auxiliary windows</h2>
+            <p>Pop-up windows are implemented in <code>srcs/plugins/user_interface/windows/</code>. They derive from
+                the abstract <code>Window</code> class, the base for threaded SFML sub-windows. Each derived window
+                implements <code>handleEvent(...)</code>, <code>drawUi()</code> and <code>updateUi()</code>;
+                <code>loop()</code> creates the window and runs the poll / update / draw cycle, while
+                <code>destroy()</code> stops the running flag and joins (or detaches) the thread safely.</p>
+
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Window</th><th>Role</th></tr></thead>
+                <tbody>
+                    <tr><td><code>ExploratorWindow</code></td><td>File/folder explorer for opening or saving a scene (<code>OPEN</code>&nbsp;/&nbsp;<code>SAVE</code> modes).</td></tr>
+                    <tr><td><code>LoadWindow</code></td><td>Merge / import decision window between the current scene and the loaded scene.</td></tr>
+                    <tr><td><code>JoinClusterWindow</code></td><td>Input of the cluster connection parameters (IP and port).</td></tr>
+                    <tr><td><code>MarketWindow</code></td><td>Material market (<em>Local</em> and <em>Online</em> tabs) to browse and add materials.</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <ul>
+                <li><strong>ExploratorWindow</strong>: directory listing with parent navigation (<code>..</code>),
+                    hidden-file filtering, a filename field in save mode, and a confirmation button
+                    (<em>Open</em>&nbsp;/&nbsp;<em>Save</em>).</li>
+                <li><strong>LoadWindow</strong>: presents paired checkbox groups for the camera fields and the
+                    environment-light coefficients; the user chooses, property by property, whether the value comes
+                    from the current scene or the loaded scene, then the selected values are written back to the active
+                    scene.</li>
+                <li><strong>JoinClusterWindow</strong>: IP and port fields (numeric validation); the callback
+                    <code>windowCallback(std::string ip, size_t port)</code> is triggered on <kbd>Enter</kbd>
+                    validation or a <em>JOIN</em> click.</li>
+                <li><strong>MarketWindow</strong>: browsing of a material library with search, under two tabs — local
+                    materials and online materials — with add-to-scene buttons.</li>
+            </ul>
+
+            <h2 id="toasts">Toast notifications</h2>
+            <p>Toasts are transient, non-blocking notifications stacked in the <strong>bottom-right</strong> of the UI
+                (<code>toast/Toast.hpp</code>, <code>toast/ToastManager.hpp</code>).</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Type</th><th>Usage</th></tr></thead>
+                <tbody>
+                    <tr><td><span class="pill">INFO</span></td><td>Neutral information.</td></tr>
+                    <tr><td><span class="pill green">SUCCESS</span></td><td>Confirmation of a successful action.</td></tr>
+                    <tr><td><span class="pill gray">WARNING</span></td><td>Non-blocking warning.</td></tr>
+                    <tr><td><span class="pill gray">ERROR</span></td><td>Error (e.g. missing renderer plugin).</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p>The manager exposes <code>push(title, content, type)</code> to create an entry, <code>update()</code> to
+                apply fade-in / fade-out and remove expired items, and <code>draw(window)</code> to render the stack of
+                animated toasts.</p>
+
+            <h2 id="gizmos">Transform gizmos</h2>
+            <p>When a single object is selected in the viewport, a <strong>gizmo</strong> lets you transform it
+                directly with the mouse. Three tools are available:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Tool</th><th>Shortcut</th><th>Action</th></tr></thead>
+                <tbody>
+                    <tr><td>Move</td><td><kbd>G</kbd></td><td>Translation through the gizmo arrows and planes.</td></tr>
+                    <tr><td>Rotate</td><td><kbd>R</kbd></td><td>Rotation through the gizmo rings.</td></tr>
+                    <tr><td>Scale</td><td><kbd>S</kbd></td><td>Scaling through the gizmo handles.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p>The <kbd>T</kbd> key toggles the gizmo frame between <strong>World</strong> and <strong>Local</strong>.
+                These shortcuts only act when the viewport has focus, an object is selected, you are not in
+                vertex-edit mode, and movement (fly) mode is off — so that
+                <kbd>G</kbd>&nbsp;/&nbsp;<kbd>R</kbd>&nbsp;/&nbsp;<kbd>S</kbd> don't fight the WASD/ZQSD fly keys.</p>
+            <div class="note"><p>The tool choice is also available in the <code>ObjectPanel</code> (callbacks
+                <code>onGizmoModeChanged</code> / <code>onGizmoSpaceChanged</code>), and a status badge (gizmo readout,
+                World/Local frame) is drawn in the viewport.</p></div>
+
+            <h2 id="edition-sommets">Vertex editing</h2>
+            <p>Vertex editing lets you move the individual vertices of an editable primitive directly in the viewport,
+                by dragging on-screen handles or typing coordinates. It is the interactive counterpart to the object
+                transform (position / rotation / scale) exposed in the ObjectPanel.</p>
+
+            <h3 id="edition-editable">What is editable</h3>
+            <p>A primitive is editable when it implements <code>IEditablePrimitive</code> in addition to
+                <code>IPrimitive</code>. The UI discovers the capability at runtime with
+                <code>dynamic_cast&lt;IEditablePrimitive *&gt;(primitive)</code> — the same runtime-capability pattern
+                the renderer uses for selection awareness — so the <code>IPrimitive</code> plugin contract is left
+                untouched.</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Primitive</th><th>Vertices</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Triangle</strong></td><td>its 3 corners.</td></tr>
+                    <tr><td><strong>Mesh</strong></td><td>the unique (welded) vertices of the loaded <code>.obj</code>; a shared vertex moves every incident face.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p>The analytic primitives (cube, sphere, plane, cylinder, cone, torus, tanglecube, fractal) are defined by
+                parameters rather than vertices and are not vertex-editable: move / scale them with the ObjectPanel
+                transform fields.</p>
+
+            <h3 id="edition-convert">Convert to Mesh</h3>
+            <p>To edit an analytic primitive vertex by vertex, select it and press
+                <span class="pill gray">Convert to Mesh</span> in the ObjectPanel. Its surface is tessellated into a
+                triangle mesh (baked to <code>generated_meshes/&lt;name&gt;_&lt;n&gt;.obj</code>), the primitive is
+                replaced by that mesh, and the mesh is selected so you can immediately enter edit mode. Because it is a
+                normal file-backed mesh, it saves / reloads and accepts <code>vertex_overrides</code> like any other
+                mesh.</p>
+            <ul>
+                <li>Infinite primitives (a plane) cannot be converted.</li>
+                <li>A <strong>cube</strong> is baked exactly to its 8 corners / 12 triangles (flat faces), so it stays a
+                    clean editable box.</li>
+                <li>Everything else uses a generic surface sampling: smooth / convex shapes (sphere, cone, cylinder)
+                    come out clean, while non-convex ones (torus, tanglecube) are approximated.</li>
+            </ul>
+
+            <h3 id="edition-entree">Entering / leaving edit mode</h3>
+            <ul>
+                <li><strong>Enter</strong>: select a single editable primitive, then press <kbd>Tab</kbd> — or
+                    <strong>double-click</strong> it in the viewport.</li>
+                <li><strong>Leave</strong>: press <kbd>Tab</kbd> again or <kbd>Escape</kbd>. Selecting a different object
+                    (in the hierarchy, or by deleting the edited one) also leaves edit mode.</li>
+                <li>While in edit mode a banner <strong>"Edit Mode — &lt;name&gt;"</strong> is shown over the viewport
+                    and a toast confirms the transition.</li>
+            </ul>
+            <p>Classic object picking in the viewport is disabled in edit mode so a click never selects a different
+                object by accident. Right-drag still orbits the camera; the WASD/ZQSD fly keys stay available except
+                during an active vertex drag (so the axis-lock keys don't also move the camera).</p>
+
+            <h3 id="edition-poignees">Handles, hovering and picking</h3>
+            <p>Every vertex is projected to screen and drawn as a small circle:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Color</th><th>Meaning</th></tr></thead>
+                <tbody>
+                    <tr><td>Blue</td><td>idle vertex.</td></tr>
+                    <tr><td>White</td><td>the vertex under the cursor.</td></tr>
+                    <tr><td>Yellow</td><td>the selected vertex.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p>Clicking picks the vertex whose handle is nearest the cursor within a small pixel radius; ties
+                (overlapping handles) go to the vertex closest to the camera. Vertices behind the camera or off screen
+                are skipped. For very dense meshes the number of drawn handles is capped (picking still considers them
+                all).</p>
+            <p>Alternatively, use the <code>&lt; Point N / total &gt;</code> navigator in the ObjectPanel (just above the
+                <em>Size</em> row): the arrows step through the shape's vertices one by one without aiming at the
+                on-screen handles. Stepping enters edit mode if needed and highlights the current vertex in
+                <strong>bright red</strong> on the shape.</p>
+
+            <h3 id="edition-glisser">Dragging a vertex</h3>
+            <p>Drag a handle to move its vertex. By default the vertex slides in the plane that passes through its
+                starting position and is <strong>parallel to the screen</strong> (normal = camera forward) — the
+                intuitive "move it where I point" behaviour.</p>
+            <ul>
+                <li><strong>Axis lock</strong>: hold <kbd>X</kbd>, <kbd>Y</kbd> or <kbd>Z</kbd> during the drag to
+                    constrain the move to that world axis.</li>
+                <li><strong>Keyboard</strong>: the selected vertex's world coordinates appear in a
+                    <strong>Vertex</strong> field in the ObjectPanel; typing a value moves the vertex and stays in sync
+                    with dragging.</li>
+                <li><strong>Grow / shrink (<kbd>-</kbd>&nbsp;/&nbsp;<kbd>+</kbd> buttons)</strong>: the
+                    <kbd>-</kbd>&nbsp;/&nbsp;<kbd>+</kbd> buttons in the <em>Size</em> row move the selected vertex away
+                    from / toward the shape's centroid, so a single point can be pushed out or pulled in. With
+                    <strong>no</strong> vertex selected the same buttons scale the whole object instead.</li>
+            </ul>
+            <p>After every edit the scene BVH is flagged dirty and the viewport re-traces, so the change is visible
+                immediately.</p>
+
+            <h3 id="edition-mesh">Mesh specifics</h3>
+            <ul>
+                <li>Moving a shared vertex updates <strong>all incident faces</strong>.</li>
+                <li>The affected face normals are recomputed, and smooth (interpolated) vertex normals are refreshed as
+                    the average of the incident face normals.</li>
+                <li>The mesh's <strong>local BVH</strong> is rebuilt when the vertex is released
+                    (<code>onGeometryChanged</code>). For small meshes it is also rebuilt live during the drag; for
+                    large meshes (&gt; ~4000 triangles) the surface renders slightly stale during the drag and snaps to
+                    the final shape on release, which keeps dragging responsive.</li>
+            </ul>
+
+            <h3 id="edition-sauvegarde">Saving edits (serialization)</h3>
+            <ul>
+                <li><strong>Triangle</strong> — its three corners are already part of the scene JSON, so edited
+                    positions are saved and reloaded verbatim.</li>
+                <li><strong>Mesh</strong> — the <code>.obj</code> file is never modified. Edits are stored as
+                    <strong>object-space overrides</strong> in a <code>vertex_overrides</code> list on the mesh object
+                    and re-applied after the <code>.obj</code> is loaded.</li>
+            </ul>
+            <pre><code class="language-json">{
+    "name": "Cube",
+    "type": "mesh",
+    "file": "tests/obj/cube.obj",
+    "position": [26.0, 10.0, 15.0],
+    "rotation": [0.0, 0.0, 20.0],
+    "scale": [14.0, 14.0, 14.0],
+    "material": "Blue",
+    "vertex_overrides": [
+        { "index": 0, "position": [1.0, -1.0, 0.857] }
+    ]
+}</code></pre>
+            <p>Because overrides are object-space, they survive later changes to the mesh transform and round-trip
+                cleanly: <strong>load → edit → save → reload</strong> restores the edited shape. See
+                <code>tests/configs/vertex_edit.json</code> for a scene (a Triangle and a small cube mesh) set up to
+                try this out.</p>
+
+            <h3 id="edition-limites">Limitations</h3>
+            <ul>
+                <li>Editing changes geometry only; it does not add or remove vertices/faces.</li>
+                <li>Smooth normals recomputed at edited vertices are geometric averages, so hard edges authored in the
+                    <code>.obj</code> (<code>vn</code>) are softened locally where you edit.</li>
+                <li>The move plane is view-parallel; there is no separate depth-along-view drag (use the Vertex field or
+                    an axis lock for precise placement).</li>
+            </ul>
+
+            <h2 id="raccourcis">Keyboard shortcuts</h2>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Key</th><th>Context</th><th>Action</th></tr></thead>
+                <tbody>
+                    <tr><td><kbd>G</kbd></td><td>Viewport, object selected</td><td><strong>Move</strong> gizmo tool.</td></tr>
+                    <tr><td><kbd>R</kbd></td><td>Viewport, object selected</td><td><strong>Rotate</strong> gizmo tool.</td></tr>
+                    <tr><td><kbd>S</kbd></td><td>Viewport, object selected</td><td><strong>Scale</strong> gizmo tool.</td></tr>
+                    <tr><td><kbd>T</kbd></td><td>Viewport, object selected</td><td>Toggle the <strong>World / Local</strong> frame.</td></tr>
+                    <tr><td><kbd>Tab</kbd></td><td>Editable primitive selected</td><td>Enter / leave vertex-edit mode.</td></tr>
+                    <tr><td>Double-click</td><td>Editable primitive (viewport)</td><td>Enter vertex-edit mode.</td></tr>
+                    <tr><td><kbd>Escape</kbd></td><td>Edit mode</td><td>Leave vertex-edit mode.</td></tr>
+                    <tr><td><kbd>X</kbd>&nbsp;/&nbsp;<kbd>Y</kbd>&nbsp;/&nbsp;<kbd>Z</kbd></td><td>During a vertex drag</td><td>Lock the move to the world X / Y / Z axis.</td></tr>
+                    <tr><td><kbd>-</kbd>&nbsp;/&nbsp;<kbd>+</kbd></td><td>ObjectPanel <em>Size</em> row</td><td>Move the vertex away from / toward the centroid (or scale the object if no vertex is selected).</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <div class="note"><p>The camera fly keys (WASD/ZQSD style, with the wheel for speed) stay active in the
+                viewport outside edit mode; that is why the gizmo shortcuts are disabled while movement mode is on.</p></div>
+        </article>
+
+        <nav class="toc" aria-label="On this page">
+            <strong>On this page</strong>
+            <ul>
+                <li><a href="#apercu">Overview</a></li>
+                <li><a href="#panneaux">Panels</a></li>
+                <li><a href="#composants">Reusable components</a></li>
+                <li><a href="#fenetres">Auxiliary windows</a></li>
+                <li><a href="#toasts">Toast notifications</a></li>
+                <li><a href="#gizmos">Transform gizmos</a></li>
+                <li><a href="#edition-sommets">Vertex editing</a></li>
+                <li><a href="#raccourcis">Keyboard shortcuts</a></li>
+            </ul>
+        </nav>
+    </main>
+</div>
+
+<footer class="site-footer">
+    <span>Raytracer — technical documentation</span>
+    <span>C++17 · SFML · Plugin architecture</span>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="assets/search-index.js"></script>
+<script src="assets/search.js"></script>
+<script src="assets/main.js"></script>
+</body>
+</html>
