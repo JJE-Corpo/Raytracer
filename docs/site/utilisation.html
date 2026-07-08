@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Utilisation — Raytracer</title>
+<meta name="description" content="Ligne de commande et format des fichiers de scène du Raytracer.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+    <button class="menu-toggle" data-menu-toggle aria-label="Menu">☰</button>
+    <a class="brand" href="index.html"><span class="logo">◐</span> Raytracer <small>docs</small></a>
+    <nav>
+        <a href="index.html">Accueil</a>
+        <a href="installation.html">Installation</a>
+        <a href="utilisation.html" class="active">Utilisation</a>
+        <a href="architecture.html">Architecture</a>
+        <a href="fonctionnalites.html">Fonctionnalités</a>
+        <a href="reference.html">Référence</a>
+        <a href="faq.html">FAQ</a>
+    </nav>
+</header>
+
+<div class="layout">
+    <aside class="sidebar">
+        <h4>Démarrer</h4>
+        <ul>
+            <li><a href="index.html">Accueil</a></li>
+            <li><a href="installation.html">Installation</a></li>
+            <li><a href="utilisation.html" class="active">Utilisation</a></li>
+        </ul>
+        <h4>Comprendre</h4>
+        <ul>
+            <li><a href="architecture.html">Architecture</a></li>
+            <li><a href="fonctionnalites.html">Fonctionnalités</a></li>
+            <li><a href="reference.html">Référence des classes</a></li>
+        </ul>
+        <h4>Aide</h4>
+        <ul><li><a href="faq.html">FAQ</a></li></ul>
+    </aside>
+
+    <main class="content has-toc">
+        <article class="article">
+            <p class="crumbs"><a href="index.html">Accueil</a> / Utilisation</p>
+            <h1>Utilisation</h1>
+            <p class="lead">Lancer le programme, comprendre les options de la ligne de commande et le format des fichiers de scène.</p>
+
+            <h2 id="ligne-commande">Ligne de commande</h2>
+            <pre><code class="language-bash">./raytracer [OPTIONS] [FICHIER_SCENE]</code></pre>
+            <p>Sans fichier de scène, une scène vierge est chargée. Les options sont analysées par
+               <code>Options</code> (<code>srcs/config/Options.hpp</code>)&nbsp;:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Option</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td><code>-h</code>, <code>--help</code></td><td>Affiche l’aide et quitte.</td></tr>
+                    <tr><td><code>-v</code>, <code>--version</code></td><td>Affiche la version (<code>1.0.0</code>) et quitte.</td></tr>
+                    <tr><td><code>-r</code>, <code>--render [NOM].png</code></td><td>Mode <em>headless</em>&nbsp;: rend la scène dans un PNG sans lancer l’interface. Le nom optionnel (finissant par <code>.png</code>) fixe la sortie (par défaut <code>render.png</code>).</td></tr>
+                    <tr><td><code>--server [PORT]</code></td><td>Lance l’interface <strong>et</strong> démarre un serveur de cluster. Le port optionnel fixe l’écoute (sinon automatique).</td></tr>
+                    <tr><td><code>--connect IP PORT</code></td><td>Lance l’interface et rejoint le serveur de cluster à <code>IP:PORT</code>.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <div class="note"><p><code>--render</code> (headless) ne peut pas être combiné avec <code>--server</code>
+               ni <code>--connect</code>, et <code>--server</code> et <code>--connect</code> sont mutuellement exclusifs.</p></div>
+
+            <h3 id="exemples-commandes">Exemples de commandes</h3>
+            <pre><code class="language-bash"># Interface graphique sur une scène d'exemple
+./raytracer tests/configs/subject.json
+
+# Rendu direct vers un PNG (sans interface)
+./raytracer -r output.png tests/configs/subject.json
+
+# Interface + serveur de cluster sur le port 8080
+./raytracer --server 8080 tests/configs/subject.json
+
+# Interface + connexion à un serveur de cluster
+./raytracer --connect 127.0.0.1 8080 tests/configs/subject.json</code></pre>
+
+            <h3 id="headless">Mode headless (rendu PNG)</h3>
+            <p>Le mode <code>-r</code> ne charge pas l’interface&nbsp;: il construit la scène, calcule
+               l’image et l’exporte, puis quitte. Idéal pour les scripts et l’intégration continue.</p>
+            <pre><code class="language-bash">./raytracer -r sortie.png tests/configs/cube.json
+# Sortie attendue :
+#   Loaded 2 renderer plugin(s)
+#    - Viewport
+#    - Default
+#   Finished rendering scene! Saving to file..
+#   Render has been saved to file 'sortie.png'</code></pre>
+
+            <h2 id="format-scene">Format des fichiers de scène</h2>
+            <p>Une scène est un fichier <strong>JSON</strong> lu par <code>SceneParser</code>. Il comporte
+               quatre sections principales&nbsp;: <code>environment</code>, <code>camera</code>,
+               <code>objects</code> et <code>materials</code>.</p>
+
+            <h3 id="squelette">Squelette général</h3>
+            <pre><code class="language-json">{
+  "environment": { "ambient": 0.4, "diffuse": 0.6 },
+  "camera": {
+    "resolution": [1920, 1080],
+    "position":   [0.0, -100.0, 20.0],
+    "rotation":   [0.0, 0.0, 0.0],
+    "fieldOfView": 72.0,
+    "samplesPerPixel": 128
+  },
+  "objects": [
+    { "name": "Sphere A", "type": "sphere", "position": [60, 5, 40], "radius": 25, "material": "Material A" }
+  ],
+  "materials": [
+    { "name": "Material A", "model": "pbr", "base_color": [230, 60, 60], "roughness": 0.5 }
+  ]
+}</code></pre>
+
+            <h3 id="environment">Section <code>environment</code></h3>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Clé</th><th>Type</th><th>Défaut</th><th>Rôle</th></tr></thead>
+                <tbody>
+                    <tr><td><code>ambient</code></td><td>nombre</td><td><code>0.4</code></td><td>Coefficient de lumière ambiante global.</td></tr>
+                    <tr><td><code>diffuse</code></td><td>nombre</td><td><code>0.6</code></td><td>Coefficient de contribution diffuse global.</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <h3 id="camera">Section <code>camera</code></h3>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Clé</th><th>Type</th><th>Rôle</th></tr></thead>
+                <tbody>
+                    <tr><td><code>resolution</code></td><td><code>[largeur, hauteur]</code></td><td>Dimensions de l’image en pixels. <strong>Obligatoire.</strong></td></tr>
+                    <tr><td><code>position</code></td><td><code>[x, y, z]</code></td><td>Position de la caméra dans le monde.</td></tr>
+                    <tr><td><code>rotation</code></td><td><code>[x, y, z]</code></td><td>Orientation (angles d’Euler, en degrés).</td></tr>
+                    <tr><td><code>fieldOfView</code></td><td>nombre</td><td>Champ de vision. <strong>Obligatoire.</strong></td></tr>
+                    <tr><td><code>samplesPerPixel</code></td><td>entier &gt; 0</td><td>Échantillons par pixel (anti-aliasing). Défaut&nbsp;: <code>5</code>. Alias&nbsp;: <code>samples_per_pixel</code>.</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <h3 id="objects">Section <code>objects</code></h3>
+            <p>Chaque objet possède un <code>type</code> (obligatoire) et un <code>name</code>. Les
+               primitives peuvent référencer un <code>material</code> (par son nom). Le
+               <code>SceneParser</code> ne lit que les clés pertinentes pour le type&nbsp;: les clés
+               inconnues sont ignorées. Les <strong>types</strong> disponibles&nbsp;:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th><code>type</code></th><th>Clés principales</th></tr></thead>
+                <tbody>
+                    <tr><td><code>sphere</code></td><td><code>position</code>, <code>radius</code>, <code>scale</code>, <code>material</code></td></tr>
+                    <tr><td><code>plane</code></td><td><code>axis</code> (<code>"x"</code>/<code>"y"</code>/<code>"z"</code>), <code>position</code>, <code>size</code>, <code>material</code></td></tr>
+                    <tr><td><code>cube</code></td><td><code>position</code>, <code>rotation</code>, <code>scale</code>, <code>size</code>, <code>material</code></td></tr>
+                    <tr><td><code>cylinder</code></td><td><code>position</code>, <code>rotation</code>, <code>radius</code>, <code>height</code>, <code>material</code></td></tr>
+                    <tr><td><code>cone</code></td><td><code>position</code>, <code>rotation</code>, <code>radius</code>, <code>height</code>, <code>material</code></td></tr>
+                    <tr><td><code>triangle</code></td><td><code>vertex0</code>, <code>vertex1</code>, <code>vertex2</code>, <code>material</code></td></tr>
+                    <tr><td><code>torus</code></td><td><code>position</code>, <code>rotation</code>, <code>radius</code>, <code>height</code>, <code>material</code></td></tr>
+                    <tr><td><code>tanglecube</code></td><td><code>position</code>, <code>rotation</code>, <code>size</code>, <code>threshold</code>, <code>material</code></td></tr>
+                    <tr><td><code>fractal</code></td><td><code>position</code>, <code>size</code>, <code>power</code>, <code>iterations</code>, <code>material</code></td></tr>
+                    <tr><td><code>mesh</code></td><td><code>file</code> (<code>.obj</code>) ou <code>vertices</code>/<code>faces</code>/<code>normals</code>, <code>position</code>, <code>rotation</code>, <code>scale</code>, <code>vertex_overrides</code>, <code>material</code></td></tr>
+                    <tr><td><code>point_light</code></td><td><code>position</code>, <code>color</code>, <code>intensity</code></td></tr>
+                    <tr><td><code>directional_light</code></td><td><code>direction</code>, <code>color</code>, <code>intensity</code></td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p>Voir la page <a href="fonctionnalites.html#primitives">Fonctionnalités</a> pour le détail de
+               chaque primitive et de ses paramètres.</p>
+
+            <h4 id="couleurs">Couleurs et vecteurs</h4>
+            <ul>
+                <li>Un <strong>vecteur</strong> est un tableau <code>[x, y, z]</code>.</li>
+                <li>Une <strong>couleur</strong> de lumière est un tableau <code>[r, g, b]</code> avec des composantes entières <code>0–255</code>.</li>
+            </ul>
+
+            <h3 id="materials">Section <code>materials</code></h3>
+            <p>Chaque matériau porte un <code>name</code> (référencé par les objets) et un
+               <code>model</code> (<code>"phong"</code> ou <code>"pbr"</code>). Les principaux champs&nbsp;:</p>
+            <pre><code class="language-json">{
+  "name": "Material A",
+  "model": "pbr",
+  "base_color": [230, 60, 60],
+  "specular":   [255, 255, 255],
+  "shininess": 32.0,
+  "reflectivity": 0.0,
+  "transparency": 0.0,
+  "ior": 1.5,
+  "metallic": 0.0,
+  "roughness": 0.5,
+  "ao": 1.0,
+  "clearcoat": 0.0,
+  "sheen": 0.0,
+  "transmission": 0.0,
+  "alpha": 1.0,
+  "texture_map": "",  "texture_map_enabled": false,  "texture_uv_scale": 1.0,
+  "normal_map": "",   "normal_map_enabled": false,   "normal_scale": 1.0
+}</code></pre>
+            <p>La liste complète des champs est décrite dans <a href="fonctionnalites.html#materiaux">Fonctionnalités &rarr; Matériaux</a>.</p>
+
+            <h2 id="exemple-complet">Exemple complet commenté</h2>
+            <p>Extrait fidèle de <code>tests/configs/subject.json</code> (une sphère mate et un plan)&nbsp;:</p>
+            <pre><code class="language-json">{
+  "environment": { "ambient": 0.4, "diffuse": 0.6 },
+
+  "camera": {
+    "resolution": [1920, 1080],
+    "position": [0.0, -100.0, 20.0],
+    "rotation": [0.0, 0.0, 0.0],
+    "fieldOfView": 72.0,
+    "samplesPerPixel": 128
+  },
+
+  "objects": [
+    {
+      "name": "Sphere A",
+      "type": "sphere",
+      "position": [60.0, 5.0, 40.0],
+      "radius": 25,
+      "material": "Material A"
+    },
+    {
+      "name": "Plane",
+      "type": "plane",
+      "axis": "z",
+      "position": [0.0, 0.0, 0.0],
+      "size": 100.0
+    }
+  ],
+
+  "materials": [
+    { "name": "Material A", "model": "pbr", "roughness": 0.5, "metallic": 0.0 }
+  ]
+}</code></pre>
+            <div class="tip"><p>De nombreuses scènes prêtes à l’emploi se trouvent dans
+               <code>tests/configs/</code>&nbsp;: <code>cube.json</code>, <code>cone.json</code>,
+               <code>torus.json</code>, <code>fractal.json</code>, <code>tanglecube.json</code>,
+               <code>mesh_showcase.json</code>, <code>vertex_edit.json</code>, etc.</p></div>
+
+            <h2 id="maillages">Importer un maillage <code>.obj</code></h2>
+            <p>Un objet de type <code>mesh</code> peut charger un fichier <code>.obj</code> via la clé
+               <code>file</code>. Les fichiers d’exemple sont dans <code>tests/obj/</code>.</p>
+            <pre><code class="language-json">{
+  "name": "Cube",
+  "type": "mesh",
+  "file": "tests/obj/cube.obj",
+  "position": [26.0, 10.0, 15.0],
+  "rotation": [0.0, 0.0, 20.0],
+  "scale": [14.0, 14.0, 14.0],
+  "material": "Blue"
+}</code></pre>
+            <p>Un maillage peut aussi être défini <em>en ligne</em> (sans fichier) via
+               <code>vertices</code>, <code>faces</code> et <code>normals</code>, ou porter des
+               modifications de sommets via <code>vertex_overrides</code> — voir
+               <a href="fonctionnalites.html#edition-sommets">Édition de sommets</a>.</p>
+
+            <h2 id="sauvegarde">Sauvegarde de scène</h2>
+            <p>Depuis l’interface, la scène peut être ré-exportée en JSON&nbsp;: <code>SceneRegister</code>
+               sérialise la caméra, l’environnement, les objets et les matériaux. Le cycle
+               <em>charger → éditer → sauvegarder → recharger</em> restitue fidèlement la scène.</p>
+        </article>
+
+        <nav class="toc" aria-label="Sommaire">
+            <strong>Sur cette page</strong>
+            <ul>
+                <li><a href="#ligne-commande">Ligne de commande</a></li>
+                <li class="sub"><a href="#exemples-commandes">Exemples</a></li>
+                <li class="sub"><a href="#headless">Mode headless</a></li>
+                <li><a href="#format-scene">Format de scène</a></li>
+                <li class="sub"><a href="#environment">environment</a></li>
+                <li class="sub"><a href="#camera">camera</a></li>
+                <li class="sub"><a href="#objects">objects</a></li>
+                <li class="sub"><a href="#materials">materials</a></li>
+                <li><a href="#exemple-complet">Exemple complet</a></li>
+                <li><a href="#maillages">Maillages .obj</a></li>
+                <li><a href="#sauvegarde">Sauvegarde</a></li>
+            </ul>
+        </nav>
+    </main>
+</div>
+
+<footer class="site-footer">
+    <span>Raytracer — documentation technique</span>
+    <span>C++17 · SFML · Architecture à plugins</span>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="assets/main.js"></script>
+</body>
+</html>

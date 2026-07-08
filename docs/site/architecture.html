@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Architecture — Raytracer</title>
+<meta name="description" content="Organisation du code, modules et pipeline de rendu du Raytracer.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+    <button class="menu-toggle" data-menu-toggle aria-label="Menu">☰</button>
+    <a class="brand" href="index.html"><span class="logo">◐</span> Raytracer <small>docs</small></a>
+    <nav>
+        <a href="index.html">Accueil</a>
+        <a href="installation.html">Installation</a>
+        <a href="utilisation.html">Utilisation</a>
+        <a href="architecture.html" class="active">Architecture</a>
+        <a href="fonctionnalites.html">Fonctionnalités</a>
+        <a href="reference.html">Référence</a>
+        <a href="faq.html">FAQ</a>
+    </nav>
+</header>
+
+<div class="layout">
+    <aside class="sidebar">
+        <h4>Démarrer</h4>
+        <ul>
+            <li><a href="index.html">Accueil</a></li>
+            <li><a href="installation.html">Installation</a></li>
+            <li><a href="utilisation.html">Utilisation</a></li>
+        </ul>
+        <h4>Comprendre</h4>
+        <ul>
+            <li><a href="architecture.html" class="active">Architecture</a></li>
+            <li><a href="fonctionnalites.html">Fonctionnalités</a></li>
+            <li><a href="reference.html">Référence des classes</a></li>
+        </ul>
+        <h4>Aide</h4>
+        <ul><li><a href="faq.html">FAQ</a></li></ul>
+    </aside>
+
+    <main class="content has-toc">
+        <article class="article">
+            <p class="crumbs"><a href="index.html">Accueil</a> / Architecture</p>
+            <h1>Architecture</h1>
+            <p class="lead">Le code s’organise autour d’un <code>Core</code> central qui orchestre le chargement de scène, des plugins, le rendu, l’interface optionnelle et le mode cluster optionnel.</p>
+
+            <h2 id="couches">Vue en couches</h2>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Couche</th><th>Emplacement</th><th>Responsabilité</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Point d’entrée</strong></td><td><code>main.cpp</code>, <code>srcs/core/Core.*</code></td><td>Orchestration du cycle de vie complet.</td></tr>
+                    <tr><td><strong>Chargement / sauvegarde de scène</strong></td><td><code>srcs/core/scene/SceneParser.*</code>, <code>builder/*</code>, <code>factory/*</code>, <code>SceneRegister.*</code></td><td>Lecture du JSON, construction, sérialisation.</td></tr>
+                    <tr><td><strong>Données de scène</strong></td><td><code>srcs/core/scene/Scene.*</code>, <code>bvh/*</code></td><td>Caméra, primitives, lumières, matériaux, BVH.</td></tr>
+                    <tr><td><strong>Plugins</strong></td><td><code>srcs/core/PluginLoader.*</code>, <code>srcs/common/IPlugin.hpp</code></td><td>Chargement dynamique <code>.so</code>.</td></tr>
+                    <tr><td><strong>Renderers / UI</strong></td><td><code>srcs/plugins/renderer/*</code>, <code>srcs/plugins/user_interface/*</code></td><td>Plugins de rendu et interface graphique.</td></tr>
+                    <tr><td><strong>Géométrie / lumières</strong></td><td><code>srcs/plugins/primitive/*</code>, <code>srcs/plugins/light/*</code></td><td>Implémentations concrètes.</td></tr>
+                    <tr><td><strong>Cluster (optionnel)</strong></td><td><code>srcs/core/cluster/*</code>, <code>srcs/common/cluster/*</code></td><td>Rendu distribué client/serveur.</td></tr>
+                    <tr><td><strong>Utilitaires</strong></td><td><code>srcs/common/*</code>, <code>srcs/core/utils/*</code>, <code>srcs/core/obj/*</code></td><td>Maths, exceptions, watcher, export, import OBJ.</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <h2 id="diagramme">Diagramme des dépendances</h2>
+            <pre><code class="language-text">main.cpp
+   │
+   ▼
+ Core ───────────────► PluginLoader ───► plugins/*.so ──► Renderer plugins
+   │                                                   └─► UI plugin
+   │
+   ├─► SceneParser ──► SceneObjectBuilder ──► PrimitiveBuilder
+   │        │                             └─► LightBuilder
+   │        ├─► ObjParser (import .obj)
+   │        └─► SceneBuilder ──► Scene ──► BVHNode / buildBvh()
+   │
+   ├─► ISceneRenderer (actif) ──► Scene
+   ├─► RenderExporter ──► render.png
+   ├─► SceneRegister ──► export .json
+   └─► ClusterModule (optionnel)</code></pre>
+
+            <h2 id="core">Le Core</h2>
+            <p>Le <code>Core</code> (<code>srcs/core/Core.*</code>) coordonne tout le cycle de vie&nbsp;:</p>
+            <ol>
+                <li>charge les plugins (<code>loadPlugins</code>) et les renderers (<code>loadRenderers</code>)&nbsp;;</li>
+                <li>analyse le fichier <code>.json</code> et construit la scène via les builders&nbsp;;</li>
+                <li>sélectionne le renderer actif&nbsp;;</li>
+                <li>construit le BVH et lance le rendu&nbsp;;</li>
+                <li>exporte l’image&nbsp;;</li>
+                <li>optionnellement, lance la boucle d’événements de l’interface et le rechargement à chaud du fichier de scène (<code>FileObserver</code>).</li>
+            </ol>
+            <p>Le <code>Core</code> gère aussi l’<strong>historique</strong> (annuler / rétablir)&nbsp;: chaque
+               mutation sérialise un instantané JSON de la scène&nbsp;; un <em>undo</em>/<em>redo</em>
+               reconstruit la scène à partir de l’instantané voulu.</p>
+
+            <h2 id="plugins">Système de plugins</h2>
+            <p>Les modules de <strong>rendu</strong> et d’<strong>interface</strong> sont des
+               bibliothèques partagées <code>.so</code> chargées à l’exécution depuis <code>./plugins</code>.</p>
+            <p>Au démarrage&nbsp;: <code>PluginLoader::load()</code> appelle <code>dlopen</code> et résout deux
+               symboles obligatoires (contrat C ABI)&nbsp;:</p>
+            <pre><code class="language-cpp">extern "C" IPlugin *create_plugin();
+extern "C" void      destroy_plugin(IPlugin *plugin);</code></pre>
+            <p>Sans ces deux fonctions, le plugin est rejeté. Les instances sont stockées dans le loader et
+               interrogées par <code>PluginType</code> (<code>RENDERER</code>, <code>USER_INTERFACE</code>).</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Plugin</th><th>Type</th><th>Rôle</th></tr></thead>
+                <tbody>
+                    <tr><td><code>renderer_default.so</code></td><td>RENDERER</td><td>Renderer « Default » — rendu complet de l’image.</td></tr>
+                    <tr><td><code>renderer_viewport.so</code></td><td>RENDERER</td><td>Renderer « Viewport » — rendu progressif pour l’interface.</td></tr>
+                    <tr><td><code>user_interface.so</code></td><td>USER_INTERFACE</td><td>Interface graphique SFML (viewport, panneaux, gizmos).</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <div class="note"><p>Les primitives et lumières vivent dans <code>srcs/plugins/…</code> mais sont
+               actuellement <strong>compilées dans l’exécutable principal</strong> et instanciées via les
+               builders/factories — elles ne sont pas (encore) chargées comme <code>.so</code> dynamiques.
+               L’architecture reste néanmoins prête pour cette évolution.</p></div>
+
+            <h2 id="scene-construction">Construction de la scène</h2>
+            <p>La construction est séparée de l’analyse&nbsp;:</p>
+            <pre><code class="language-text">scene.json
+   │
+   ▼
+SceneParser ──► parseCamera
+   │        ├─► parseMaterials
+   │        └─► parseObjects ──► SceneObjectBuilder ──► PrimitiveBuilder
+   │                                                └─► LightBuilder
+   ▼
+SceneBuilder ──► Scene   (caméra + matériaux + objets, dispatch par ObjectType)</code></pre>
+            <ul>
+                <li><strong><code>SceneObjectBuilder</code></strong> — répartiteur&nbsp;: <code>withType(string)</code>
+                    (primitive) ou <code>withType(LightType)</code> (lumière), et transmet les setters communs
+                    au builder interne actif.</li>
+                <li><strong><code>PrimitiveBuilder</code></strong> — construit les primitives concrètes à partir
+                    des champs analysés (<code>position</code>, <code>radius</code>, <code>size</code>…).</li>
+                <li><strong><code>LightBuilder</code></strong> — construit <code>PointLight</code> et
+                    <code>DirectionalLight</code>.</li>
+                <li><strong><code>SceneBuilder</code></strong> — agrège caméra, matériaux et objets, puis
+                    répartit selon <code>ObjectType</code> (<code>PRIMITIVE → addPrimitive</code>,
+                    <code>LIGHT → addLight</code>).</li>
+                <li><strong><code>PrimitiveFactory</code> / <code>LightFactory</code></strong> — constructeurs
+                    par défaut (par ex. pour la création d’objets depuis l’éditeur).</li>
+            </ul>
+            <p><strong><code>SceneRegister</code></strong> effectue le chemin inverse&nbsp;: il re-sérialise
+               l’état de la scène en JSON (caméra, environnement, objets, matériaux), permettant l’édition
+               en aller-retour dans l’interface.</p>
+
+            <h2 id="pipeline">Pipeline de rendu</h2>
+            <p>Une image est produite en appliquant la même séquence à chaque pixel&nbsp;:</p>
+            <ol>
+                <li><strong>Rayon caméra</strong> — génération d’un rayon primaire <code>P(t) = O + t·D</code> pour le pixel.</li>
+                <li><strong>Intersection</strong> — test contre la géométrie (accélérée par le BVH construit avant le rendu via <code>scene.buildBvh()</code>).</li>
+                <li><strong>Hit le plus proche</strong> — conservation du plus petit <code>t</code> valide.</li>
+                <li><strong>Ombrage</strong> — au point d’impact&nbsp;: calcul de la normale, lecture du matériau.</li>
+                <li><strong>Lumières &amp; ombres</strong> — pour chaque lumière, un <em>rayon d’ombre</em> décalé (<code>H + ε·N</code>) teste la visibilité&nbsp;; si visible, on évalue diffus et spéculaire.</li>
+                <li><strong>Accumulation</strong> — ambiant + contributions directes, écrêtage dans la plage de sortie.</li>
+                <li><strong>Sortie</strong> — le tampon image est exporté en PNG.</li>
+            </ol>
+            <div class="tip"><p><strong>Robustesse numérique&nbsp;:</strong> décalage <code>ε</code> pour les
+               rayons secondaires (évite l’acné d’ombre), rejet des dénominateurs proches de zéro
+               (plans/triangles), test cohérent <code>t ∈ [t_min, t_max]</code>, vecteurs normalisés pour
+               l’ombrage.</p></div>
+
+            <h2 id="cluster">Module cluster</h2>
+            <p>Le <code>ClusterModule</code> (<code>srcs/core/cluster/*</code>) fournit une infrastructure de
+               <strong>rendu distribué</strong>&nbsp;: un serveur découpe l’image en tuiles et les distribue à
+               des clients connectés qui renvoient leurs pixels. La communication passe par des
+               <strong>paquets</strong> typés (<code>PacketFactory</code>), par exemple&nbsp;:
+               demande de rejoindre (<code>ClientJoinRequest</code>), envoi de la scène
+               (<code>ServerSceneData</code>), demande de rendu (<code>ServerRenderRequest</code>),
+               remontée d’une tuile (<code>ClientTileData</code>), état du rendu (<code>ServerRenderState</code>).</p>
+            <ul>
+                <li><code>--server [PORT]</code> lance l’interface et démarre le serveur (<code>startServer</code>).</li>
+                <li><code>--connect IP PORT</code> lance l’interface et rejoint un serveur (<code>joinCluster</code>).</li>
+            </ul>
+            <p>Le rendu est coordonné par <code>ClusterRenderCoordinator</code> et <code>ClusterRenderer</code>.</p>
+        </article>
+
+        <nav class="toc" aria-label="Sommaire">
+            <strong>Sur cette page</strong>
+            <ul>
+                <li><a href="#couches">Vue en couches</a></li>
+                <li><a href="#diagramme">Diagramme</a></li>
+                <li><a href="#core">Le Core</a></li>
+                <li><a href="#plugins">Système de plugins</a></li>
+                <li><a href="#scene-construction">Construction de scène</a></li>
+                <li><a href="#pipeline">Pipeline de rendu</a></li>
+                <li><a href="#cluster">Module cluster</a></li>
+            </ul>
+        </nav>
+    </main>
+</div>
+
+<footer class="site-footer">
+    <span>Raytracer — documentation technique</span>
+    <span>C++17 · SFML · Architecture à plugins</span>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="assets/main.js"></script>
+</body>
+</html>

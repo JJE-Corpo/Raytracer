@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Installation — Raytracer</title>
+<meta name="description" content="Prérequis, dépendances et compilation du Raytracer.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+    <button class="menu-toggle" data-menu-toggle aria-label="Menu">☰</button>
+    <a class="brand" href="index.html"><span class="logo">◐</span> Raytracer <small>docs</small></a>
+    <nav>
+        <a href="index.html">Accueil</a>
+        <a href="installation.html" class="active">Installation</a>
+        <a href="utilisation.html">Utilisation</a>
+        <a href="architecture.html">Architecture</a>
+        <a href="fonctionnalites.html">Fonctionnalités</a>
+        <a href="reference.html">Référence</a>
+        <a href="faq.html">FAQ</a>
+    </nav>
+</header>
+
+<div class="layout">
+    <aside class="sidebar">
+        <h4>Démarrer</h4>
+        <ul>
+            <li><a href="index.html">Accueil</a></li>
+            <li><a href="installation.html" class="active">Installation</a></li>
+            <li><a href="utilisation.html">Utilisation</a></li>
+        </ul>
+        <h4>Comprendre</h4>
+        <ul>
+            <li><a href="architecture.html">Architecture</a></li>
+            <li><a href="fonctionnalites.html">Fonctionnalités</a></li>
+            <li><a href="reference.html">Référence des classes</a></li>
+        </ul>
+        <h4>Aide</h4>
+        <ul><li><a href="faq.html">FAQ</a></li></ul>
+    </aside>
+
+    <main class="content has-toc">
+        <article class="article">
+            <p class="crumbs"><a href="index.html">Accueil</a> / Installation</p>
+            <h1>Installation</h1>
+            <p class="lead">Prérequis, dépendances et compilation du projet.</p>
+
+            <h2 id="prerequis">Prérequis</h2>
+            <p>Le projet cible un environnement Linux (testé sous WSL2). Il faut&nbsp;:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Outil / bibliothèque</th><th>Rôle</th></tr></thead>
+                <tbody>
+                    <tr><td><code>clang++</code></td><td>Compilateur C++ (le Makefile l’invoque explicitement), standard <strong>C++17</strong>.</td></tr>
+                    <tr><td><code>make</code></td><td>Système de build.</td></tr>
+                    <tr><td><strong>SFML</strong> (≥ 2.5)</td><td>Fenêtre, contexte graphique, réseau — utilisée par le plugin d’interface. Modules&nbsp;: <code>graphics</code>, <code>window</code>, <code>system</code>, <code>network</code>.</td></tr>
+                    <tr><td><strong>X11</strong> (<code>libX11</code>)</td><td>Système de fenêtrage sous Linux (lié via <code>-lX11</code>).</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <h3 id="deps-fournies">Dépendances déjà fournies</h3>
+            <p>Deux bibliothèques d’en-têtes sont incluses dans <code>srcs/external/</code> — rien à installer&nbsp;:</p>
+            <ul>
+                <li><strong>nlohmann/json</strong> (<code>srcs/external/nlohmann/json.hpp</code>) — lecture/écriture des fichiers de scène JSON.</li>
+                <li><strong>stb_image</strong> (<code>srcs/external/stb_image.h</code>) — chargement d’images (textures) et export PNG.</li>
+            </ul>
+
+            <h3 id="install-deps">Installer SFML et X11 (Debian/Ubuntu)</h3>
+            <pre><code class="language-bash">sudo apt update
+sudo apt install clang make libsfml-dev libx11-dev</code></pre>
+            <div class="note"><p>Les paquets s’appellent <code>libsfml-dev</code> et <code>libx11-dev</code> sous Debian/Ubuntu. Adaptez selon votre distribution.</p></div>
+
+            <h2 id="compilation">Compilation</h2>
+            <p>Depuis la racine du dépôt&nbsp;:</p>
+            <pre><code class="language-bash">make</code></pre>
+            <p>La compilation utilise les drapeaux <code>-Wall -Wextra -Werror -std=c++17 -fsanitize=address</code>
+               (AddressSanitizer activé pour détecter les erreurs mémoire). Elle produit&nbsp;:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Artefact</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td><code>./raytracer</code></td><td>Exécutable principal (cœur du moteur).</td></tr>
+                    <tr><td><code>plugins/user_interface.so</code></td><td>Plugin d’interface graphique (SFML).</td></tr>
+                    <tr><td><code>plugins/renderer_default.so</code></td><td>Renderer « Default » (rendu complet vers image).</td></tr>
+                    <tr><td><code>plugins/renderer_viewport.so</code></td><td>Renderer « Viewport » (rendu progressif interactif).</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <div class="warn"><p>Les plugins sont chargés à l’exécution depuis le dossier <code>./plugins</code>.
+               Lancez donc <code>./raytracer</code> depuis la racine du projet, là où se trouve ce dossier.</p></div>
+
+            <h2 id="cibles-make">Cibles du Makefile</h2>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Commande</th><th>Effet</th></tr></thead>
+                <tbody>
+                    <tr><td><code>make</code> / <code>make all</code></td><td>Compile l’exécutable et les trois plugins.</td></tr>
+                    <tr><td><code>make clean</code></td><td>Supprime les fichiers objets <code>.o</code>.</td></tr>
+                    <tr><td><code>make fclean</code></td><td>Supprime les <code>.o</code>, l’exécutable et les plugins <code>.so</code>.</td></tr>
+                    <tr><td><code>make re</code></td><td>Équivalent à <code>fclean</code> puis <code>all</code> (recompilation complète).</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <h2 id="verifier">Vérifier l’installation</h2>
+            <pre><code class="language-bash"># Version
+./raytracer --version
+
+# Aide (liste des options)
+./raytracer --help
+
+# Premier rendu vers un PNG
+./raytracer -r sortie.png tests/configs/subject.json</code></pre>
+            <p>Un fichier <code>sortie.png</code> doit apparaître. Passez à la page
+               <a href="utilisation.html">Utilisation</a> pour la suite.</p>
+
+            <div class="note"><p><strong>Sous WSL&nbsp;:</strong> l’interface graphique force le rendu OpenGL
+               logiciel (Mesa/llvmpipe) pour rester stable avec plusieurs fenêtres. Un message
+               <code>Setting vertical sync not supported</code> peut apparaître&nbsp;; il est sans conséquence
+               (voir la <a href="faq.html">FAQ</a>).</p></div>
+        </article>
+
+        <nav class="toc" aria-label="Sommaire">
+            <strong>Sur cette page</strong>
+            <ul>
+                <li><a href="#prerequis">Prérequis</a></li>
+                <li class="sub"><a href="#deps-fournies">Dépendances fournies</a></li>
+                <li class="sub"><a href="#install-deps">Installer SFML / X11</a></li>
+                <li><a href="#compilation">Compilation</a></li>
+                <li><a href="#cibles-make">Cibles du Makefile</a></li>
+                <li><a href="#verifier">Vérifier l’installation</a></li>
+            </ul>
+        </nav>
+    </main>
+</div>
+
+<footer class="site-footer">
+    <span>Raytracer — documentation technique</span>
+    <span>C++17 · SFML · Architecture à plugins</span>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="assets/main.js"></script>
+</body>
+</html>

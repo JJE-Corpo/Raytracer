@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Référence — Raytracer</title>
+<meta name="description" content="Interfaces et classes principales du Raytracer.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+    <button class="menu-toggle" data-menu-toggle aria-label="Menu">☰</button>
+    <a class="brand" href="index.html"><span class="logo">◐</span> Raytracer <small>docs</small></a>
+    <nav>
+        <a href="index.html">Accueil</a>
+        <a href="installation.html">Installation</a>
+        <a href="utilisation.html">Utilisation</a>
+        <a href="architecture.html">Architecture</a>
+        <a href="fonctionnalites.html">Fonctionnalités</a>
+        <a href="reference.html" class="active">Référence</a>
+        <a href="faq.html">FAQ</a>
+    </nav>
+</header>
+
+<div class="layout">
+    <aside class="sidebar">
+        <h4>Démarrer</h4>
+        <ul>
+            <li><a href="index.html">Accueil</a></li>
+            <li><a href="installation.html">Installation</a></li>
+            <li><a href="utilisation.html">Utilisation</a></li>
+        </ul>
+        <h4>Comprendre</h4>
+        <ul>
+            <li><a href="architecture.html">Architecture</a></li>
+            <li><a href="fonctionnalites.html">Fonctionnalités</a></li>
+            <li><a href="reference.html" class="active">Référence des classes</a></li>
+        </ul>
+        <h4>Aide</h4>
+        <ul><li><a href="faq.html">FAQ</a></li></ul>
+    </aside>
+
+    <main class="content has-toc">
+        <article class="article">
+            <p class="crumbs"><a href="index.html">Accueil</a> / Référence</p>
+            <h1>Référence des classes</h1>
+            <p class="lead">Interfaces et classes principales du moteur. Les interfaces (préfixe <code>I…</code>) définissent les contrats&nbsp;; les implémentations concrètes vivent dans <code>srcs/core</code> et <code>srcs/plugins</code>.</p>
+
+            <h2 id="interfaces">Interfaces principales</h2>
+
+            <h3 id="iplugin"><code>IPlugin</code> <span class="pill gray">srcs/common/IPlugin.hpp</span></h3>
+            <p>Contrat de base de tout plugin dynamique.</p>
+            <dl class="api">
+                <dt>virtual PluginType getType() const</dt>
+                <dd>Retourne le type du plugin&nbsp;: <code>RENDERER</code> ou <code>USER_INTERFACE</code>.</dd>
+            </dl>
+
+            <h3 id="isceneRenderer"><code>ISceneRenderer</code> <span class="pill gray">srcs/common/ISceneRenderer.hpp</span></h3>
+            <p>Contrat d’un renderer (hérite de <code>IPlugin</code>).</p>
+            <dl class="api">
+                <dt>void renderScene(const IScene &amp;scene)</dt><dd>Rend la scène fournie.</dd>
+                <dt>void setPixel(int x, int y, Color color)</dt><dd>Écrit un pixel dans le tampon.</dd>
+                <dt>void stopRendering()</dt><dd>Interrompt le rendu en cours.</dd>
+                <dt>bool isRendering() const</dt><dd>Indique si un rendu est en cours.</dd>
+                <dt>int getCurrentSample() const</dt><dd>Numéro de l’échantillon courant (rendu progressif).</dd>
+                <dt>Render getRender() const</dt><dd>Retourne le rendu (dimensions + pixels).</dd>
+                <dt>std::string getRendererName() const</dt><dd>Nom du renderer (« Default », « Viewport »).</dd>
+            </dl>
+
+            <h3 id="iscene"><code>IScene</code> <span class="pill gray">srcs/common/scene/IScene.hpp</span></h3>
+            <p>Conteneur des données de scène et point d’intersection global.</p>
+            <dl class="api">
+                <dt>void addPrimitive(IPrimitive *) / void addLight(ILight *)</dt><dd>Ajoute une primitive / une lumière.</dd>
+                <dt>void addDefaultPrimitive(std::string type) / addDefaultLight(std::string type)</dt><dd>Crée un objet par défaut à partir d’un type.</dd>
+                <dt>ISceneObject *addGroup()</dt><dd>Crée un groupe (hiérarchie).</dd>
+                <dt>void reparent(child, newParent, index)</dt><dd>Change le parent d’un objet.</dd>
+                <dt>void removeObject(ISceneObject *)</dt><dd>Supprime un objet.</dd>
+                <dt>IPrimitive *convertToMesh(IPrimitive *)</dt><dd>Convertit une primitive en maillage éditable.</dd>
+                <dt>Material *getMaterial(name) / createMaterial(...)</dt><dd>Gestion des matériaux.</dd>
+                <dt>float get/set AmbientCoefficient / DiffuseCoefficient</dt><dd>Coefficients d’éclairage global.</dd>
+                <dt>ICamera &amp;getCamera() const</dt><dd>Accès à la caméra.</dd>
+                <dt>const std::vector&lt;IPrimitive*&gt; &amp;getPrimitives() const</dt><dd>Liste des primitives (idem lumières, matériaux, racines).</dd>
+                <dt>void buildBvh()</dt><dd>(Re)construit la structure d’accélération BVH.</dd>
+                <dt>bool intersect(ray, tMin, tMax, hit) const</dt><dd>Teste l’intersection la plus proche.</dd>
+            </dl>
+
+            <h3 id="icamera"><code>ICamera</code> <span class="pill gray">srcs/common/scene/ICamera.hpp</span></h3>
+            <p>Caméra perspective&nbsp;: paramètres et génération de rayons.</p>
+            <dl class="api">
+                <dt>Vector2i getResolution() / Vector3f getPosition() / getRotation() / double getFov()</dt><dd>Accès aux paramètres.</dd>
+                <dt>Vector3f getForward() / getRight()</dt><dd>Vecteurs de base de la caméra.</dd>
+                <dt>int getSamplesPerPixel() / double getPixelSamplesScale()</dt><dd>Échantillonnage anti-aliasing.</dd>
+                <dt>Ray generateRay(int i, int j) const</dt><dd>Génère le rayon primaire du pixel <code>(i, j)</code>.</dd>
+            </dl>
+
+            <h3 id="iprimitive"><code>IPrimitive</code> <span class="pill gray">srcs/common/scene/IPrimitive.hpp</span></h3>
+            <p>Contrat de toute surface intersectable (hérite de <code>ISceneObject</code>).</p>
+            <dl class="api">
+                <dt>bool intersect(const Ray&amp;, float tMin, float tMax, Intersection&amp;) const</dt><dd>Teste l’intersection dans <code>[tMin, tMax]</code> et remplit le <code>hit</code>.</dd>
+                <dt>AABB bounding_box() const</dt><dd>Boîte englobante (pour le BVH).</dd>
+                <dt>bool isFinite() const</dt><dd>Faux pour un objet infini (ex. un plan).</dd>
+                <dt>std::map&lt;std::string, std::pair&lt;std::string, PropertyType&gt;&gt; getProperties() const</dt><dd>Propriétés éditables (nom → valeur + type).</dd>
+                <dt>void setPropertyFloat(const std::string &amp;key, float value)</dt><dd>Modifie une propriété scalaire.</dd>
+                <dt>const Material *getMaterial() / void setMaterial(...)</dt><dd>Matériau associé.</dd>
+            </dl>
+            <p>Types de propriété (<code>PropertyType</code>)&nbsp;: <code>COLOR</code>, <code>VECTOR3F</code>,
+               <code>VECTOR3I</code>, <code>VECTOR2F</code>, <code>VECTOR2I</code>, <code>FLOAT</code>,
+               <code>INT</code>, <code>STRING</code>.</p>
+
+            <h3 id="ieditable"><code>IEditablePrimitive</code> <span class="pill gray">srcs/common/scene/IEditablePrimitive.hpp</span></h3>
+            <p>Capacité optionnelle&nbsp;: une primitive éditable au sommet (Triangle, Mesh). Découverte à
+               l’exécution via <code>dynamic_cast&lt;IEditablePrimitive*&gt;</code>, ce qui laisse
+               <code>IPrimitive</code> inchangé.</p>
+
+            <h3 id="ilight"><code>ILight</code> <span class="pill gray">srcs/common/scene/ILight.hpp</span></h3>
+            <dl class="api">
+                <dt>LightKind getKind() const</dt><dd><code>POINT</code>, <code>DIRECTIONAL</code> ou <code>UNKNOWN</code>.</dd>
+                <dt>float getIntensity() / void setIntensity(float)</dt><dd>Intensité.</dd>
+                <dt>ColorF getColorF() / void setColorF(...)</dt><dd>Couleur.</dd>
+            </dl>
+
+            <h3 id="iplugin-loader"><code>IPluginLoader</code> <span class="pill gray">srcs/common/IPluginLoader.hpp</span></h3>
+            <p>Contrat du chargeur de plugins&nbsp;: <code>getPlugins()</code>, <code>getPlugins(type)</code>,
+               <code>unloadAll()</code>.</p>
+
+            <h2 id="classes">Classes principales</h2>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Classe</th><th>Emplacement</th><th>Rôle</th></tr></thead>
+                <tbody>
+                    <tr><td><code>Core</code></td><td><code>srcs/core/Core.*</code></td><td>Orchestration&nbsp;: plugins, scène, rendu, UI, historique, cluster.</td></tr>
+                    <tr><td><code>PluginLoader</code></td><td><code>srcs/core/PluginLoader.*</code></td><td><code>dlopen</code>/<code>dlclose</code>, résolution <code>create_plugin</code>/<code>destroy_plugin</code>.</td></tr>
+                    <tr><td><code>Scene</code></td><td><code>srcs/core/scene/Scene.*</code></td><td>Implémentation de <code>IScene</code>&nbsp;: primitives, lumières, matériaux, BVH.</td></tr>
+                    <tr><td><code>SceneParser</code></td><td><code>srcs/core/scene/SceneParser.*</code></td><td>Lecture d’un JSON en objets de scène.</td></tr>
+                    <tr><td><code>SceneRegister</code></td><td><code>srcs/core/scene/SceneRegister.*</code></td><td>Sérialisation de la scène en JSON.</td></tr>
+                    <tr><td><code>SceneObjectBuilder</code></td><td><code>…/builder/</code></td><td>Répartiteur primitive/lumière.</td></tr>
+                    <tr><td><code>PrimitiveBuilder</code> / <code>LightBuilder</code></td><td><code>…/builder/</code></td><td>Construction concrète des objets.</td></tr>
+                    <tr><td><code>SceneBuilder</code></td><td><code>…/builder/</code></td><td>Agrège caméra + matériaux + objets → <code>Scene</code>.</td></tr>
+                    <tr><td><code>PrimitiveFactory</code> / <code>LightFactory</code></td><td><code>…/factory/</code></td><td>Création par défaut selon une chaîne de type.</td></tr>
+                    <tr><td><code>Camera</code></td><td><code>…/scene/camera/</code></td><td>Caméra perspective (implémente <code>ICamera</code>).</td></tr>
+                    <tr><td><code>BVHNode</code></td><td><code>…/scene/bvh/</code></td><td>Nœud de la hiérarchie de volumes englobants.</td></tr>
+                    <tr><td><code>Material</code> / <code>MaterialLibrary</code></td><td><code>srcs/common/</code></td><td>Paramètres de matériau et bibliothèque persistante.</td></tr>
+                    <tr><td><code>ObjParser</code></td><td><code>srcs/core/obj/</code></td><td>Import de fichiers Wavefront <code>.obj</code>.</td></tr>
+                    <tr><td><code>RenderExporter</code></td><td><code>srcs/core/utils/</code></td><td>Export du rendu en PNG (via stb_image).</td></tr>
+                    <tr><td><code>FileObserver</code></td><td><code>srcs/core/utils/</code></td><td>Surveille le fichier de scène pour rechargement à chaud.</td></tr>
+                    <tr><td><code>ClusterModule</code></td><td><code>srcs/core/cluster/</code></td><td>Rendu distribué&nbsp;: <code>startServer</code>, <code>joinCluster</code>, <code>leaveCluster</code>.</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <h2 id="math">Types mathématiques &amp; utilitaires</h2>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Type</th><th>Emplacement</th><th>Rôle</th></tr></thead>
+                <tbody>
+                    <tr><td><code>Vector3f</code>, <code>Vector2i</code>…</td><td><code>srcs/common/Vector.hpp</code></td><td>Vecteurs.</td></tr>
+                    <tr><td><code>Matrix</code></td><td><code>srcs/common/Matrix.hpp</code></td><td>Transformations.</td></tr>
+                    <tr><td><code>Ray</code></td><td><code>srcs/common/Ray.hpp</code></td><td>Rayon <code>P(t) = O + t·D</code> avec bornes <code>tMin/tMax</code>.</td></tr>
+                    <tr><td><code>AABB</code></td><td><code>srcs/common/AABB.hpp</code></td><td>Boîte englobante alignée sur les axes.</td></tr>
+                    <tr><td><code>Color</code> / <code>ColorF</code></td><td><code>srcs/common/Color.hpp</code></td><td>Couleurs (entière 0–255 / flottante).</td></tr>
+                    <tr><td><code>Intersection</code></td><td><code>srcs/common/Intersection.hpp</code></td><td>Enregistrement d’un impact (t, point, normale, matériau).</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <div class="note"><p>Les signatures ci-dessus reprennent fidèlement les en-têtes d’interface du
+               dépôt. Pour les détails d’implémentation, se reporter aux fichiers correspondants et à la
+               documentation Markdown du dossier <code>docs/</code>.</p></div>
+        </article>
+
+        <nav class="toc" aria-label="Sommaire">
+            <strong>Sur cette page</strong>
+            <ul>
+                <li><a href="#interfaces">Interfaces</a></li>
+                <li class="sub"><a href="#iplugin">IPlugin</a></li>
+                <li class="sub"><a href="#isceneRenderer">ISceneRenderer</a></li>
+                <li class="sub"><a href="#iscene">IScene</a></li>
+                <li class="sub"><a href="#icamera">ICamera</a></li>
+                <li class="sub"><a href="#iprimitive">IPrimitive</a></li>
+                <li class="sub"><a href="#ilight">ILight</a></li>
+                <li><a href="#classes">Classes principales</a></li>
+                <li><a href="#math">Maths &amp; utilitaires</a></li>
+            </ul>
+        </nav>
+    </main>
+</div>
+
+<footer class="site-footer">
+    <span>Raytracer — documentation technique</span>
+    <span>C++17 · SFML · Architecture à plugins</span>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="assets/main.js"></script>
+</body>
+</html>

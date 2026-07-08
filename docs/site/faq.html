@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FAQ — Raytracer</title>
+<meta name="description" content="Problèmes courants et solutions du Raytracer.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+    <button class="menu-toggle" data-menu-toggle aria-label="Menu">☰</button>
+    <a class="brand" href="index.html"><span class="logo">◐</span> Raytracer <small>docs</small></a>
+    <nav>
+        <a href="index.html">Accueil</a>
+        <a href="installation.html">Installation</a>
+        <a href="utilisation.html">Utilisation</a>
+        <a href="architecture.html">Architecture</a>
+        <a href="fonctionnalites.html">Fonctionnalités</a>
+        <a href="reference.html">Référence</a>
+        <a href="faq.html" class="active">FAQ</a>
+    </nav>
+</header>
+
+<div class="layout">
+    <aside class="sidebar">
+        <h4>Démarrer</h4>
+        <ul>
+            <li><a href="index.html">Accueil</a></li>
+            <li><a href="installation.html">Installation</a></li>
+            <li><a href="utilisation.html">Utilisation</a></li>
+        </ul>
+        <h4>Comprendre</h4>
+        <ul>
+            <li><a href="architecture.html">Architecture</a></li>
+            <li><a href="fonctionnalites.html">Fonctionnalités</a></li>
+            <li><a href="reference.html">Référence des classes</a></li>
+        </ul>
+        <h4>Aide</h4>
+        <ul><li><a href="faq.html" class="active">FAQ</a></li></ul>
+    </aside>
+
+    <main class="content has-toc">
+        <article class="article">
+            <p class="crumbs"><a href="index.html">Accueil</a> / FAQ</p>
+            <h1>FAQ — problèmes courants</h1>
+            <p class="lead">Les situations les plus fréquentes et comment les résoudre.</p>
+
+            <h2 id="plugins">Aucun renderer / interface ne se charge</h2>
+            <p>Les plugins <code>.so</code> sont cherchés dans le dossier <code>./plugins</code> relatif au
+               répertoire courant. Lancez toujours le programme depuis la <strong>racine du projet</strong>&nbsp;:</p>
+            <pre><code class="language-bash">cd /chemin/vers/raytracer_V2
+./raytracer tests/configs/subject.json</code></pre>
+            <p>Si <code>./plugins</code> est vide, (re)compilez avec <code>make</code>. Un rendu correct affiche&nbsp;:
+               <code>Loaded 2 renderer plugin(s)</code>.</p>
+
+            <h2 id="font">« Failed to load font »</h2>
+            <p>L’interface charge <code>assets/font.ttf</code> par un chemin relatif. Lancez également depuis la
+               racine du projet, où se trouve le dossier <code>assets/</code>.</p>
+
+            <h2 id="vsync">« Setting vertical sync not supported »</h2>
+            <p>Message informatif de SFML, fréquent sous WSL où le rendu OpenGL est <strong>logiciel</strong>
+               (Mesa/llvmpipe). Il est <strong>sans conséquence</strong> sur le rendu.</p>
+
+            <h2 id="leaks">Un rapport « LeakSanitizer: detected memory leaks » à la fermeture</h2>
+            <p>Le projet est compilé avec <strong>AddressSanitizer</strong> (<code>-fsanitize=address</code>),
+               qui inclut un détecteur de fuites exécuté à la fermeture. Si le rapport pointe des adresses
+               <code>&lt;unknown module&gt;</code> issues de <code>calloc</code> sans aucune image de la pile dans
+               le code du projet, il s’agit d’une petite allocation unique du <strong>pilote graphique
+               Mesa/swrast</strong> (rendu logiciel sous WSL) — extérieure au moteur.</p>
+            <p>Ces allocations de pilote ne sont pas symbolisées et ne peuvent donc pas être filtrées par nom.
+               Pour ne détecter que les fuites du code applicatif (qui, elles, doivent être nulles), il suffit
+               d’auditer en mode <em>headless</em> qui n’ouvre pas de contexte graphique&nbsp;:</p>
+            <pre><code class="language-bash"># Audit des fuites du moteur (sans interface)
+ASAN_OPTIONS=detect_leaks=1 ./raytracer -r sortie.png tests/configs/subject.json
+
+# Désactiver le rapport de fuites pour une session graphique
+ASAN_OPTIONS=detect_leaks=0 ./raytracer tests/configs/subject.json</code></pre>
+            <p>Les autres vérifications d’AddressSanitizer (use-after-free, débordements, double-free…) restent
+               actives dans tous les cas.</p>
+
+            <h2 id="scene-invalide">« object "…" : … » ou « Missing camera / objects »</h2>
+            <p>Le <code>SceneParser</code> signale les problèmes du fichier JSON sur la sortie d’erreur.
+               Vérifiez que&nbsp;:</p>
+            <ul>
+                <li>le fichier est un JSON <strong>valide</strong> et se termine par <code>.json</code>&nbsp;;</li>
+                <li>les sections <code>camera</code> et <code>objects</code> sont présentes&nbsp;;</li>
+                <li>la caméra contient <code>resolution</code> (<code>[largeur, hauteur]</code>) et <code>fieldOfView</code>&nbsp;;</li>
+                <li>chaque objet possède un <code>type</code> valide (voir <a href="utilisation.html#objects">les types</a>).</li>
+            </ul>
+            <div class="note"><p>Les clés inconnues d’un objet sont silencieusement ignorées. Un paramètre mal
+               orthographié (ex. <code>normal</code> au lieu de <code>axis</code> pour un plan) n’est donc pas
+               signalé&nbsp;: l’objet prend simplement ses valeurs par défaut.</p></div>
+
+            <h2 id="materiau">Mon matériau ne s’applique pas</h2>
+            <p>Un objet référence un matériau par son <strong>nom</strong> (<code>"material": "Mon matériau"</code>).
+               Ce nom doit correspondre exactement à une entrée de la section <code>materials</code>. Sinon, le
+               parseur signale <code>Unknown material "…"</code>.</p>
+
+            <h2 id="rendu-sombre">Les objets métalliques ou en verre paraissent très sombres</h2>
+            <p>Le moteur ne dispose pas d’environnement (skybox)&nbsp;: un matériau très réfléchissant ou
+               transparent renvoie donc principalement du « vide » sombre là où il n’y a pas de géométrie ou de
+               lumière à réfléchir. Ajoutez de la géométrie et des lumières autour de l’objet, ou réduisez
+               <code>reflectivity</code>/<code>transparency</code> pour un rendu plus lisible.</p>
+
+            <h2 id="options">« --render cannot be combined with --server » et autres erreurs d’options</h2>
+            <p>Certaines options sont incompatibles&nbsp;: <code>--render</code> (headless) ne se combine pas avec
+               <code>--server</code>/<code>--connect</code>, et <code>--server</code>/<code>--connect</code> sont
+               exclusifs. Une option inconnue provoque <code>Error: unknown option '…'</code>. Utilisez
+               <code>--help</code> pour la liste.</p>
+
+            <h2 id="wsl">Fenêtres / interface sous WSL</h2>
+            <p>Sous WSL, l’interface rend le fenêtrage thread-safe (<code>XInitThreads</code>) et force le rendu
+               OpenGL logiciel pour supporter plusieurs fenêtres (pop-ups) sans planter. Assurez-vous que WSLg
+               (ou un serveur X) est disponible et que <code>DISPLAY</code> est défini.</p>
+
+            <h2 id="obj">Un maillage <code>.obj</code> ne se charge pas</h2>
+            <p>Vérifiez que le chemin de la clé <code>file</code> est correct <strong>par rapport au répertoire
+               d’où vous lancez</strong> le programme (des exemples sont fournis dans <code>tests/obj/</code>).
+               Les faces sont triangulées et un BVH local est construit&nbsp;; pour de très gros maillages, la
+               première construction peut prendre un instant.</p>
+        </article>
+
+        <nav class="toc" aria-label="Sommaire">
+            <strong>Sur cette page</strong>
+            <ul>
+                <li><a href="#plugins">Plugins non chargés</a></li>
+                <li><a href="#font">Police introuvable</a></li>
+                <li><a href="#vsync">Vertical sync</a></li>
+                <li><a href="#leaks">Rapport de fuites</a></li>
+                <li><a href="#scene-invalide">Scène invalide</a></li>
+                <li><a href="#materiau">Matériau non appliqué</a></li>
+                <li><a href="#rendu-sombre">Rendu sombre</a></li>
+                <li><a href="#options">Erreurs d’options</a></li>
+                <li><a href="#wsl">WSL</a></li>
+                <li><a href="#obj">Maillage .obj</a></li>
+            </ul>
+        </nav>
+    </main>
+</div>
+
+<footer class="site-footer">
+    <span>Raytracer — documentation technique</span>
+    <span>C++17 · SFML · Architecture à plugins</span>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="assets/main.js"></script>
+</body>
+</html>
