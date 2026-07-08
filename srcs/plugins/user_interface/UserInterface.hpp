@@ -29,6 +29,7 @@ namespace rc
 
             std::thread _uiThread;
             std::atomic<bool> _running;
+            bool _destroyed = false;
 
             ICoreAccess *_coreAccess;
 

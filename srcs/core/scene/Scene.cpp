@@ -334,9 +334,11 @@ namespace rc
         }
         const Vector3f center = (mn + mx) * 0.5f;
 
-        // Read what we need before removeObject() frees the primitive.
+        // Read the material before removeObject() frees the primitive. The baked
+        // object is named "Mesh" rather than inheriting the source primitive's
+        // name, so the UI reflects that it is now a mesh.
         const Material *material = primitive->getMaterial();
-        const std::string name = primitive->getName();
+        const std::string name = "Mesh";
 
         // Build the mesh directly in memory from the tessellation -- no .obj file
         // is written; the geometry is serialized inline with the scene instead.

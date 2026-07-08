@@ -164,6 +164,11 @@ namespace rc
 
     void UserInterface::destroy()
     {
+        // Idempotent: Core::unloadUserInterface() calls this on shutdown, then
+        // the PluginLoader deletes the instance and ~UserInterface calls it again.
+        if (this->_destroyed)
+            return;
+        this->_destroyed = true;
         this->_running = false;
         if (this->_uiThread.joinable())
             this->_uiThread.join();

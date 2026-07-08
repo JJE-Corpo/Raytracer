@@ -12,7 +12,11 @@ namespace rc
 {
     PluginLoader::~PluginLoader()
     {
-
+        // Destroy every plugin instance (running its destructor, e.g. the UI's
+        // font/panels/render-textures) and dlclose its .so. Without this the
+        // plugin objects live until process exit and AddressSanitizer reports
+        // them as leaks on shutdown.
+        this->unloadAll();
     }
 
     bool PluginLoader::load(const std::string &path)

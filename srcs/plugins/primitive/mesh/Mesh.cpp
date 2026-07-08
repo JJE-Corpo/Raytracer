@@ -343,11 +343,10 @@ namespace rc
         };
     }
 
-    void Mesh::setPropertyFloat(const std::string &key, float value)
+    void Mesh::setPropertyFloat(const std::string &, float)
     {
-        (void)value;
-        std::cerr << "Could not update " << this->_name << " (" << this->getTypeName()
-                  << ") property : " << key << " : Unknown property" << std::endl;
+        // A mesh has no scalar float property (its geometry is per-vertex), so a
+        // float-property update is a harmless no-op -- never spam stderr for it.
     }
 
     Vector3f Mesh::getPosition() const
