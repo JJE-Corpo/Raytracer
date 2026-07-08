@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FAQ — Raytracer</title>
+<meta name="description" content="Common problems and solutions for the Raytracer: plugins, font, WSL, AddressSanitizer leaks, invalid scenes, materials, options.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+    <button class="menu-toggle" data-menu-toggle aria-label="Menu">☰</button>
+    <a class="brand" href="index.en.html"><span class="logo">◐</span> Raytracer <small>docs</small></a>
+    <div class="search">
+        <input id="search-input" type="search" autocomplete="off" spellcheck="false" aria-label="Search">
+        <div id="search-results" class="search-results" role="listbox"></div>
+    </div>
+    <a class="lang-toggle" href="faq.html" aria-label="Français" title="Français">🌐 FR</a>
+</header>
+
+<div class="layout">
+    <aside class="sidebar">
+            <h4>Get started</h4>
+            <ul>
+                <li><a href="index.en.html">Home</a></li>
+                <li><a href="installation.en.html">Installation</a></li>
+                <li><a href="utilisation.en.html">Usage</a></li>
+            </ul>
+            <h4>Scene &amp; content</h4>
+            <ul>
+                <li><a href="format-scene.en.html">Scene format</a></li>
+                <li><a href="primitives.en.html">Primitives</a></li>
+                <li><a href="materiaux.en.html">Materials</a></li>
+                <li><a href="fonctionnalites.en.html">Features</a></li>
+            </ul>
+            <h4>Engine</h4>
+            <ul>
+                <li><a href="architecture.en.html">Architecture</a></li>
+                <li><a href="rendu.en.html">Rendering pipeline</a></li>
+                <li><a href="plugins.en.html">Plugin system</a></li>
+                <li><a href="cluster.en.html">Cluster rendering</a></li>
+            </ul>
+            <h4>Interface</h4>
+            <ul>
+                <li><a href="interface.en.html">Graphical interface</a></li>
+            </ul>
+            <h4>Reference</h4>
+            <ul>
+                <li><a href="reference.en.html">Class reference</a></li>
+                <li><a href="faq.en.html" class="active">FAQ</a></li>
+            </ul>
+        </aside>
+
+    <main class="content has-toc">
+        <article class="article">
+            <p class="crumbs"><a href="index.en.html">Home</a> / FAQ</p>
+            <h1>FAQ — common problems</h1>
+            <p class="lead">The situations most often encountered when building, launching and rendering, with the exact messages the engine prints and how to fix them.</p>
+
+            <h2 id="plugins">No renderer / interface loads</h2>
+            <p>The <code>.so</code> plugins are looked up in the <code>./plugins</code> directory relative to the
+               <strong>current working directory</strong>, not to the executable’s location. If you launch the
+               program from another folder, that path does not exist and no renderer or interface is loaded. Always
+               run the binary from the <strong>project root</strong>:</p>
+            <pre><code class="language-bash">cd /path/to/raytracer_V2
+./raytracer tests/configs/subject.json</code></pre>
+            <p>If <code>./plugins</code> is missing or empty, (re)build with <code>make</code>: the build produces
+               both <code>./raytracer</code> and the <code>.so</code> plugins in <code>./plugins</code>. A correct
+               load prints to standard output:</p>
+            <pre><code class="language-text">Loaded 2 renderer plugin(s)</code></pre>
+            <div class="tip"><p>The reported count reflects the plugins actually found in <code>./plugins</code>.
+               If it shows <code>0</code>, the directory is empty or cannot be found from the launch
+               directory.</p></div>
+
+            <h2 id="font">“Failed to load font”</h2>
+            <p>The graphical interface loads its font from <code>assets/font.ttf</code> using a
+               <strong>relative path</strong>. This message appears when the program is launched from a folder
+               where <code>assets/</code> does not exist. The fix is the same as for plugins: run the program from
+               the <strong>project root</strong>, where both <code>assets/</code> and <code>plugins/</code>
+               live.</p>
+
+            <h2 id="vsync">“Setting vertical sync not supported”</h2>
+            <p>This is an <strong>informational SFML message</strong> with no effect on rendering. It is common
+               under <strong>WSL</strong>, where OpenGL display goes through <strong>software</strong> rendering
+               (Mesa/llvmpipe), which does not support vertical sync. You can safely ignore it: the image displays
+               and renders normally.</p>
+
+            <h2 id="leaks">A “LeakSanitizer: detected memory leaks” report on exit</h2>
+            <p>The project is built with <strong>AddressSanitizer</strong> (<code>-fsanitize=address</code> in the
+               <code>Makefile</code>), which bundles a leak detector (LeakSanitizer) run automatically when the
+               program exits.</p>
+            <p>If the report points at <code>&lt;unknown module&gt;</code> addresses coming from <code>calloc</code>,
+               <strong>with no stack frame belonging to the project code</strong>, it is a single small allocation
+               from the <strong>Mesa/swrast graphics driver</strong> (software rendering under WSL),
+               <strong>external to the engine</strong>. These driver allocations are not symbolized and therefore
+               cannot be filtered by function name.</p>
+            <p>To audit only the application code’s leaks — which must be zero — run a render in
+               <em>headless</em> mode: it opens no graphics context, so no driver allocation occurs.</p>
+            <pre><code class="language-bash"># Audit engine leaks (no graphical interface)
+ASAN_OPTIONS=detect_leaks=1 ./raytracer -r sortie.png scene.json</code></pre>
+            <p>For a <strong>graphical</strong> session, you can disable just the leak report so the driver
+               allocation does not get in the way:</p>
+            <pre><code class="language-bash"># Disable the leak report for a graphical session
+ASAN_OPTIONS=detect_leaks=0 ./raytracer scene.json</code></pre>
+            <div class="note"><p><code>detect_leaks=0</code> disables <strong>only</strong> the leak detector.
+               AddressSanitizer’s other checks (use-after-free, buffer overflows, double-free…) remain
+               <strong>active</strong> in all cases.</p></div>
+
+            <h2 id="scene-invalide">“object "…": …” or “Missing camera / objects”</h2>
+            <p>The <code>SceneParser</code> reports scene-file problems on standard error. The key structural
+               messages include:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Message</th><th>Cause</th></tr></thead>
+                <tbody>
+                    <tr><td><code>Missing camera section</code></td><td>The <code>camera</code> section is absent from the JSON.</td></tr>
+                    <tr><td><code>Missing objects section</code></td><td>The <code>objects</code> section is absent from the JSON.</td></tr>
+                    <tr><td><code>Missing camera resolution</code></td><td>The camera has no <code>resolution</code> key.</td></tr>
+                    <tr><td><code>Camera resolution must be [width, height]</code></td><td><code>resolution</code> is not an array of 2 numbers.</td></tr>
+                    <tr><td><code>Missing camera fov</code></td><td>The camera has no <code>fieldOfView</code> key.</td></tr>
+                    <tr><td><code>Missing object type</code></td><td>An object has no <code>type</code> key (string).</td></tr>
+                    <tr><td><code>object "…": Unknown or incomplete object definition</code></td><td>The <code>type</code> is unknown or required fields are missing.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p>So make sure that:</p>
+            <ul>
+                <li>the file is <strong>valid</strong> JSON and has the <code>.json</code> extension
+                    (otherwise <code>INVALID_FILE_EXTENSION</code>);</li>
+                <li>the <code>camera</code> and <code>objects</code> sections are present;</li>
+                <li>the camera provides <code>resolution</code> (<code>[width, height]</code>) and
+                    <code>fieldOfView</code>, which are <strong>required</strong>;</li>
+                <li>every object has a <strong>valid</strong> <code>type</code>
+                    (see <a href="utilisation.en.html#objects">the list of types</a>).</li>
+            </ul>
+            <div class="note"><p>Unknown keys on an object are <strong>silently ignored</strong>: the parser only
+               processes the fields it knows. A misspelled parameter (e.g. <code>normal</code> instead of
+               <code>axis</code> for a plane) therefore raises no error: the object simply falls back to its default
+               values.</p></div>
+
+            <h2 id="materiau">My material is not applied</h2>
+            <p>An object references a material by its <strong>name</strong>
+               (<code>"material": "My material"</code>). This name must match <strong>exactly</strong> a
+               <code>name</code> entry in the <code>materials</code> section. Otherwise the parser prints to
+               standard error:</p>
+            <pre><code class="language-text">object "…" material: Unknown material "…"</code></pre>
+            <p>and the object is skipped. Check the name’s spelling and case, and that the material is declared in
+               <code>materials</code> before being referenced.</p>
+
+            <h2 id="rendu-sombre">Metallic or glass objects look very dark</h2>
+            <p>The engine has <strong>no environment (skybox)</strong>: a highly reflective or transparent material
+               therefore mostly returns dark “emptiness” wherever there is no geometry or light to reflect or
+               refract. Two remedies:</p>
+            <ul>
+                <li>add <strong>geometry and lights around</strong> the object, so it has something to reflect;</li>
+                <li>or lower the material’s <code>reflectivity</code>/<code>transparency</code> for a more readable
+                    result.</li>
+            </ul>
+
+            <h2 id="options">“--render cannot be combined with --server” and other option errors</h2>
+            <p>Some command-line options are <strong>mutually exclusive</strong>. The exact messages printed to
+               standard error are:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Message</th><th>Cause</th></tr></thead>
+                <tbody>
+                    <tr><td><code>Error: --render (headless) cannot be combined with --server or --connect.</code></td><td>Headless mode (<code>-r</code>/<code>--render</code>) cannot be combined with the cluster.</td></tr>
+                    <tr><td><code>Error: --server and --connect cannot be used together.</code></td><td><code>--server</code> and <code>--connect</code> are exclusive.</td></tr>
+                    <tr><td><code>Error: --connect requires an IP address and a PORT.</code></td><td><code>--connect</code> expects two arguments: <code>IP</code> then <code>PORT</code>.</td></tr>
+                    <tr><td><code>Error: unknown option '…'. Use --help for usage.</code></td><td>Unrecognized option.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p>Use <code>--help</code> to print the full usage and examples.</p>
+
+            <h2 id="wsl">Windows / interface under WSL</h2>
+            <p>Under WSL, the interface makes windowing <strong>thread-safe</strong> (<code>XInitThreads</code>) and
+               forces <strong>software OpenGL rendering</strong> so that multiple windows (pop-ups) can open without
+               crashing. If the interface does not open:</p>
+            <ul>
+                <li>make sure <strong>WSLg</strong> (or an X server) is available;</li>
+                <li>check that the <code>DISPLAY</code> variable is actually <strong>set</strong>.</li>
+            </ul>
+
+            <h2 id="obj">An <code>.obj</code> mesh does not load</h2>
+            <p>Check that the <code>file</code> key’s path is correct <strong>relative to the directory you launch
+               from</strong>, not relative to the scene file: a relative path is resolved from the current working
+               directory. Example meshes are provided in <code>tests/obj/</code>.</p>
+            <p>On import, faces are triangulated and a <strong>local BVH</strong> is built for the mesh; for very
+               large models, this first build may take a moment.</p>
+        </article>
+
+        <nav class="toc" aria-label="On this page">
+            <strong>On this page</strong>
+            <ul>
+                <li><a href="#plugins">Plugins not loaded</a></li>
+                <li><a href="#font">Font not found</a></li>
+                <li><a href="#vsync">Vertical sync</a></li>
+                <li><a href="#leaks">Leak report</a></li>
+                <li><a href="#scene-invalide">Invalid scene</a></li>
+                <li><a href="#materiau">Material not applied</a></li>
+                <li><a href="#rendu-sombre">Dark render</a></li>
+                <li><a href="#options">Option errors</a></li>
+                <li><a href="#wsl">WSL</a></li>
+                <li><a href="#obj">.obj mesh</a></li>
+            </ul>
+        </nav>
+    </main>
+</div>
+
+<footer class="site-footer">
+    <span>Raytracer — technical documentation</span>
+    <span>C++17 · SFML · Plugin architecture</span>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="assets/search-index.js"></script>
+<script src="assets/search.js"></script>
+<script src="assets/main.js"></script>
+</body>
+</html>

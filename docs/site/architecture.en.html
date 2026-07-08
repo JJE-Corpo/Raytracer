@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Architecture — Raytracer</title>
+<meta name="description" content="Code organization, modules, plugins, tools and rendering pipeline of the Raytracer.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+    <button class="menu-toggle" data-menu-toggle aria-label="Menu">☰</button>
+    <a class="brand" href="index.en.html"><span class="logo">◐</span> Raytracer <small>docs</small></a>
+    <div class="search">
+        <input id="search-input" type="search" autocomplete="off" spellcheck="false" aria-label="Search">
+        <div id="search-results" class="search-results" role="listbox"></div>
+    </div>
+    <a class="lang-toggle" href="architecture.html" aria-label="Français" title="Français">🌐 FR</a>
+</header>
+
+<div class="layout">
+    <aside class="sidebar">
+            <h4>Get started</h4>
+            <ul>
+                <li><a href="index.en.html">Home</a></li>
+                <li><a href="installation.en.html">Installation</a></li>
+                <li><a href="utilisation.en.html">Usage</a></li>
+            </ul>
+            <h4>Scene &amp; content</h4>
+            <ul>
+                <li><a href="format-scene.en.html">Scene format</a></li>
+                <li><a href="primitives.en.html">Primitives</a></li>
+                <li><a href="materiaux.en.html">Materials</a></li>
+                <li><a href="fonctionnalites.en.html">Features</a></li>
+            </ul>
+            <h4>Engine</h4>
+            <ul>
+                <li><a href="architecture.en.html" class="active">Architecture</a></li>
+                <li><a href="rendu.en.html">Rendering pipeline</a></li>
+                <li><a href="plugins.en.html">Plugin system</a></li>
+                <li><a href="cluster.en.html">Cluster rendering</a></li>
+            </ul>
+            <h4>Interface</h4>
+            <ul>
+                <li><a href="interface.en.html">Graphical interface</a></li>
+            </ul>
+            <h4>Reference</h4>
+            <ul>
+                <li><a href="reference.en.html">Class reference</a></li>
+                <li><a href="faq.en.html">FAQ</a></li>
+            </ul>
+        </aside>
+
+    <main class="content has-toc">
+        <article class="article">
+            <p class="crumbs"><a href="index.en.html">Home</a> / Architecture</p>
+            <h1>Architecture</h1>
+            <p class="lead">The codebase is organized around a central <code>Core</code> that orchestrates scene loading, plugin loading, rendering, the optional UI and the optional cluster mode. The design favors <strong>interfaces</strong> (testability, extensibility) and cleanly separates parsing, data ownership and rendering logic.</p>
+
+            <h2 id="couches">Layered view</h2>
+            <p>Each responsibility lives in a dedicated module. The table below maps every module to its location in the sources and to its role.</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Module</th><th>Location</th><th>Role</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Entry point</strong></td><td><code>main.cpp</code>, <code>srcs/core/Core.*</code></td><td>Orchestrates the full lifecycle.</td></tr>
+                    <tr><td><strong>Scene load / save</strong></td><td><code>srcs/core/scene/SceneParser.*</code>, <code>builder/*</code>, <code>factory/*</code>, <code>SceneRegister.*</code></td><td>JSON reading, typed construction, reverse serialization.</td></tr>
+                    <tr><td><strong>Scene data</strong></td><td><code>srcs/core/scene/Scene.*</code>, <code>bvh/*</code></td><td>Camera, primitives, lights, materials, BVH acceleration structure.</td></tr>
+                    <tr><td><strong>Plugins</strong></td><td><code>srcs/core/PluginLoader.*</code>, <code>srcs/common/IPlugin.hpp</code>, <code>IPluginLoader.hpp</code></td><td>Dynamic loading of <code>.so</code> libraries.</td></tr>
+                    <tr><td><strong>Renderers / UI</strong></td><td><code>srcs/plugins/renderer/*</code>, <code>srcs/plugins/user_interface/*</code></td><td>Rendering and graphical interface plugins.</td></tr>
+                    <tr><td><strong>Geometry / lights</strong></td><td><code>srcs/plugins/primitive/*</code>, <code>srcs/plugins/light/*</code></td><td>Concrete primitive and light implementations.</td></tr>
+                    <tr><td><strong>Cluster (optional)</strong></td><td><code>srcs/core/cluster/*</code>, <code>srcs/common/cluster/*</code></td><td>Distributed client/server rendering.</td></tr>
+                    <tr><td><strong>Tools &amp; utilities</strong></td><td><code>srcs/core/obj/*</code>, <code>srcs/core/utils/*</code>, <code>srcs/core/exceptions/*</code>, <code>srcs/common/*</code></td><td>OBJ import, PNG export, file watching, exceptions, math.</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <h2 id="diagramme">Dependency diagram</h2>
+            <p>Overview of the main runtime dependencies:</p>
+            <pre><code class="language-text">main.cpp
+   │
+   ▼
+ Core ───────────────► PluginLoader ───► plugins/*.so ──┬─► Renderer plugins (default, viewport)
+   │                                                    └─► UI plugin (user_interface)
+   │
+   ├─► SceneParser ──┬─► parseCamera
+   │        │        ├─► parseMaterials
+   │        │        └─► parseObjects ──► SceneObjectBuilder ──┬─► PrimitiveBuilder
+   │        │                                                  └─► LightBuilder
+   │        ├─► ObjParser (.obj import)
+   │        └─► SceneBuilder ──► Scene ──► BVHNode / buildBvh()
+   │
+   ├─► ISceneRenderer (active) ──► Scene
+   ├─► RenderExporter ──► render.png
+   ├─► SceneRegister ──► export .json
+   ├─► FileObserver ──► hot reload of the scene file
+   └─► ClusterModule (optional) ──► server / client ──► PacketFactory</code></pre>
+
+            <h2 id="core">The Core</h2>
+            <p>The <code>Core</code> (<code>srcs/core/Core.*</code>) implements <code>ICoreAccess</code> and coordinates
+               the entire lifecycle. In six main steps:</p>
+            <ol>
+                <li><strong>Load plugins</strong> — <code>loadPlugins()</code> scans <code>./plugins</code>, then
+                    <code>loadRenderers()</code> and <code>loadUserInterface()</code> retrieve instances by type.</li>
+                <li><strong>Parse &amp; build</strong> — the <code>.json</code> file is parsed and the scene is built
+                    through the builders (<code>loadScene()</code> / <code>loadNewScene()</code>).</li>
+                <li><strong>Select the active renderer</strong> — among <code>_defaultRenderer</code>,
+                    <code>_viewportRenderer</code> and the internal cluster renderer.</li>
+                <li><strong>Build the BVH &amp; render</strong> — <code>scene.buildBvh()</code> then
+                    <code>renderFrame()</code> / <code>startRendering()</code>.</li>
+                <li><strong>Export the image</strong> — via <code>RenderExporter</code> to
+                    <code>_renderOutputPath</code> (default <code>render.png</code>).</li>
+                <li><strong>UI loop (optional)</strong> — the UI event loop runs and the <code>FileObserver</code>
+                    triggers hot reloading of the scene file.</li>
+            </ol>
+            <p><strong>Undo / redo history via JSON snapshots.</strong> The <code>Core</code> keeps a
+               <code>_history</code> vector of snapshots (capped at <code>HISTORY_LIMIT = 100</code>) with a
+               <code>_historyIndex</code>. Every mutation calls <code>historyCapture()</code>, which serializes the
+               current state through <code>snapshotScene()</code>; <code>historyUndo()</code> / <code>historyRedo()</code>
+               rebuild the scene from the target snapshot with <code>restoreSnapshot()</code>. A <em>signature</em>
+               (<code>historySignature()</code>) avoids storing two identical consecutive snapshots.</p>
+            <div class="note"><p>During an undo/redo, the <code>_suppressWatcherReload</code> flag temporarily
+               neutralizes the <code>FileObserver</code> so that an internal write is not mistaken for an external
+               change to the file.</p></div>
+
+            <h2 id="plugins">Plugin system</h2>
+            <p>The <strong>rendering</strong> and <strong>interface</strong> modules are shared libraries
+               (<code>.so</code>) loaded at runtime from <code>./plugins</code>.</p>
+            <p>At startup, <code>PluginLoader::load()</code> calls <code>dlopen(path, RTLD_NOW)</code> then resolves,
+               with <code>dlsym</code>, two mandatory symbols (a <strong>C ABI</strong> contract):</p>
+            <pre><code class="language-cpp">extern "C" IPlugin *create_plugin();
+extern "C" void      destroy_plugin(IPlugin *plugin);</code></pre>
+            <p>If either is missing, the <code>dlopen</code> is closed (<code>dlclose</code>) and the plugin rejected.
+               Otherwise the created instance is stored in a <code>PluginHandle { handle, instance, destroy }</code> and
+               can be queried by <code>PluginType</code> — currently <code>RENDERER</code> or <code>USER_INTERFACE</code>.
+               On shutdown, <code>unloadAll()</code> destroys each instance then <code>dlclose</code>s its
+               <code>.so</code> (important to avoid leaks reported by AddressSanitizer).</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Plugin</th><th>Type</th><th>Role</th></tr></thead>
+                <tbody>
+                    <tr><td><code>renderer_default.so</code></td><td><span class="pill">RENDERER</span></td><td>“Default” renderer — full image rendering.</td></tr>
+                    <tr><td><code>renderer_viewport.so</code></td><td><span class="pill">RENDERER</span></td><td>“Viewport” renderer — progressive rendering for the interface.</td></tr>
+                    <tr><td><code>user_interface.so</code></td><td><span class="pill">USER_INTERFACE</span></td><td>SFML graphical interface (viewport, panels, gizmos).</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <div class="note"><p>Primitives and lights live in <code>srcs/plugins/…</code> but are currently
+               <strong>compiled into the main executable</strong> and instantiated via the builders/factories — they
+               are not (yet) loaded as dynamic <code>.so</code> plugins. The architecture nonetheless stays ready for
+               that evolution (the <code>PluginType</code> enum even reserves commented-out <code>PRIMITIVE</code>/<code>LIGHT</code>
+               entries).</p></div>
+
+            <h2 id="scene-construction">Scene construction</h2>
+            <p>Construction is deliberately separated from parsing, to keep parsing independent from concrete
+               construction details:</p>
+            <pre><code class="language-text">scene.json
+   │
+   ▼
+SceneParser ──┬─► parseCamera
+   │          ├─► parseMaterials
+   │          └─► parseObjects ──► SceneObjectBuilder ──┬─► PrimitiveBuilder
+   │                                                    └─► LightBuilder
+   ▼
+SceneBuilder ──► Scene   (camera + materials + objects, dispatch by ObjectType)</code></pre>
+            <ul>
+                <li><strong><code>SceneObjectBuilder</code></strong> — dispatcher: <code>withType(string)</code> enables
+                    primitive mode, <code>withType(LightType)</code> light mode; common setters (name, position…) are
+                    forwarded to the active internal builder, and <code>build()</code> returns an
+                    <code>ISceneObject*</code> (<code>IPrimitive*</code> or <code>ILight*</code>).</li>
+                <li><strong><code>PrimitiveBuilder</code></strong> — builds concrete primitives
+                    (<code>sphere</code>, <code>plane</code>, <code>cube</code>, <code>cylinder</code>, <code>cone</code>,
+                    <code>triangle</code>, <code>torus</code>, <code>tanglecube</code>, <code>fractal</code>) from the
+                    parsed fields (<code>position</code>, <code>rotation</code>, <code>scale</code>, <code>radius</code>,
+                    <code>height</code>, <code>size</code>, <code>vertex0..2</code>, <code>power</code>,
+                    <code>iterations</code>, <code>material</code>…).</li>
+                <li><strong><code>LightBuilder</code></strong> — builds <code>PointLight</code> and
+                    <code>DirectionalLight</code> (name, position/direction, intensity, color).</li>
+                <li><strong><code>SceneBuilder</code></strong> — aggregates camera, materials and objects: creates
+                    <code>Scene(camera, ambient, diffuse)</code>, registers materials by name, then dispatches by
+                    <code>ObjectType</code> (<code>PRIMITIVE → addPrimitive</code>, <code>LIGHT → addLight</code>).</li>
+                <li><strong><code>PrimitiveFactory</code> / <code>LightFactory</code></strong> — default-value
+                    constructors (<code>createPrimitive(type)</code>, <code>createLight(type)</code>), useful for creating
+                    objects from the editor without going through parsing.</li>
+            </ul>
+            <p><strong><code>SceneRegister</code></strong> performs the reverse direction (<em>save path</em>): it
+               re-serializes the scene state to JSON (camera, environment coefficients, objects, materials), enabling
+               round-trip editing in the interface. The special case <code>type = "object"</code> (mesh) is imported via
+               <code>ObjParser</code>.</p>
+
+            <h2 id="pipeline">Rendering pipeline</h2>
+            <p>An image is produced by applying the same sequence to every pixel:</p>
+            <ol>
+                <li><strong>Camera ray</strong> — generate a primary ray <code>P(t) = O + t·D</code> for pixel
+                    <code>(i, j)</code>, with bounds <code>t ∈ [t_min, t_max]</code>.</li>
+                <li><strong>Accelerated intersection</strong> — test against the geometry, accelerated by the BVH built
+                    before rendering via <code>scene.buildBvh()</code> (global BVH + local per-mesh BVH).</li>
+                <li><strong>Closest hit</strong> — keep the smallest valid <code>t</code> (<code>t</code>, hit point,
+                    normal, material).</li>
+                <li><strong>Shading</strong> — at the hit point <code>H = O + t·D</code>: compute and orient the normal
+                    <code>N</code>, read the material parameters.</li>
+                <li><strong>Lights &amp; shadow rays</strong> — for each light, an offset shadow ray
+                    (<code>H + ε·N</code>) tests visibility; if occluded the contribution is skipped, otherwise diffuse
+                    and specular are evaluated.</li>
+                <li><strong>Accumulation</strong> — ambient + visible direct contributions, clamped to the output range.</li>
+                <li><strong>PNG export</strong> — once all pixels are computed, the image buffer is written to disk
+                    (see <a href="#outils">Tools and utilities</a>).</li>
+            </ol>
+            <div class="tip"><p><strong>Numerical robustness:</strong> <code>ε</code> offset for secondary/shadow rays
+               (avoids self-intersection shadow acne), rejection of near-zero denominators in linear solves
+               (planes/triangles), consistent <code>t ∈ [t_min, t_max]</code> test, and normalization of vectors used in
+               shading dot products.</p></div>
+
+            <h2 id="outils">Tools and utilities</h2>
+            <p>Around the pipeline sit several focused utilities (directories <code>srcs/core/obj/</code>,
+               <code>srcs/core/utils/</code> and <code>srcs/core/exceptions/</code>):</p>
+            <h3 id="objparser">ObjParser — <code>.obj</code> import</h3>
+            <p><code>ObjParser</code> (<code>srcs/core/obj/ObjParser.hpp</code>) reads a Wavefront <code>.obj</code> file
+               and feeds the scene object list. It parses vertices (<code>v</code>), normals (<code>vn</code>) and faces
+               (<code>f</code>) to produce <code>ObjTriangle</code> records (with <code>smooth</code> normal support),
+               applies a transform (<code>withPosition</code>, <code>withRotation</code>, <code>withSize</code>), and
+               exposes the raw triangles, vertices and face indices. The <code>setEmitObjects(false)</code> mode lets you
+               retrieve geometry without emitting scene objects. Any parse error throws
+               <code>ObjParserException</code>.</p>
+            <h3 id="renderexporter">RenderExporter — PNG export</h3>
+            <p><code>RenderExporter::saveToFile(render, path)</code> (<code>srcs/core/utils/RenderExporter.hpp</code>)
+               encodes a <code>Render</code> (width, height, pixels) into a <strong>hand-written PNG</strong>: it emits
+               the PNG signature and the <code>IHDR</code>/<code>IDAT</code>/<code>IEND</code> chunks, uses <em>zlib
+               “stored”</em> compression (uncompressed blocks), and computes the <code>CRC32</code> and
+               <code>Adler32</code> checksums. The image is written as 8-bit truecolor RGB, with no dependency on an
+               external image library. A failure to open the file throws <code>ExportRenderException</code>.</p>
+            <h3 id="fileobserver">FileObserver — hot reload</h3>
+            <p><code>FileObserver</code> (<code>srcs/core/utils/FileObserver.hpp</code>) watches the scene file by
+               remembering its last write time (<code>std::filesystem::file_time_type</code>). <code>pollChanges()</code>
+               returns <code>true</code> when the file changed since the last call; the <code>Core</code> polls it in its
+               loop to reload the scene automatically. <code>setFilePath()</code> and <code>reset()</code> let you
+               (re)target the watched file.</p>
+            <h3 id="exceptions">Exceptions</h3>
+            <p>Domain errors are modeled by dedicated exceptions (<code>srcs/core/exceptions/</code>), all derived from
+               <code>std::exception</code>:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Exception</th><th>Thrown for</th></tr></thead>
+                <tbody>
+                    <tr><td><code>LoadingSceneException</code></td><td>Scene loading — with an <code>ExceptionType</code> (<code>UNKNOWN_FILE</code>, <code>CANNOT_OPEN_FILE</code>, <code>INVALID_FILE_EXTENSION</code>, <code>WRONG_FILE_CONTENT</code>, <code>OTHER</code>).</td></tr>
+                    <tr><td><code>BuildingObjectException</code></td><td>Failure to build a scene object in the builders.</td></tr>
+                    <tr><td><code>ExportRenderException</code></td><td>Failure to export the image (opening/writing the PNG).</td></tr>
+                    <tr><td><code>ObjParserException</code></td><td>Error parsing an <code>.obj</code> file (defined alongside <code>ObjParser</code>).</td></tr>
+                    <tr><td><code>ColorException</code></td><td>Invalid color value.</td></tr>
+                    <tr><td><code>VectorException</code></td><td>Invalid vector operation (math).</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <h2 id="cluster">Cluster module</h2>
+            <p>The <code>ClusterModule</code> (<code>srcs/core/cluster/*</code>, interface
+               <code>srcs/common/cluster/*</code>) provides a <strong>distributed rendering</strong> infrastructure: a
+               server splits the image into tiles and hands them out to connected clients that return their pixels. It
+               exposes <code>startServer(scene, port)</code>, <code>joinCluster(address, port)</code> and
+               <code>leaveCluster()</code>; rendering is coordinated by <code>ClusterRenderCoordinator</code> and
+               <code>ClusterRenderer</code>.</p>
+            <p>Communication goes through <strong>typed packets</strong> built by <code>PacketFactory</code> (identified
+               by <code>PacketID</code>), for example:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Packet</th><th>Role</th></tr></thead>
+                <tbody>
+                    <tr><td><code>ClientJoinRequest</code></td><td>A client requests to join the cluster.</td></tr>
+                    <tr><td><code>ServerSceneData</code></td><td>The server sends the scene to clients.</td></tr>
+                    <tr><td><code>ServerRenderRequest</code></td><td>The server requests the rendering of a tile.</td></tr>
+                    <tr><td><code>ClientTileData</code></td><td>A client returns a tile's pixels.</td></tr>
+                    <tr><td><code>ServerRenderState</code></td><td>The server broadcasts the rendering progress state.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <ul>
+                <li><code>--server [PORT]</code> launches the interface and starts the server (<code>startServer</code>).</li>
+                <li><code>--connect IP PORT</code> launches the interface and joins a server (<code>joinCluster</code>).</li>
+            </ul>
+        </article>
+
+        <nav class="toc" aria-label="On this page">
+            <strong>On this page</strong>
+            <ul>
+                <li><a href="#couches">Layered view</a></li>
+                <li><a href="#diagramme">Dependency diagram</a></li>
+                <li><a href="#core">The Core</a></li>
+                <li><a href="#plugins">Plugin system</a></li>
+                <li><a href="#scene-construction">Scene construction</a></li>
+                <li><a href="#pipeline">Rendering pipeline</a></li>
+                <li><a href="#outils">Tools and utilities</a></li>
+                <li class="sub"><a href="#objparser">ObjParser</a></li>
+                <li class="sub"><a href="#renderexporter">RenderExporter</a></li>
+                <li class="sub"><a href="#fileobserver">FileObserver</a></li>
+                <li class="sub"><a href="#exceptions">Exceptions</a></li>
+                <li><a href="#cluster">Cluster module</a></li>
+            </ul>
+        </nav>
+    </main>
+</div>
+
+<footer class="site-footer">
+    <span>Raytracer — technical documentation</span>
+    <span>C++17 · SFML · Plugin architecture</span>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="assets/search-index.js"></script>
+<script src="assets/search.js"></script>
+<script src="assets/main.js"></script>
+</body>
+</html>

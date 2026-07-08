@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Primitives — Raytracer</title>
+<meta name="description" content="Les primitives géométriques du Raytracer : sphère, plan, cube, cylindre, cône, triangle, tore, tanglecube, fractale et maillage .obj. Intersection rayon/surface, normale, boîte englobante AABB et clés de scène JSON.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+    <button class="menu-toggle" data-menu-toggle aria-label="Menu">☰</button>
+    <a class="brand" href="index.html"><span class="logo">◐</span> Raytracer <small>docs</small></a>
+    <div class="search">
+        <input id="search-input" type="search" autocomplete="off" spellcheck="false" aria-label="Rechercher">
+        <div id="search-results" class="search-results" role="listbox"></div>
+    </div>
+    <a class="lang-toggle" href="primitives.en.html" aria-label="English" title="English">🌐 EN</a>
+</header>
+
+<div class="layout">
+    <aside class="sidebar">
+            <h4>Démarrer</h4>
+            <ul>
+                <li><a href="index.html">Accueil</a></li>
+                <li><a href="installation.html">Installation</a></li>
+                <li><a href="utilisation.html">Utilisation</a></li>
+            </ul>
+            <h4>Scène &amp; contenu</h4>
+            <ul>
+                <li><a href="format-scene.html">Format de scène</a></li>
+                <li><a href="primitives.html" class="active">Primitives</a></li>
+                <li><a href="materiaux.html">Matériaux</a></li>
+                <li><a href="fonctionnalites.html">Fonctionnalités</a></li>
+            </ul>
+            <h4>Moteur</h4>
+            <ul>
+                <li><a href="architecture.html">Architecture</a></li>
+                <li><a href="rendu.html">Pipeline de rendu</a></li>
+                <li><a href="plugins.html">Système de plugins</a></li>
+                <li><a href="cluster.html">Rendu en cluster</a></li>
+            </ul>
+            <h4>Interface</h4>
+            <ul>
+                <li><a href="interface.html">Interface graphique</a></li>
+            </ul>
+            <h4>Référence</h4>
+            <ul>
+                <li><a href="reference.html">Référence des classes</a></li>
+                <li><a href="faq.html">FAQ</a></li>
+            </ul>
+        </aside>
+
+    <main class="content has-toc">
+        <article class="article">
+            <p class="crumbs"><a href="index.html">Accueil</a> / Primitives</p>
+            <h1>Primitives</h1>
+            <p class="lead">Les primitives sont les surfaces géométriques que les rayons viennent frapper. Chaque
+               type ci-dessous correspond à une classe qui implémente l'interface <code>IPrimitive</code> et à une
+               valeur de la clé <code>"type"</code> dans le fichier de scène JSON. Le contenu de cette page reflète
+               le code réel (<code>srcs/plugins/primitive/</code>, <code>PrimitiveBuilder</code>, <code>SceneParser</code>).</p>
+
+            <div class="badges">
+                <span class="pill">10 primitives</span>
+                <span class="pill gray">IPrimitive</span>
+                <span class="pill gray">Intersection analytique &amp; marching</span>
+                <span class="pill green">AABB / BVH</span>
+            </div>
+
+            <h2 id="intro">Qu'est-ce qu'une primitive&nbsp;?</h2>
+            <p>Une <strong>primitive</strong> est un objet géométrique intersectable par un rayon. Toutes les
+               primitives implémentent l'interface commune <code>IPrimitive</code>, qui expose trois
+               comportements essentiels&nbsp;:</p>
+            <ul>
+                <li><strong>Test d'intersection</strong> — étant donné un rayon <code>P(t) = O + tD</code>, la
+                    primitive calcule le plus petit paramètre <code>t</code> valide (dans l'intervalle
+                    <code>[t_min, t_max]</code>) pour lequel le rayon rencontre sa surface, ou signale l'absence
+                    de contact.</li>
+                <li><strong>Normale</strong> — au point d'impact <code>H = O + t·D</code>, la primitive fournit la
+                    normale de surface <code>N</code>, orientée face au rayon (retournée si <code>D·N &gt; 0</code>).
+                    La normale sert à l'ombrage, aux réflexions et aux réfractions.</li>
+                <li><strong>Boîte englobante (AABB)</strong> — chaque primitive expose une boîte alignée sur les
+                    axes qui la contient entièrement. Cette boîte permet au <a href="fonctionnalites.html#bvh">BVH</a>
+                    de rejeter très vite les rayons qui manquent l'objet. Voir <a href="#aabb">AABB &amp; BVH</a>.</li>
+            </ul>
+
+            <h3 id="proprietes-communes">Propriétés communes</h3>
+            <p>Dans le fichier de scène, chaque primitive partage un socle de clés communes&nbsp;; les autres clés
+               dépendent du type (rayon, hauteur, sommets…).</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Clé</th><th>Type</th><th>Rôle</th></tr></thead>
+                <tbody>
+                    <tr><td><code>name</code></td><td>chaîne</td><td>Nom de l'objet (identifiant affiché dans l'éditeur).</td></tr>
+                    <tr><td><code>type</code></td><td>chaîne</td><td>Type de primitive (<code>sphere</code>, <code>plane</code>, …).</td></tr>
+                    <tr><td><code>position</code></td><td><code>[x, y, z]</code></td><td>Position dans le monde&nbsp;; place le <strong>centre</strong> de la primitive.</td></tr>
+                    <tr><td><code>rotation</code></td><td><code>[x, y, z]</code></td><td>Rotation d'Euler en <strong>degrés</strong> (appliquée X, puis Y, puis Z).</td></tr>
+                    <tr><td><code>scale</code></td><td><code>[x, y, z]</code></td><td>Facteur d'échelle par axe (non uniforme autorisé).</td></tr>
+                    <tr><td><code>material</code></td><td>ref matériau</td><td>Nom d'un matériau déclaré dans la liste <code>materials</code>. Voir <a href="materiaux.html">Matériaux</a>.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <div class="note"><p>Toutes les primitives n'utilisent pas toutes ces clés&nbsp;: par exemple le
+               <a href="#plane">plan</a> est orienté par un axe plutôt que par <code>rotation</code>, et le
+               <a href="#triangle">triangle</a> est défini par ses trois sommets plutôt que par
+               <code>position</code>/<code>scale</code>. Chaque section précise les clés réellement lues par le
+               parseur.</p></div>
+
+            <h2 id="sphere">Sphère</h2>
+            <p><code>type: "sphere"</code> — l'ensemble des points situés à distance constante <code>r</code> d'un
+               centre <code>C</code>. C'est la primitive analytique de base.</p>
+            <p><strong>Intersection</strong> — en substituant le rayon dans l'équation implicite
+               <code>‖P − C‖² − r² = 0</code>, on obtient une <strong>équation quadratique</strong>
+               <code>a·t² + b·t + c = 0</code> avec <code>a = D·D</code>, <code>b = 2·(oc·D)</code>,
+               <code>c = oc·oc − r²</code> et <code>oc = O − C</code>. Le discriminant <code>Δ = b² − 4ac</code>
+               décide&nbsp;: <code>Δ &lt; 0</code> aucun contact, sinon on garde la plus petite racine valide.
+               La normale est <code>N = normalize(H − C)</code>.</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Clé</th><th>Type</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td><code>position</code></td><td><code>[x, y, z]</code></td><td>Centre de la sphère.</td></tr>
+                    <tr><td><code>radius</code></td><td>nombre</td><td>Rayon <code>r</code> (&gt; 0).</td></tr>
+                    <tr><td><code>scale</code></td><td><code>[x, y, z]</code></td><td>Échelle appliquée à la sphère.</td></tr>
+                    <tr><td><code>material</code></td><td>ref matériau</td><td>Matériau de surface.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <pre><code class="language-json">{
+    "name": "Boule",
+    "type": "sphere",
+    "position": [0.0, 1.0, 0.0],
+    "scale": [1.0, 1.0, 1.0],
+    "radius": 1.0,
+    "material": "Rouge"
+}</code></pre>
+
+            <h2 id="plane">Plan</h2>
+            <p><code>type: "plane"</code> — une surface plane, orientée selon un <strong>axe</strong> aligné sur le
+               repère (<code>x</code>, <code>y</code> ou <code>z</code>). La clé <code>axis</code> est convertie
+               en vecteur normal via <code>AxisUtils::toVector</code>&nbsp;; le plan passe par <code>position</code>.</p>
+            <p><strong>Intersection</strong> — le plan résout directement <code>(P − P₀)·N = 0</code>, ce qui donne
+               <code>t = ((P₀ − O)·N) / (D·N)</code>. Si le dénominateur <code>D·N</code> est proche de zéro, le
+               rayon est parallèle au plan et il n'y a pas de contact. La normale est constante en tout point,
+               égale à l'axe (retournée face au rayon).</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Clé</th><th>Type</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td><code>axis</code></td><td><code>"x"</code> / <code>"y"</code> / <code>"z"</code></td><td>Axe d'orientation du plan (sa normale).</td></tr>
+                    <tr><td><code>position</code></td><td><code>[x, y, z]</code></td><td>Point par lequel passe le plan.</td></tr>
+                    <tr><td><code>size</code></td><td>nombre</td><td>Étendue du plan.</td></tr>
+                    <tr><td><code>material</code></td><td>ref matériau</td><td>Matériau de surface.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <pre><code class="language-json">{
+    "name": "Sol",
+    "type": "plane",
+    "axis": "y",
+    "position": [0.0, 0.0, 0.0],
+    "size": 100.0,
+    "material": "Damier"
+}</code></pre>
+
+            <h2 id="cube">Cube</h2>
+            <p><code>type: "cube"</code> — un polyèdre convexe fini à 6 faces, construit comme un cube orienté
+               (<code>position</code> + <code>rotation</code> + <code>scale</code>) à partir de 6 faces planes de
+               côté <code>size</code>.</p>
+            <p><strong>Intersection</strong> — le rayon est testé contre chacune des 6&nbsp;faces (chaque face est
+               un plan borné)&nbsp;; on retient le plus petit <code>t</code> valide. Un point d'impact candidat est
+               accepté seulement s'il tombe dans les bornes de la face (<code>0 ≤ u ≤ 1</code>,
+               <code>0 ≤ v ≤ 1</code> dans la base locale de la face). La normale est la normale axiale de la face
+               gagnante (<code>±X</code>, <code>±Y</code>, <code>±Z</code>), corrigée par la rotation et l'échelle
+               inverse.</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Clé</th><th>Type</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td><code>position</code></td><td><code>[x, y, z]</code></td><td>Centre du cube.</td></tr>
+                    <tr><td><code>rotation</code></td><td><code>[x, y, z]</code></td><td>Rotation d'Euler en degrés.</td></tr>
+                    <tr><td><code>scale</code></td><td><code>[x, y, z]</code></td><td>Échelle non uniforme.</td></tr>
+                    <tr><td><code>size</code></td><td>nombre</td><td>Longueur d'arête de base.</td></tr>
+                    <tr><td><code>material</code></td><td>ref matériau</td><td>Matériau de surface.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <pre><code class="language-json">{
+    "name": "Boite",
+    "type": "cube",
+    "position": [0.0, 1.0, 0.0],
+    "rotation": [0.0, 45.0, 0.0],
+    "scale": [1.0, 1.0, 1.0],
+    "size": 2.0,
+    "material": "Bois"
+}</code></pre>
+            <div class="tip"><p>Un cube peut être <strong>converti exactement</strong> en maillage de 8&nbsp;sommets
+               / 12&nbsp;triangles pour l'édition de sommets (voir <a href="fonctionnalites.html#edition-sommets">Édition
+               de sommets</a>).</p></div>
+
+            <h2 id="cylinder">Cylindre</h2>
+            <p><code>type: "cylinder"</code> — un cylindre circulaire droit défini par un axe, un rayon
+               <code>radius</code> et une hauteur finie <code>height</code>.</p>
+            <p><strong>Intersection</strong> — on projette rayon et origine perpendiculairement à l'axe
+               (<code>Dperp</code>, <code>ocPerp</code>), ce qui ramène la surface latérale à une
+               <strong>équation quadratique</strong> <code>a·t² + b·t + c = 0</code> avec
+               <code>a = Dperp·Dperp</code>, <code>b = 2·(ocPerp·Dperp)</code>,
+               <code>c = ocPerp·ocPerp − r²</code>. Une racine n'est retenue que si la projection du point sur
+               l'axe reste dans <code>[0, h]</code>. La normale au point <code>H</code> est
+               <code>normalize(H − Q)</code>, où <code>Q</code> est la projection de <code>H</code> sur l'axe.</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Clé</th><th>Type</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td><code>position</code></td><td><code>[x, y, z]</code></td><td>Centre du cylindre.</td></tr>
+                    <tr><td><code>rotation</code></td><td><code>[x, y, z]</code></td><td>Orientation (Euler, degrés).</td></tr>
+                    <tr><td><code>scale</code></td><td><code>[x, y, z]</code></td><td>Échelle.</td></tr>
+                    <tr><td><code>radius</code></td><td>nombre</td><td>Rayon <code>r</code>.</td></tr>
+                    <tr><td><code>height</code></td><td>nombre</td><td>Hauteur finie <code>h</code>.</td></tr>
+                    <tr><td><code>material</code></td><td>ref matériau</td><td>Matériau de surface.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <pre><code class="language-json">{
+    "name": "Colonne",
+    "type": "cylinder",
+    "position": [0.0, 0.0, 0.0],
+    "rotation": [0.0, 0.0, 0.0],
+    "scale": [1.0, 1.0, 1.0],
+    "radius": 0.5,
+    "height": 3.0,
+    "material": "Marbre"
+}</code></pre>
+
+            <h2 id="cone">Cône</h2>
+            <p><code>type: "cone"</code> — un cône circulaire droit défini par un apex, un axe et une ouverture,
+               limité à une hauteur finie <code>height</code>.</p>
+            <p><strong>Intersection</strong> — comme le cylindre, on décompose le rayon en composantes parallèle
+               et perpendiculaire à l'axe, mais l'équation implicite fait intervenir la tangente de l'angle
+               (<code>k</code>)&nbsp;: <code>‖v_perp‖² − k²·v_parallel² = 0</code>. Cela produit une
+               <strong>quadratique</strong> avec <code>a = Dperp·Dperp − k²·dv²</code>,
+               <code>b = 2·(ocPerp·Dperp − k²·ov·dv)</code>, <code>c = ocPerp·ocPerp − k²·ov²</code>. Les racines
+               sont clippées à <code>[0, h]</code> le long de l'axe. La normale dérive du gradient de la fonction
+               implicite.</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Clé</th><th>Type</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td><code>position</code></td><td><code>[x, y, z]</code></td><td>Centre du cône.</td></tr>
+                    <tr><td><code>rotation</code></td><td><code>[x, y, z]</code></td><td>Orientation (Euler, degrés).</td></tr>
+                    <tr><td><code>scale</code></td><td><code>[x, y, z]</code></td><td>Échelle.</td></tr>
+                    <tr><td><code>radius</code></td><td>nombre</td><td>Rayon de base.</td></tr>
+                    <tr><td><code>height</code></td><td>nombre</td><td>Hauteur du cône.</td></tr>
+                    <tr><td><code>material</code></td><td>ref matériau</td><td>Matériau de surface.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <pre><code class="language-json">{
+    "name": "Cornet",
+    "type": "cone",
+    "position": [0.0, 0.0, 0.0],
+    "rotation": [0.0, 0.0, 0.0],
+    "scale": [1.0, 1.0, 1.0],
+    "radius": 1.0,
+    "height": 2.0,
+    "material": "Orange"
+}</code></pre>
+
+            <h2 id="triangle">Triangle</h2>
+            <p><code>type: "triangle"</code> — une primitive planaire finie définie par ses trois sommets
+               <code>vertex0</code>, <code>vertex1</code>, <code>vertex2</code>. C'est la brique de base de la
+               géométrie triangulée et une primitive <strong>éditable</strong> (ses 3 coins peuvent être déplacés
+               dans le viewport).</p>
+            <p><strong>Intersection</strong> — algorithme de <strong>Möller–Trumbore</strong>. À partir des arêtes
+               <code>E1 = V1 − V0</code> et <code>E2 = V2 − V0</code>, on résout le système barycentrique et on
+               obtient <code>(u, v, t)</code>&nbsp;: on rejette si <code>u &lt; 0</code>, <code>v &lt; 0</code> ou
+               <code>u + v &gt; 1</code>. La normale plate est <code>normalize(E1 × E2)</code> (ou interpolée par
+               les normales de sommets pour un ombrage lisse).</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Clé</th><th>Type</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td><code>vertex0</code></td><td><code>[x, y, z]</code></td><td>Premier sommet <code>V0</code>.</td></tr>
+                    <tr><td><code>vertex1</code></td><td><code>[x, y, z]</code></td><td>Deuxième sommet <code>V1</code>.</td></tr>
+                    <tr><td><code>vertex2</code></td><td><code>[x, y, z]</code></td><td>Troisième sommet <code>V2</code>.</td></tr>
+                    <tr><td><code>material</code></td><td>ref matériau</td><td>Matériau de surface.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <pre><code class="language-json">{
+    "name": "Facette",
+    "type": "triangle",
+    "vertex0": [0.0, 0.0, 0.0],
+    "vertex1": [1.0, 0.0, 0.0],
+    "vertex2": [0.0, 1.0, 0.0],
+    "material": "Vert"
+}</code></pre>
+
+            <h2 id="torus">Tore</h2>
+            <p><code>type: "torus"</code> — une surface en forme d'anneau (donut), définie par un grand rayon
+               <code>radius</code> (<code>R</code>, distance du centre à l'axe du tube) et un petit rayon
+               <code>height</code> (<code>r</code>, rayon du tube).</p>
+            <p><strong>Intersection</strong> — après passage dans le repère local du tore, la surface implicite
+               quartique <code>(‖P‖² + R² − r²)² − 4R²(…) = 0</code> se ramène à une <strong>équation de degré
+               4</strong> <code>c₄t⁴ + c₃t³ + c₂t² + c₁t + c₀ = 0</code>. On résout le quartique et on garde la
+               plus petite racine réelle valide. La normale est le gradient de la fonction implicite, ramené dans
+               le repère du monde.</p>
+            <div class="note"><p>Attention à la convention&nbsp;: ici <code>radius</code> est le <strong>grand
+               rayon</strong> <code>R</code> et <code>height</code> le <strong>rayon du tube</strong> <code>r</code>.</p></div>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Clé</th><th>Type</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td><code>position</code></td><td><code>[x, y, z]</code></td><td>Centre du tore.</td></tr>
+                    <tr><td><code>rotation</code></td><td><code>[x, y, z]</code></td><td>Orientation (Euler, degrés).</td></tr>
+                    <tr><td><code>radius</code></td><td>nombre</td><td>Grand rayon <code>R</code>.</td></tr>
+                    <tr><td><code>height</code></td><td>nombre</td><td>Rayon du tube <code>r</code>.</td></tr>
+                    <tr><td><code>material</code></td><td>ref matériau</td><td>Matériau de surface.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <pre><code class="language-json">{
+    "name": "Anneau",
+    "type": "torus",
+    "position": [0.0, 1.0, 0.0],
+    "rotation": [90.0, 0.0, 0.0],
+    "radius": 1.0,
+    "height": 0.3,
+    "material": "Or"
+}</code></pre>
+
+            <h2 id="tanglecube">Tanglecube</h2>
+            <p><code>type: "tanglecube"</code> — une surface algébrique implicite (isosurface) lisse, engendrée par
+               un champ scalaire quartique et un seuil <code>threshold</code>&nbsp;:
+               <code>f(p) = x⁴ − 5x² + y⁴ − 5y² + z⁴ − 5z² + threshold</code>, la surface étant l'ensemble
+               <code>f(p) = 0</code>.</p>
+            <p><strong>Intersection</strong> — plutôt qu'une résolution analytique du quartique, l'implémentation
+               procède par <strong>marching</strong>&nbsp;: intervalle d'entrée/sortie via une sphère englobante,
+               progression à pas adaptatif jusqu'à détecter un changement de signe
+               <code>g(t_prev)·g(t_cur) &lt; 0</code>, puis raffinement de la racine (Newton avec repli par
+               bissection). La normale est <code>normalize(∇f)</code> avec
+               <code>∇f = (4x³ − 10x, 4y³ − 10y, 4z³ − 10z)</code>.</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Clé</th><th>Type</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td><code>position</code></td><td><code>[x, y, z]</code></td><td>Centre de la surface.</td></tr>
+                    <tr><td><code>rotation</code></td><td><code>[x, y, z]</code></td><td>Rotation (stockée sur l'objet).</td></tr>
+                    <tr><td><code>threshold</code></td><td>nombre</td><td>Décalage d'iso-valeur pour <code>f(p) = 0</code>.</td></tr>
+                    <tr><td><code>size</code></td><td>nombre</td><td>Facteur d'échelle global.</td></tr>
+                    <tr><td><code>material</code></td><td>ref matériau</td><td>Matériau de surface.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <pre><code class="language-json">{
+    "name": "Tanglecube",
+    "type": "tanglecube",
+    "position": [0.0, 2.0, 0.0],
+    "rotation": [0.0, 0.0, 0.0],
+    "threshold": 11.8,
+    "size": 1.0,
+    "material": "Bleu"
+}</code></pre>
+
+            <h2 id="fractal">Fractale</h2>
+            <p><code>type: "fractal"</code> — un objet fractal 3D (type Mandelbulb) rendu par
+               <strong>estimation de distance</strong> (distance estimator / sphere tracing). La surface est
+               définie implicitement par un estimateur <code>DE(p) = 0</code> calculé de façon itérative.</p>
+            <p><strong>Intersection</strong> — <strong>ray marching</strong>&nbsp;: on borne d'abord le rayon par
+               l'AABB de la primitive pour obtenir <code>[tEnter, tExit]</code>, puis on avance par pas égaux à la
+               distance estimée <code>d = DE(p)·size</code>. Quand <code>d &lt; ε</code>, le point est accepté&nbsp;;
+               sinon <code>t += d</code>, jusqu'à sortir de la boîte ou atteindre la limite d'itérations. La
+               normale est estimée numériquement par différences finies sur <code>DE</code> autour du point.</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Clé</th><th>Type</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td><code>position</code></td><td><code>[x, y, z]</code></td><td>Centre de la fractale.</td></tr>
+                    <tr><td><code>size</code></td><td>nombre</td><td>Mise à l'échelle du domaine fractal (défaut <code>100</code>).</td></tr>
+                    <tr><td><code>power</code></td><td>nombre</td><td>Exposant fractal (défaut <code>8</code>).</td></tr>
+                    <tr><td><code>iterations</code></td><td>entier</td><td>Nombre d'itérations dans l'estimateur (défaut <code>8</code>).</td></tr>
+                    <tr><td><code>material</code></td><td>ref matériau</td><td>Matériau de surface.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <pre><code class="language-json">{
+    "name": "Mandelbulb",
+    "type": "fractal",
+    "position": [0.0, 0.0, 0.0],
+    "size": 100.0,
+    "power": 8.0,
+    "iterations": 8,
+    "material": "Violet"
+}</code></pre>
+
+            <h2 id="mesh">Maillage</h2>
+            <p><code>type: "mesh"</code> — une surface triangulée chargée depuis un fichier Wavefront
+               <code>.obj</code> (via <code>ObjParser</code>), ou définie en ligne par des tableaux
+               <code>vertices</code>&nbsp;/&nbsp;<code>faces</code>&nbsp;/&nbsp;<code>normals</code>. Le maillage est
+               une <strong>seule</strong> primitive qui possède en interne ses triangles et un <strong>BVH
+               local</strong>, ce qui permet d'intersecter des centaines de milliers de triangles en temps
+               logarithmique. Il est <strong>éditable</strong> au sommet.</p>
+            <p><strong>Intersection</strong> — chaque triangle est testé par <strong>Möller–Trumbore</strong>, mais
+               les rayons ne parcourent jamais les triangles linéairement&nbsp;: le BVH local les élague. Les
+               normales sont interpolées par coordonnées barycentriques quand le <code>.obj</code> fournit des
+               normales de sommet (<code>vn</code>), sinon une normale de face plate sert de repli. La géométrie
+               est recentrée sur son propre centre&nbsp;: <code>position</code> place donc le centre du maillage.</p>
+            <div class="note"><p>Quand une géométrie en ligne est fournie (<code>vertices</code> non vide), elle a
+               la <strong>priorité</strong> sur le chemin <code>file</code>&nbsp;: c'est ainsi que sont stockées les
+               primitives «&nbsp;cuites&nbsp;» (converties en maillage).</p></div>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Clé</th><th>Type</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td><code>file</code></td><td>chaîne</td><td>Chemin du <code>.obj</code> (résolu depuis le dossier de travail).</td></tr>
+                    <tr><td><code>vertices</code></td><td>liste <code>[x, y, z]</code></td><td>Géométrie en ligne (prioritaire sur <code>file</code>).</td></tr>
+                    <tr><td><code>faces</code></td><td>liste <code>[i, j, k]</code></td><td>Faces triangulaires (indices de sommets).</td></tr>
+                    <tr><td><code>normals</code></td><td>liste <code>[x, y, z]</code></td><td>Normales de sommet (optionnelles).</td></tr>
+                    <tr><td><code>position</code></td><td><code>[x, y, z]</code></td><td>Position du centre du maillage.</td></tr>
+                    <tr><td><code>rotation</code></td><td><code>[x, y, z]</code></td><td>Rotation d'Euler en degrés.</td></tr>
+                    <tr><td><code>scale</code></td><td><code>[x, y, z]</code></td><td>Échelle par axe (non uniforme autorisée).</td></tr>
+                    <tr><td><code>vertex_overrides</code></td><td>liste</td><td>Surcharges de sommets (<code>index</code> + <code>position</code>) réappliquées après chargement du <code>.obj</code>.</td></tr>
+                    <tr><td><code>material</code></td><td>ref matériau</td><td>Matériau appliqué à tous les impacts.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <pre><code class="language-json">{
+    "name": "Suzanne",
+    "type": "mesh",
+    "file": "tests/obj/suzanne.obj",
+    "position": [0.0, 0.0, 0.0],
+    "rotation": [0.0, 0.0, 0.0],
+    "scale": [1.0, 1.0, 1.0],
+    "material": "Bleu"
+}</code></pre>
+            <div class="tip"><p>Seules les faces <strong>triangulaires</strong> sont acceptées&nbsp;; les
+               coordonnées de texture (<code>vt</code>) et les bibliothèques de matériaux
+               (<code>mtllib</code>&nbsp;/&nbsp;<code>usemtl</code>) du <code>.obj</code> sont ignorées. Détails et
+               édition&nbsp;: <a href="fonctionnalites.html#mesh-obj">Fonctionnalités &rarr; Maillages .obj</a>.</p></div>
+
+            <h2 id="aabb">AABB &amp; BVH</h2>
+            <p>Une <strong>AABB</strong> (Axis-Aligned Bounding Box) est une boîte alignée sur les axes, définie
+               par ses coins minimum <code>Bmin</code> et maximum <code>Bmax</code>. Ce n'est pas une primitive
+               que l'on place dans une scène&nbsp;: c'est le <strong>volume englobant</strong> exposé par chaque
+               primitive et exploité par le BVH.</p>
+            <p>Le test rayon/AABB se fait par la méthode des <strong>slabs</strong>&nbsp;: pour chaque axe on calcule
+               les paramètres d'entrée et de sortie <code>t1 = (Bmin − O)/D</code>, <code>t2 = (Bmax − O)/D</code>,
+               puis on combine <code>tEnter = max(tNear)</code> et <code>tExit = min(tFar)</code>. Il y a
+               intersection lorsque <code>tEnter ≤ tExit</code>. Un rayon qui manque la boîte d'un nœud ignore
+               tout son sous-arbre.</p>
+            <p>Avant le rendu, la scène construit une <strong>hiérarchie de volumes englobants</strong> (BVH) via
+               <code>scene.buildBvh()</code>&nbsp;; chaque nœud porte une AABB. Les maillages disposent en plus d'un
+               BVH <strong>local</strong> sur leurs triangles. Le détail de la construction est décrit dans
+               <a href="fonctionnalites.html#bvh">Fonctionnalités &rarr; Accélération BVH</a>.</p>
+            <div class="note"><p>Le dépôt contient aussi les fichiers source <code>Mobius_strip.*</code>, mais
+               cette primitive n'est <strong>pas branchée</strong> au parseur ni au builder&nbsp;: elle n'est pas
+               disponible en scène.</p></div>
+
+            <div class="cards">
+                <a class="card" href="materiaux.html"><div class="icon">🎨</div><h3>Matériaux</h3><p>Affecter une apparence PHONG / PBR aux primitives&nbsp;: couleur, réflexion, transparence, textures.</p></a>
+                <a class="card" href="format-scene.html"><div class="icon">📄</div><h3>Format de scène</h3><p>Structure complète du fichier JSON&nbsp;: caméra, objets, lumières, matériaux.</p></a>
+                <a class="card" href="fonctionnalites.html#bvh"><div class="icon">⚡</div><h3>Accélération BVH</h3><p>Comment les AABB et la hiérarchie de volumes englobants accélèrent le rendu.</p></a>
+            </div>
+        </article>
+
+        <nav class="toc" aria-label="Sommaire">
+            <strong>Sur cette page</strong>
+            <ul>
+                <li><a href="#intro">Qu'est-ce qu'une primitive&nbsp;?</a></li>
+                <li class="sub"><a href="#proprietes-communes">Propriétés communes</a></li>
+                <li><a href="#sphere">Sphère</a></li>
+                <li><a href="#plane">Plan</a></li>
+                <li><a href="#cube">Cube</a></li>
+                <li><a href="#cylinder">Cylindre</a></li>
+                <li><a href="#cone">Cône</a></li>
+                <li><a href="#triangle">Triangle</a></li>
+                <li><a href="#torus">Tore</a></li>
+                <li><a href="#tanglecube">Tanglecube</a></li>
+                <li><a href="#fractal">Fractale</a></li>
+                <li><a href="#mesh">Maillage</a></li>
+                <li><a href="#aabb">AABB &amp; BVH</a></li>
+            </ul>
+        </nav>
+    </main>
+</div>
+
+<footer class="site-footer">
+    <span>Raytracer — documentation technique</span>
+    <span>C++17 · SFML · Architecture à plugins</span>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="assets/search-index.js"></script>
+<script src="assets/search.js"></script>
+<script src="assets/main.js"></script>
+</body>
+</html>

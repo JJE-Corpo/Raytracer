@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Installation — Raytracer</title>
-<meta name="description" content="Prérequis, dépendances et compilation du Raytracer.">
+<meta name="description" content="Prérequis, dépendances, compilation et vérification du Raytracer : moteur de rendu par lancer de rayons en C++17.">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
 <link rel="stylesheet" href="assets/style.css">
 </head>
@@ -13,85 +13,115 @@
 <header class="topbar">
     <button class="menu-toggle" data-menu-toggle aria-label="Menu">☰</button>
     <a class="brand" href="index.html"><span class="logo">◐</span> Raytracer <small>docs</small></a>
-    <nav>
-        <a href="index.html">Accueil</a>
-        <a href="installation.html" class="active">Installation</a>
-        <a href="utilisation.html">Utilisation</a>
-        <a href="architecture.html">Architecture</a>
-        <a href="fonctionnalites.html">Fonctionnalités</a>
-        <a href="reference.html">Référence</a>
-        <a href="faq.html">FAQ</a>
-    </nav>
+    <div class="search">
+        <input id="search-input" type="search" autocomplete="off" spellcheck="false" aria-label="Rechercher">
+        <div id="search-results" class="search-results" role="listbox"></div>
+    </div>
+    <a class="lang-toggle" href="installation.en.html" aria-label="English" title="English">🌐 EN</a>
 </header>
 
 <div class="layout">
     <aside class="sidebar">
-        <h4>Démarrer</h4>
-        <ul>
-            <li><a href="index.html">Accueil</a></li>
-            <li><a href="installation.html" class="active">Installation</a></li>
-            <li><a href="utilisation.html">Utilisation</a></li>
-        </ul>
-        <h4>Comprendre</h4>
-        <ul>
-            <li><a href="architecture.html">Architecture</a></li>
-            <li><a href="fonctionnalites.html">Fonctionnalités</a></li>
-            <li><a href="reference.html">Référence des classes</a></li>
-        </ul>
-        <h4>Aide</h4>
-        <ul><li><a href="faq.html">FAQ</a></li></ul>
-    </aside>
+            <h4>Démarrer</h4>
+            <ul>
+                <li><a href="index.html">Accueil</a></li>
+                <li><a href="installation.html" class="active">Installation</a></li>
+                <li><a href="utilisation.html">Utilisation</a></li>
+            </ul>
+            <h4>Scène &amp; contenu</h4>
+            <ul>
+                <li><a href="format-scene.html">Format de scène</a></li>
+                <li><a href="primitives.html">Primitives</a></li>
+                <li><a href="materiaux.html">Matériaux</a></li>
+                <li><a href="fonctionnalites.html">Fonctionnalités</a></li>
+            </ul>
+            <h4>Moteur</h4>
+            <ul>
+                <li><a href="architecture.html">Architecture</a></li>
+                <li><a href="rendu.html">Pipeline de rendu</a></li>
+                <li><a href="plugins.html">Système de plugins</a></li>
+                <li><a href="cluster.html">Rendu en cluster</a></li>
+            </ul>
+            <h4>Interface</h4>
+            <ul>
+                <li><a href="interface.html">Interface graphique</a></li>
+            </ul>
+            <h4>Référence</h4>
+            <ul>
+                <li><a href="reference.html">Référence des classes</a></li>
+                <li><a href="faq.html">FAQ</a></li>
+            </ul>
+        </aside>
 
     <main class="content has-toc">
         <article class="article">
             <p class="crumbs"><a href="index.html">Accueil</a> / Installation</p>
             <h1>Installation</h1>
-            <p class="lead">Prérequis, dépendances et compilation du projet.</p>
+            <p class="lead">Prérequis, dépendances externes, compilation avec <code>make</code> et vérification de l’installation.</p>
+
+            <div class="badges">
+                <span class="pill">C++17</span>
+                <span class="pill gray">clang++</span>
+                <span class="pill gray">Makefile</span>
+                <span class="pill gray">SFML</span>
+                <span class="pill gray">X11</span>
+                <span class="pill green">Plugins .so</span>
+            </div>
 
             <h2 id="prerequis">Prérequis</h2>
-            <p>Le projet cible un environnement Linux (testé sous WSL2). Il faut&nbsp;:</p>
+            <p>Le projet cible un environnement <strong>Linux</strong> (développé et testé sous WSL2). Il faut disposer des outils et bibliothèques suivants&nbsp;:</p>
             <div class="table-wrap">
             <table>
                 <thead><tr><th>Outil / bibliothèque</th><th>Rôle</th></tr></thead>
                 <tbody>
-                    <tr><td><code>clang++</code></td><td>Compilateur C++ (le Makefile l’invoque explicitement), standard <strong>C++17</strong>.</td></tr>
-                    <tr><td><code>make</code></td><td>Système de build.</td></tr>
-                    <tr><td><strong>SFML</strong> (≥ 2.5)</td><td>Fenêtre, contexte graphique, réseau — utilisée par le plugin d’interface. Modules&nbsp;: <code>graphics</code>, <code>window</code>, <code>system</code>, <code>network</code>.</td></tr>
-                    <tr><td><strong>X11</strong> (<code>libX11</code>)</td><td>Système de fenêtrage sous Linux (lié via <code>-lX11</code>).</td></tr>
+                    <tr><td><code>clang++</code></td><td>Compilateur C++. Le Makefile l’invoque explicitement, avec le standard <strong>C++17</strong>.</td></tr>
+                    <tr><td><code>make</code></td><td>Système de build (orchestration de la compilation et de l’édition de liens).</td></tr>
+                    <tr><td><strong>SFML</strong></td><td>Fenêtre, contexte graphique, entrées et réseau — utilisée par le plugin d’interface. Modules liés&nbsp;: <code>graphics</code>, <code>window</code>, <code>system</code>, <code>network</code>.</td></tr>
+                    <tr><td><strong>X11</strong> (<code>libX11</code>)</td><td>Système de fenêtrage sous Linux (lié via <code>-lX11</code>), requis par le plugin d’interface.</td></tr>
                 </tbody>
             </table>
             </div>
+            <div class="note"><p>SFML et X11 ne sont nécessaires que pour le <strong>plugin d’interface graphique</strong>
+               (<code>user_interface.so</code>). Le cœur du moteur et les renderers ne dépendent que de la bibliothèque standard C++.</p></div>
 
             <h3 id="deps-fournies">Dépendances déjà fournies</h3>
-            <p>Deux bibliothèques d’en-têtes sont incluses dans <code>srcs/external/</code> — rien à installer&nbsp;:</p>
+            <p>Deux bibliothèques d’en-têtes sont incluses dans le dépôt, sous <code>srcs/external/</code>&nbsp;— <strong>rien à installer</strong>. Le Makefile les rend disponibles à la compilation via <code>-isystem srcs/external</code>&nbsp;:</p>
             <ul>
-                <li><strong>nlohmann/json</strong> (<code>srcs/external/nlohmann/json.hpp</code>) — lecture/écriture des fichiers de scène JSON.</li>
-                <li><strong>stb_image</strong> (<code>srcs/external/stb_image.h</code>) — chargement d’images (textures) et export PNG.</li>
+                <li><strong>nlohmann/json</strong> (<code>srcs/external/nlohmann/json.hpp</code>) — lecture et écriture des fichiers de scène au format JSON.</li>
+                <li><strong>stb_image</strong> (<code>srcs/external/stb_image.h</code>) — chargement d’images (textures) et export PNG des rendus.</li>
             </ul>
 
-            <h3 id="install-deps">Installer SFML et X11 (Debian/Ubuntu)</h3>
+            <h3 id="install-deps">Installer SFML et X11 (Debian / Ubuntu)</h3>
+            <p>Sur une distribution basée sur Debian ou Ubuntu&nbsp;:</p>
             <pre><code class="language-bash">sudo apt update
 sudo apt install clang make libsfml-dev libx11-dev</code></pre>
-            <div class="note"><p>Les paquets s’appellent <code>libsfml-dev</code> et <code>libx11-dev</code> sous Debian/Ubuntu. Adaptez selon votre distribution.</p></div>
+            <div class="note"><p>Les paquets s’appellent <code>libsfml-dev</code> (SFML, tous modules) et <code>libx11-dev</code>
+               (X11) sous Debian/Ubuntu. Adaptez les noms de paquets selon votre distribution.</p></div>
 
             <h2 id="compilation">Compilation</h2>
             <p>Depuis la racine du dépôt&nbsp;:</p>
             <pre><code class="language-bash">make</code></pre>
-            <p>La compilation utilise les drapeaux <code>-Wall -Wextra -Werror -std=c++17 -fsanitize=address</code>
-               (AddressSanitizer activé pour détecter les erreurs mémoire). Elle produit&nbsp;:</p>
+            <p>Chaque unité de compilation est bâtie avec les drapeaux
+               <code>-Wall -Wextra -Werror -std=c++17 -fPIC -g -fsanitize=address</code>. Les avertissements sont
+               donc traités comme des erreurs (<code>-Werror</code>) et <strong>AddressSanitizer</strong>
+               (<code>-fsanitize=address</code>) est activé pour détecter les erreurs mémoire à l’exécution.</p>
+            <p>La construction produit les artefacts suivants&nbsp;:</p>
             <div class="table-wrap">
             <table>
                 <thead><tr><th>Artefact</th><th>Description</th></tr></thead>
                 <tbody>
                     <tr><td><code>./raytracer</code></td><td>Exécutable principal (cœur du moteur).</td></tr>
-                    <tr><td><code>plugins/user_interface.so</code></td><td>Plugin d’interface graphique (SFML).</td></tr>
+                    <tr><td><code>plugins/user_interface.so</code></td><td>Plugin d’interface graphique (lié à SFML et X11).</td></tr>
                     <tr><td><code>plugins/renderer_default.so</code></td><td>Renderer « Default » (rendu complet vers image).</td></tr>
                     <tr><td><code>plugins/renderer_viewport.so</code></td><td>Renderer « Viewport » (rendu progressif interactif).</td></tr>
                 </tbody>
             </table>
             </div>
-            <div class="warn"><p>Les plugins sont chargés à l’exécution depuis le dossier <code>./plugins</code>.
-               Lancez donc <code>./raytracer</code> depuis la racine du projet, là où se trouve ce dossier.</p></div>
+            <p>Le Makefile crée le dossier <code>./plugins</code> si nécessaire et y dépose les trois bibliothèques
+               partagées. L’exécutable est produit à la racine.</p>
+            <div class="warn"><p>Les plugins sont chargés à l’exécution depuis le dossier <code>./plugins</code>
+               (chemin relatif). Lancez donc <code>./raytracer</code> <strong>depuis la racine du projet</strong>,
+               là où se trouve ce dossier, sinon le chargement des plugins échoue.</p></div>
 
             <h2 id="cibles-make">Cibles du Makefile</h2>
             <div class="table-wrap">
@@ -99,29 +129,44 @@ sudo apt install clang make libsfml-dev libx11-dev</code></pre>
                 <thead><tr><th>Commande</th><th>Effet</th></tr></thead>
                 <tbody>
                     <tr><td><code>make</code> / <code>make all</code></td><td>Compile l’exécutable et les trois plugins.</td></tr>
-                    <tr><td><code>make clean</code></td><td>Supprime les fichiers objets <code>.o</code>.</td></tr>
-                    <tr><td><code>make fclean</code></td><td>Supprime les <code>.o</code>, l’exécutable et les plugins <code>.so</code>.</td></tr>
+                    <tr><td><code>make clean</code></td><td>Supprime les fichiers objets <code>.o</code> intermédiaires.</td></tr>
+                    <tr><td><code>make fclean</code></td><td>Effectue <code>clean</code> puis supprime l’exécutable et les plugins <code>.so</code>.</td></tr>
                     <tr><td><code>make re</code></td><td>Équivalent à <code>fclean</code> puis <code>all</code> (recompilation complète).</td></tr>
                 </tbody>
             </table>
             </div>
 
             <h2 id="verifier">Vérifier l’installation</h2>
-            <pre><code class="language-bash"># Version
+            <p>Une fois la compilation terminée, quelques commandes rapides confirment que tout fonctionne&nbsp;:</p>
+            <pre><code class="language-bash"># Version (affiche « raytracer version 1.0.0 »)
 ./raytracer --version
 
-# Aide (liste des options)
+# Aide (liste des options de la ligne de commande)
 ./raytracer --help
 
-# Premier rendu vers un PNG
+# Premier rendu vers un PNG, sans interface graphique
 ./raytracer -r sortie.png tests/configs/subject.json</code></pre>
-            <p>Un fichier <code>sortie.png</code> doit apparaître. Passez à la page
-               <a href="utilisation.html">Utilisation</a> pour la suite.</p>
+            <p>La dernière commande utilise le <strong>mode headless</strong> (<code>-r</code> / <code>--render</code>)&nbsp;:
+               elle rend la scène directement dans un fichier <code>sortie.png</code>, sans ouvrir de fenêtre. Si le
+               nom de sortie est omis, le fichier par défaut est <code>render.png</code>. Consultez la page
+               <a href="utilisation.html">Utilisation</a> pour le détail des options et du format de scène.</p>
 
-            <div class="note"><p><strong>Sous WSL&nbsp;:</strong> l’interface graphique force le rendu OpenGL
-               logiciel (Mesa/llvmpipe) pour rester stable avec plusieurs fenêtres. Un message
-               <code>Setting vertical sync not supported</code> peut apparaître&nbsp;; il est sans conséquence
-               (voir la <a href="faq.html">FAQ</a>).</p></div>
+            <h2 id="wsl">Note WSL</h2>
+            <div class="note"><p>Sous <strong>WSL</strong>, l’interface graphique force le rendu <strong>OpenGL
+               logiciel</strong> (Mesa / llvmpipe) pour rester stable avec plusieurs fenêtres ouvertes
+               simultanément. Un message <code>Setting vertical sync not supported</code> peut apparaître au
+               démarrage&nbsp;: il est <strong>bénin</strong> et n’empêche pas le fonctionnement.</p></div>
+
+            <h2 id="depannage">Dépannage</h2>
+            <p>En cas de problème (dépendances manquantes, plugins introuvables, fenêtres qui ne s’ouvrent pas sous
+               WSL, avertissements liés à AddressSanitizer…), commencez par un rebuild propre&nbsp;:</p>
+            <pre><code class="language-bash">make re</code></pre>
+            <p>Pour les problèmes courants et leurs solutions, reportez-vous à la
+               <a href="faq.html">FAQ</a>.</p>
+            <div class="cards">
+                <a class="card" href="faq.html"><div class="icon">❓</div><h3>FAQ</h3><p>Problèmes courants d’installation, de compilation et d’exécution — et comment les résoudre.</p></a>
+                <a class="card" href="utilisation.html"><div class="icon">▶️</div><h3>Utilisation</h3><p>Lancer un premier rendu, options de la ligne de commande, format des scènes.</p></a>
+            </div>
         </article>
 
         <nav class="toc" aria-label="Sommaire">
@@ -133,6 +178,8 @@ sudo apt install clang make libsfml-dev libx11-dev</code></pre>
                 <li><a href="#compilation">Compilation</a></li>
                 <li><a href="#cibles-make">Cibles du Makefile</a></li>
                 <li><a href="#verifier">Vérifier l’installation</a></li>
+                <li><a href="#wsl">Note WSL</a></li>
+                <li><a href="#depannage">Dépannage</a></li>
             </ul>
         </nav>
     </main>
@@ -144,6 +191,8 @@ sudo apt install clang make libsfml-dev libx11-dev</code></pre>
 </footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="assets/search-index.js"></script>
+<script src="assets/search.js"></script>
 <script src="assets/main.js"></script>
 </body>
 </html>

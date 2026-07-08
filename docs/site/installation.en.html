@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Installation — Raytracer</title>
+<meta name="description" content="Requirements, dependencies, building and verifying the Raytracer: a C++17 ray tracing rendering engine.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+    <button class="menu-toggle" data-menu-toggle aria-label="Menu">☰</button>
+    <a class="brand" href="index.en.html"><span class="logo">◐</span> Raytracer <small>docs</small></a>
+    <div class="search">
+        <input id="search-input" type="search" autocomplete="off" spellcheck="false" aria-label="Search">
+        <div id="search-results" class="search-results" role="listbox"></div>
+    </div>
+    <a class="lang-toggle" href="installation.html" aria-label="Français" title="Français">🌐 FR</a>
+</header>
+
+<div class="layout">
+    <aside class="sidebar">
+            <h4>Get started</h4>
+            <ul>
+                <li><a href="index.en.html">Home</a></li>
+                <li><a href="installation.en.html" class="active">Installation</a></li>
+                <li><a href="utilisation.en.html">Usage</a></li>
+            </ul>
+            <h4>Scene &amp; content</h4>
+            <ul>
+                <li><a href="format-scene.en.html">Scene format</a></li>
+                <li><a href="primitives.en.html">Primitives</a></li>
+                <li><a href="materiaux.en.html">Materials</a></li>
+                <li><a href="fonctionnalites.en.html">Features</a></li>
+            </ul>
+            <h4>Engine</h4>
+            <ul>
+                <li><a href="architecture.en.html">Architecture</a></li>
+                <li><a href="rendu.en.html">Rendering pipeline</a></li>
+                <li><a href="plugins.en.html">Plugin system</a></li>
+                <li><a href="cluster.en.html">Cluster rendering</a></li>
+            </ul>
+            <h4>Interface</h4>
+            <ul>
+                <li><a href="interface.en.html">Graphical interface</a></li>
+            </ul>
+            <h4>Reference</h4>
+            <ul>
+                <li><a href="reference.en.html">Class reference</a></li>
+                <li><a href="faq.en.html">FAQ</a></li>
+            </ul>
+        </aside>
+
+    <main class="content has-toc">
+        <article class="article">
+            <p class="crumbs"><a href="index.en.html">Home</a> / Installation</p>
+            <h1>Installation</h1>
+            <p class="lead">Requirements, external dependencies, building with <code>make</code> and verifying the installation.</p>
+
+            <div class="badges">
+                <span class="pill">C++17</span>
+                <span class="pill gray">clang++</span>
+                <span class="pill gray">Makefile</span>
+                <span class="pill gray">SFML</span>
+                <span class="pill gray">X11</span>
+                <span class="pill green">.so plugins</span>
+            </div>
+
+            <h2 id="prerequis">Requirements</h2>
+            <p>The project targets a <strong>Linux</strong> environment (developed and tested under WSL2). You need the following tools and libraries:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Tool / library</th><th>Purpose</th></tr></thead>
+                <tbody>
+                    <tr><td><code>clang++</code></td><td>C++ compiler. The Makefile invokes it explicitly, using the <strong>C++17</strong> standard.</td></tr>
+                    <tr><td><code>make</code></td><td>Build system (compilation and linking orchestration).</td></tr>
+                    <tr><td><strong>SFML</strong></td><td>Window, graphics context, input and networking — used by the interface plugin. Linked modules: <code>graphics</code>, <code>window</code>, <code>system</code>, <code>network</code>.</td></tr>
+                    <tr><td><strong>X11</strong> (<code>libX11</code>)</td><td>Windowing system on Linux (linked via <code>-lX11</code>), required by the interface plugin.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <div class="note"><p>SFML and X11 are only needed for the <strong>graphical interface plugin</strong>
+               (<code>user_interface.so</code>). The engine core and the renderers depend only on the C++ standard library.</p></div>
+
+            <h3 id="deps-fournies">Bundled dependencies</h3>
+            <p>Two header-only libraries are included in the repository under <code>srcs/external/</code>&nbsp;— <strong>nothing to install</strong>. The Makefile makes them available at build time via <code>-isystem srcs/external</code>:</p>
+            <ul>
+                <li><strong>nlohmann/json</strong> (<code>srcs/external/nlohmann/json.hpp</code>) — reading and writing scene files in JSON format.</li>
+                <li><strong>stb_image</strong> (<code>srcs/external/stb_image.h</code>) — loading images (textures) and exporting renders to PNG.</li>
+            </ul>
+
+            <h3 id="install-deps">Install SFML and X11 (Debian / Ubuntu)</h3>
+            <p>On a Debian- or Ubuntu-based distribution:</p>
+            <pre><code class="language-bash">sudo apt update
+sudo apt install clang make libsfml-dev libx11-dev</code></pre>
+            <div class="note"><p>The packages are named <code>libsfml-dev</code> (SFML, all modules) and <code>libx11-dev</code>
+               (X11) on Debian/Ubuntu. Adapt the package names to your distribution.</p></div>
+
+            <h2 id="compilation">Building</h2>
+            <p>From the repository root:</p>
+            <pre><code class="language-bash">make</code></pre>
+            <p>Each translation unit is built with the flags
+               <code>-Wall -Wextra -Werror -std=c++17 -fPIC -g -fsanitize=address</code>. Warnings are therefore
+               treated as errors (<code>-Werror</code>) and <strong>AddressSanitizer</strong>
+               (<code>-fsanitize=address</code>) is enabled to catch memory errors at runtime.</p>
+            <p>The build produces the following artifacts:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Artifact</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td><code>./raytracer</code></td><td>Main executable (engine core).</td></tr>
+                    <tr><td><code>plugins/user_interface.so</code></td><td>Graphical interface plugin (linked against SFML and X11).</td></tr>
+                    <tr><td><code>plugins/renderer_default.so</code></td><td>"Default" renderer (full render to image).</td></tr>
+                    <tr><td><code>plugins/renderer_viewport.so</code></td><td>"Viewport" renderer (interactive progressive render).</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p>The Makefile creates the <code>./plugins</code> directory if needed and places the three shared
+               libraries there. The executable is produced at the repository root.</p>
+            <div class="warn"><p>Plugins are loaded at runtime from the <code>./plugins</code> directory
+               (relative path). Run <code>./raytracer</code> <strong>from the project root</strong>, where that
+               directory lives, otherwise plugin loading fails.</p></div>
+
+            <h2 id="cibles-make">Makefile targets</h2>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Command</th><th>Effect</th></tr></thead>
+                <tbody>
+                    <tr><td><code>make</code> / <code>make all</code></td><td>Builds the executable and the three plugins.</td></tr>
+                    <tr><td><code>make clean</code></td><td>Removes intermediate <code>.o</code> object files.</td></tr>
+                    <tr><td><code>make fclean</code></td><td>Runs <code>clean</code>, then removes the executable and the <code>.so</code> plugins.</td></tr>
+                    <tr><td><code>make re</code></td><td>Equivalent to <code>fclean</code> then <code>all</code> (full rebuild).</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <h2 id="verifier">Verify the installation</h2>
+            <p>Once the build is complete, a few quick commands confirm that everything works:</p>
+            <pre><code class="language-bash"># Version (prints "raytracer version 1.0.0")
+./raytracer --version
+
+# Help (lists the command-line options)
+./raytracer --help
+
+# First render to a PNG, without the graphical interface
+./raytracer -r output.png tests/configs/subject.json</code></pre>
+            <p>The last command uses <strong>headless mode</strong> (<code>-r</code> / <code>--render</code>): it
+               renders the scene directly to an <code>output.png</code> file, without opening a window. If the
+               output name is omitted, the default file is <code>render.png</code>. See the
+               <a href="utilisation.en.html">Usage</a> page for the full list of options and the scene format.</p>
+
+            <h2 id="wsl">WSL note</h2>
+            <div class="note"><p>Under <strong>WSL</strong>, the graphical interface forces <strong>software
+               OpenGL</strong> rendering (Mesa / llvmpipe) to stay stable when several windows are open at the
+               same time. A <code>Setting vertical sync not supported</code> message may appear at startup: it is
+               <strong>harmless</strong> and does not prevent the program from running.</p></div>
+
+            <h2 id="depannage">Troubleshooting</h2>
+            <p>If something goes wrong (missing dependencies, plugins not found, windows failing to open under
+               WSL, AddressSanitizer warnings…), start with a clean rebuild:</p>
+            <pre><code class="language-bash">make re</code></pre>
+            <p>For common issues and their solutions, refer to the
+               <a href="faq.en.html">FAQ</a>.</p>
+            <div class="cards">
+                <a class="card" href="faq.en.html"><div class="icon">❓</div><h3>FAQ</h3><p>Common installation, build and runtime issues — and how to solve them.</p></a>
+                <a class="card" href="utilisation.en.html"><div class="icon">▶️</div><h3>Usage</h3><p>Run a first render, command-line options, scene file format.</p></a>
+            </div>
+        </article>
+
+        <nav class="toc" aria-label="On this page">
+            <strong>On this page</strong>
+            <ul>
+                <li><a href="#prerequis">Requirements</a></li>
+                <li class="sub"><a href="#deps-fournies">Bundled dependencies</a></li>
+                <li class="sub"><a href="#install-deps">Install SFML / X11</a></li>
+                <li><a href="#compilation">Building</a></li>
+                <li><a href="#cibles-make">Makefile targets</a></li>
+                <li><a href="#verifier">Verify the installation</a></li>
+                <li><a href="#wsl">WSL note</a></li>
+                <li><a href="#depannage">Troubleshooting</a></li>
+            </ul>
+        </nav>
+    </main>
+</div>
+
+<footer class="site-footer">
+    <span>Raytracer — technical documentation</span>
+    <span>C++17 · SFML · Plugin architecture</span>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="assets/search-index.js"></script>
+<script src="assets/search.js"></script>
+<script src="assets/main.js"></script>
+</body>
+</html>

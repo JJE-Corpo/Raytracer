@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Format de scène — Raytracer</title>
+<meta name="description" content="Référence exhaustive du schéma JSON des fichiers de scène du Raytracer : structure, camera, objects, types d'objets, materials et messages d'erreur.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+    <button class="menu-toggle" data-menu-toggle aria-label="Menu">☰</button>
+    <a class="brand" href="index.html"><span class="logo">◐</span> Raytracer <small>docs</small></a>
+    <div class="search">
+        <input id="search-input" type="search" autocomplete="off" spellcheck="false" aria-label="Rechercher">
+        <div id="search-results" class="search-results" role="listbox"></div>
+    </div>
+    <a class="lang-toggle" href="format-scene.en.html" aria-label="English" title="English">🌐 EN</a>
+</header>
+
+<div class="layout">
+    <aside class="sidebar">
+            <h4>Démarrer</h4>
+            <ul>
+                <li><a href="index.html">Accueil</a></li>
+                <li><a href="installation.html">Installation</a></li>
+                <li><a href="utilisation.html">Utilisation</a></li>
+            </ul>
+            <h4>Scène &amp; contenu</h4>
+            <ul>
+                <li><a href="format-scene.html" class="active">Format de scène</a></li>
+                <li><a href="primitives.html">Primitives</a></li>
+                <li><a href="materiaux.html">Matériaux</a></li>
+                <li><a href="fonctionnalites.html">Fonctionnalités</a></li>
+            </ul>
+            <h4>Moteur</h4>
+            <ul>
+                <li><a href="architecture.html">Architecture</a></li>
+                <li><a href="rendu.html">Pipeline de rendu</a></li>
+                <li><a href="plugins.html">Système de plugins</a></li>
+                <li><a href="cluster.html">Rendu en cluster</a></li>
+            </ul>
+            <h4>Interface</h4>
+            <ul>
+                <li><a href="interface.html">Interface graphique</a></li>
+            </ul>
+            <h4>Référence</h4>
+            <ul>
+                <li><a href="reference.html">Référence des classes</a></li>
+                <li><a href="faq.html">FAQ</a></li>
+            </ul>
+        </aside>
+
+    <main class="content has-toc">
+        <article class="article">
+            <p class="crumbs"><a href="index.html">Accueil</a> / Format de scène</p>
+            <h1>Format de scène</h1>
+            <p class="lead">Référence exhaustive du schéma <strong>JSON</strong> lu par
+               <code>SceneParser</code>. Chaque clé documentée ici provient directement du parseur
+               (<code>srcs/core/scene/SceneParser.cpp</code>)&nbsp;: rien n'est inventé. Les clés absentes
+               de cette page sont ignorées silencieusement.</p>
+
+            <h2 id="structure">Structure d'un fichier</h2>
+            <p>Une scène est un fichier <code>.json</code> (l'extension est vérifiée&nbsp;: tout autre suffixe
+               lève <code>INVALID_FILE_EXTENSION</code>). Le document racine est un objet qui peut contenir
+               quatre sections&nbsp;:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Section</th><th>Type</th><th>Requis&nbsp;?</th><th>Rôle</th></tr></thead>
+                <tbody>
+                    <tr><td><code>camera</code></td><td>objet</td><td><span class="pill">obligatoire</span></td><td>Point de vue et qualité du rendu. Son absence lève <em>« Missing camera section »</em>.</td></tr>
+                    <tr><td><code>objects</code></td><td>tableau</td><td><span class="pill">obligatoire</span></td><td>Primitives, lumières et groupes. Son absence lève <em>« Missing objects section »</em>.</td></tr>
+                    <tr><td><code>environment</code></td><td>objet</td><td><span class="pill gray">optionnel</span></td><td>Coefficients d'éclairage global.</td></tr>
+                    <tr><td><code>materials</code></td><td>tableau</td><td><span class="pill gray">optionnel</span></td><td>Bibliothèque de matériaux référencés par nom.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <div class="note"><p>Le parseur ne lit que les clés qu'il connaît. Toute clé racine
+               <strong>inconnue</strong> (par exemple un champ <code>name</code> ou <code>description</code>
+               au niveau du document, ou n'importe quelle métadonnée) est simplement <strong>ignorée</strong>,
+               sans avertissement.</p></div>
+            <pre><code class="language-json">{
+  "environment": { "ambient": 0.4, "diffuse": 0.6 },
+  "camera":   { "resolution": [1920, 1080], "position": [0,-100,20], "rotation": [0,0,0], "fieldOfView": 72.0 },
+  "objects":  [ { "type": "sphere", "position": [60,5,40], "radius": 25 } ],
+  "materials": [ { "name": "Rouge", "model": "phong", "base_color": [255,64,64] } ]
+}</code></pre>
+
+            <h2 id="environment">Section <code>environment</code></h2>
+            <p>Facultative. Contrôle les coefficients d'éclairage global. Les deux clés doivent être des
+               <strong>nombres</strong>&nbsp;; toute valeur non numérique est ignorée et la valeur par défaut
+               est conservée.</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Clé</th><th>Type</th><th>Défaut</th><th>Rôle</th></tr></thead>
+                <tbody>
+                    <tr><td><code>ambient</code></td><td>nombre</td><td><code>0.4</code></td><td>Coefficient de lumière ambiante global.</td></tr>
+                    <tr><td><code>diffuse</code></td><td>nombre</td><td><code>0.6</code></td><td>Coefficient de contribution diffuse global.</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <h2 id="camera">Section <code>camera</code></h2>
+            <p>Obligatoire. Analysée par <code>parseCamera</code>. Quatre clés sont
+               <strong>obligatoires</strong>&nbsp;; leur absence (ou une forme invalide) lève une exception
+               qui interrompt le chargement de la scène.</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Clé</th><th>Type</th><th>Requis&nbsp;?</th><th>Rôle / erreur si absent</th></tr></thead>
+                <tbody>
+                    <tr><td><code>resolution</code></td><td><code>[largeur, hauteur]</code> (2 nombres)</td><td><span class="pill">obligatoire</span></td><td>Dimensions de l'image en pixels. Absent&nbsp;: <em>« Missing camera resolution »</em>. Mauvaise forme&nbsp;: <em>« Camera resolution must be [width, height] »</em>.</td></tr>
+                    <tr><td><code>position</code></td><td><code>[x, y, z]</code></td><td><span class="pill">obligatoire</span></td><td>Position de la caméra dans le monde. Absent&nbsp;: <em>« Missing camera position »</em>.</td></tr>
+                    <tr><td><code>rotation</code></td><td><code>[x, y, z]</code> en <strong>degrés</strong></td><td><span class="pill">obligatoire</span></td><td>Orientation en angles d'Euler. Absent&nbsp;: <em>« Missing camera rotation »</em>.</td></tr>
+                    <tr><td><code>fieldOfView</code></td><td>nombre</td><td><span class="pill">obligatoire</span></td><td>Champ de vision (degrés). Absent&nbsp;: <em>« Missing camera fov »</em>.</td></tr>
+                    <tr><td><code>samplesPerPixel</code></td><td>entier &gt; 0</td><td><span class="pill gray">optionnel</span></td><td>Échantillons par pixel (anti-aliasing). Défaut&nbsp;: <code>5</code>. Une valeur &le; 0 lève <em>« camera samplesPerPixel must be greater than 0 »</em>.</td></tr>
+                    <tr><td><code>samples_per_pixel</code></td><td>entier &gt; 0</td><td><span class="pill gray">alias</span></td><td>Alias <em>snake_case</em> de <code>samplesPerPixel</code>, utilisé uniquement si <code>samplesPerPixel</code> est absent.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <pre><code class="language-json">"camera": {
+  "resolution": [1920, 1080],
+  "position":   [0.0, -100.0, 20.0],
+  "rotation":   [0.0, 0.0, 0.0],
+  "fieldOfView": 72.0,
+  "samplesPerPixel": 128
+}</code></pre>
+
+            <h2 id="objects">Section <code>objects</code></h2>
+            <p>Obligatoire&nbsp;: un <strong>tableau</strong> (sinon <em>« objects must be a list »</em>). Chaque
+               élément est un objet doté d'une clé <code>type</code> (chaîne, <strong>obligatoire</strong>) qui
+               détermine la primitive, la lumière ou le groupe à construire. Forme générale d'un objet&nbsp;:</p>
+            <pre><code class="language-json">{
+  "type": "sphere",           // obligatoire — sélectionne le type d'objet
+  "name": "Ma sphère",        // facultatif — libellé affiché dans l'interface
+  "position": [60, 5, 40],    // propriétés propres au type (voir tableau ci-dessous)
+  "radius": 25,
+  "material": "Rouge"         // facultatif — nom d'une entrée de "materials"
+}</code></pre>
+            <p>Le parseur applique une <strong>table de gestionnaires</strong>&nbsp;: pour chaque objet, il
+               parcourt les clés reconnues et n'assigne que celles présentes. Une clé non listée pour ce type
+               (ou totalement inconnue) est ignorée. Si une clé présente a une valeur malformée, l'objet est
+               <strong>abandonné</strong> (message d'erreur sur <code>stderr</code>) mais le reste de la scène
+               continue de se charger.</p>
+            <div class="note"><p>Contrairement à <code>camera</code>, un objet invalide n'interrompt pas le
+               chargement&nbsp;: l'erreur est écrite sur la sortie d'erreur et l'objet est simplement omis.
+               Seules les sections <code>camera</code>/<code>objects</code> manquantes stoppent le parseur.</p></div>
+
+            <h2 id="types-objets">Types d'objets et clés reconnues</h2>
+            <p>Valeurs acceptées pour <code>type</code> et clés lues par le parseur pour chacune. Les clés
+               <code>position</code>, <code>rotation</code>, <code>scale</code>, <code>name</code> et
+               <code>material</code> sont acceptées de façon générique&nbsp;; les colonnes ci-dessous listent
+               les clés <em>spécifiques</em> que chaque type exploite réellement.</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th><code>type</code></th><th>Clés propres au type</th><th>Notes</th></tr></thead>
+                <tbody>
+                    <tr><td><code>sphere</code></td><td><code>position</code>, <code>radius</code>, <code>scale</code></td><td>Sphère centrée sur <code>position</code>.</td></tr>
+                    <tr><td><code>plane</code></td><td><code>axis</code> (<code>"x"</code>/<code>"y"</code>/<code>"z"</code>), <code>position</code>, <code>size</code></td><td>Plan aligné sur un axe. <strong>Voir l'avertissement ci-dessous.</strong></td></tr>
+                    <tr><td><code>cube</code></td><td><code>position</code>, <code>rotation</code>, <code>scale</code>, <code>size</code></td><td>Cube d'arête <code>size</code>.</td></tr>
+                    <tr><td><code>cylinder</code></td><td><code>position</code>, <code>rotation</code>, <code>radius</code>, <code>height</code></td><td>Cylindre.</td></tr>
+                    <tr><td><code>cone</code></td><td><code>position</code>, <code>rotation</code>, <code>radius</code>, <code>height</code></td><td>Cône.</td></tr>
+                    <tr><td><code>triangle</code></td><td><code>vertex0</code>, <code>vertex1</code>, <code>vertex2</code></td><td>Trois sommets <code>[x,y,z]</code>.</td></tr>
+                    <tr><td><code>torus</code></td><td><code>position</code>, <code>rotation</code>, <code>radius</code>, <code>height</code></td><td>Tore&nbsp;; <code>height</code> sert de rayon de tube.</td></tr>
+                    <tr><td><code>tanglecube</code></td><td><code>position</code>, <code>rotation</code>, <code>size</code>, <code>threshold</code></td><td>Surface implicite (isovaleur <code>threshold</code>).</td></tr>
+                    <tr><td><code>fractal</code></td><td><code>position</code>, <code>size</code>, <code>power</code>, <code>iterations</code></td><td>Fractale (type Mandelbulb).</td></tr>
+                    <tr><td><code>mesh</code></td><td><code>file</code> (<code>.obj</code>) <em>ou</em> <code>vertices</code>&nbsp;/&nbsp;<code>faces</code>&nbsp;/&nbsp;<code>normals</code>, <code>position</code>, <code>rotation</code>, <code>scale</code>, <code>vertex_overrides</code></td><td>Maillage chargé depuis un fichier ou défini en ligne.</td></tr>
+                    <tr><td><code>point_light</code></td><td><code>position</code>, <code>color</code>, <code>intensity</code></td><td>Lumière ponctuelle.</td></tr>
+                    <tr><td><code>directional_light</code></td><td><code>direction</code>, <code>color</code>, <code>intensity</code></td><td>Lumière directionnelle.</td></tr>
+                    <tr><td><code>group</code></td><td><code>name</code>, <code>position</code>, <code>rotation</code>, <code>scale</code>, <code>children</code></td><td>Conteneur hiérarchique&nbsp;; <code>children</code> est un tableau d'objets imbriqués.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <div class="warn"><p><strong>Le plan se définit par <code>axis</code>, jamais par
+               <code>normal</code>/<code>origin</code>.</strong> La clé <code>axis</code> attend la chaîne
+               <code>"x"</code>, <code>"y"</code> ou <code>"z"</code> (toute autre valeur lève
+               <em>« Unknown axis »</em>). Des clés comme <code>normal</code> ou <code>origin</code> sont
+               <strong>ignorées</strong>&nbsp;: un plan défini ainsi retombera sur son axe par défaut. Utilisez
+               <code>position</code> (et non <code>origin</code>) pour le décaler le long de l'axe.</p></div>
+            <p>Clés génériques additionnelles reconnues par la table de gestionnaires&nbsp;:
+               <code>direction</code>, <code>power</code>, <code>threshold</code>, <code>intensity</code>,
+               <code>iterations</code>, <code>vertices</code>, <code>faces</code>, <code>normals</code>,
+               <code>vertex_overrides</code>. Chaque entrée de <code>vertex_overrides</code> est un objet
+               <code>{ "index": n, "position": [x,y,z] }</code>&nbsp;; une entrée sans <code>index</code> ou
+               sans <code>position</code> lève une erreur.</p>
+            <div class="note"><p>Il existe aussi un type <code>obj</code> (distinct de <code>mesh</code>) qui
+               importe directement un <code>.obj</code> via la clé <code>path</code> (obligatoire) et accepte
+               <code>position</code>, <code>rotation</code>, <code>size</code>. Il produit une liste de
+               triangles au lieu d'une primitive maillée unique.</p></div>
+
+            <h2 id="conventions">Conventions de valeurs</h2>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Notion</th><th>Forme</th><th>Détail</th></tr></thead>
+                <tbody>
+                    <tr><td>Vecteur</td><td><code>[x, y, z]</code></td><td>Tableau de 3 <strong>nombres</strong>. Utilisé pour <code>position</code>, <code>scale</code>, <code>direction</code>, les sommets… Une mauvaise longueur lève <em>« expected an array of 3 numbers [x, y, z] »</em>.</td></tr>
+                    <tr><td>Rotation</td><td><code>[x, y, z]</code></td><td>Angles d'Euler en <strong>degrés</strong>.</td></tr>
+                    <tr><td>Couleur</td><td><code>[r, g, b]</code></td><td>Trois composantes entières comprises entre <code>0</code> et <code>255</code>. L'alpha est fixé à 255. Mauvaise longueur&nbsp;: <em>« expected an array of 3 numbers [r, g, b] »</em>.</td></tr>
+                    <tr><td>Résolution</td><td><code>[largeur, hauteur]</code></td><td>Deux nombres entiers.</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <h2 id="materials">Section <code>materials</code> et référence par nom</h2>
+            <p>Facultative&nbsp;: un tableau de matériaux (sinon <em>« materials must be a list »</em>). Chaque
+               entrée doit posséder un <code>name</code> (sans lui&nbsp;: <em>« Missing material name »</em>) et,
+               en général, un <code>model</code> (<code>"phong"</code> ou <code>"pbr"</code>). Un objet réfère un
+               matériau par sa clé <code>material</code>, qui doit correspondre <strong>exactement</strong> au
+               <code>name</code> d'une entrée de <code>materials</code>.</p>
+            <div class="warn"><p>Si la valeur de <code>material</code> d'un objet ne correspond à aucun matériau
+               chargé, le parseur lève <em>« Unknown material "…" »</em> et l'objet concerné est abandonné.</p></div>
+            <div class="note"><p>Pour le détail exhaustif des champs de matériau (<code>base_color</code>,
+               <code>metallic</code>, <code>roughness</code>, <code>transmission</code>, cartes de texture et de
+               normales, etc.), voir la page <a href="materiaux.html">Matériaux</a>. À noter&nbsp;: le modèle est
+               lu depuis <code>model</code> et <strong>non</strong> <code>type</code>&nbsp;; une clé
+               <code>type</code> sur un matériau est ignorée et le modèle retombe sur <code>phong</code>.</p></div>
+
+            <h2 id="exemple">Exemple complet commenté</h2>
+            <p>Extrait fidèle de <code>tests/configs/subject.json</code> (deux sphères, un plan et une lumière)&nbsp;:</p>
+            <pre><code class="language-json">{
+  "environment": { "ambient": 0.4, "diffuse": 0.6 },
+
+  "camera": {
+    "resolution": [1920, 1080],      // largeur x hauteur en pixels (obligatoire)
+    "position":   [0.0, -100.0, 20.0],
+    "rotation":   [0.0, 0.0, 0.0],   // degrés (obligatoire)
+    "fieldOfView": 72.0,             // degrés (obligatoire)
+    "samplesPerPixel": 128           // anti-aliasing (défaut 5)
+  },
+
+  "objects": [
+    {
+      "name": "Sphere A",
+      "type": "sphere",
+      "position": [60.0, 5.0, 40.0],
+      "radius": 25,
+      "material": "Material A"        // référence par nom
+    },
+    {
+      "name": "Plane",
+      "type": "plane",
+      "axis": "z",                    // "x" | "y" | "z" — PAS "normal"/"origin"
+      "position": [0.0, 0.0, -20.0],
+      "material": "Material C"
+    },
+    {
+      "name": "Point light",
+      "type": "point_light",
+      "intensity": 1000000.0,
+      "position": [400.0, 100.0, 500.0]
+    }
+  ],
+
+  "materials": [
+    // Le modèle est lu depuis "model" (phong | pbr) ; "base_color" en [r,g,b] 0-255.
+    { "name": "Material A", "model": "phong", "base_color": [255, 64, 64] },
+    { "name": "Material C", "model": "phong", "base_color": [64, 64, 255] }
+  ]
+}</code></pre>
+
+            <h2 id="erreurs">Messages d'erreur du parseur</h2>
+            <p>Les erreurs <strong>fatales</strong> interrompent le chargement (exception
+               <code>LoadingSceneException</code>). Les erreurs <strong>par objet</strong> sont écrites sur
+               <code>stderr</code> et l'objet fautif est simplement omis.</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Message</th><th>Portée</th><th>Cause</th></tr></thead>
+                <tbody>
+                    <tr><td><code>Missing camera section</code></td><td>fatal</td><td>Pas de clé <code>camera</code> à la racine.</td></tr>
+                    <tr><td><code>Missing objects section</code></td><td>fatal</td><td>Pas de clé <code>objects</code> à la racine.</td></tr>
+                    <tr><td><code>Missing camera resolution</code></td><td>fatal</td><td><code>camera.resolution</code> absent.</td></tr>
+                    <tr><td><code>Camera resolution must be [width, height]</code></td><td>fatal</td><td><code>resolution</code> n'est pas un tableau de 2 nombres.</td></tr>
+                    <tr><td><code>Missing camera position</code></td><td>fatal</td><td><code>camera.position</code> absent.</td></tr>
+                    <tr><td><code>Missing camera rotation</code></td><td>fatal</td><td><code>camera.rotation</code> absent.</td></tr>
+                    <tr><td><code>Missing camera fov</code></td><td>fatal</td><td><code>camera.fieldOfView</code> absent.</td></tr>
+                    <tr><td><code>camera samplesPerPixel must be greater than 0</code></td><td>fatal</td><td><code>samplesPerPixel</code> &le; 0.</td></tr>
+                    <tr><td><code>objects must be a list</code></td><td>fatal</td><td><code>objects</code> n'est pas un tableau.</td></tr>
+                    <tr><td><code>materials must be a list</code></td><td>fatal</td><td><code>materials</code> n'est pas un tableau.</td></tr>
+                    <tr><td><code>Missing material name</code></td><td>fatal</td><td>Une entrée de <code>materials</code> n'a pas de <code>name</code>.</td></tr>
+                    <tr><td><code>Missing object type</code></td><td>par objet</td><td>Objet sans clé <code>type</code> (ou <code>type</code> non-chaîne)&nbsp;: objet ignoré.</td></tr>
+                    <tr><td><code>object "&lt;type&gt;": Unknown or incomplete object definition</code></td><td>par objet</td><td>Type inconnu ou propriétés insuffisantes pour construire l'objet.</td></tr>
+                    <tr><td><code>object "&lt;type&gt;" &lt;clé&gt;: …</code></td><td>par objet</td><td>Une propriété est malformée (ex.&nbsp;: <code>radius</code> non numérique).</td></tr>
+                    <tr><td><code>Unknown material "&lt;nom&gt;"</code></td><td>par objet</td><td><code>material</code> ne correspond à aucun matériau chargé.</td></tr>
+                    <tr><td><code>Unknown axis "&lt;valeur&gt;"</code></td><td>par objet</td><td><code>axis</code> hors de <code>"x"</code>/<code>"y"</code>/<code>"z"</code>.</td></tr>
+                    <tr><td><code>Missing object path</code></td><td>par objet</td><td>Type <code>obj</code> sans clé <code>path</code>.</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <div class="cards">
+                <a class="card" href="primitives.html"><div class="icon">🔷</div><h3>Primitives</h3><p>Géométrie et paramètres de chaque forme.</p></a>
+                <a class="card" href="materiaux.html"><div class="icon">🎨</div><h3>Matériaux</h3><p>Tous les champs Phong et PBR en détail.</p></a>
+                <a class="card" href="utilisation.html"><div class="icon">⚙️</div><h3>Utilisation</h3><p>Ligne de commande et mode headless.</p></a>
+            </div>
+        </article>
+
+        <nav class="toc" aria-label="Sommaire">
+            <strong>Sur cette page</strong>
+            <ul>
+                <li><a href="#structure">Structure</a></li>
+                <li><a href="#environment">environment</a></li>
+                <li><a href="#camera">camera</a></li>
+                <li><a href="#objects">objects</a></li>
+                <li><a href="#types-objets">Types d'objets</a></li>
+                <li><a href="#conventions">Conventions</a></li>
+                <li><a href="#materials">materials</a></li>
+                <li><a href="#exemple">Exemple complet</a></li>
+                <li><a href="#erreurs">Messages d'erreur</a></li>
+            </ul>
+        </nav>
+    </main>
+</div>
+
+<footer class="site-footer">
+    <span>Raytracer — documentation technique</span>
+    <span>C++17 · SFML · Architecture à plugins</span>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="assets/search-index.js"></script>
+<script src="assets/search.js"></script>
+<script src="assets/main.js"></script>
+</body>
+</html>

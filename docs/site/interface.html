@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interface graphique — Raytracer</title>
+<meta name="description" content="L'interface graphique du Raytracer : plugin user_interface.so, panneaux, composants réutilisables, fenêtres, notifications toast, gizmos de transformation et édition de sommets.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+    <button class="menu-toggle" data-menu-toggle aria-label="Menu">☰</button>
+    <a class="brand" href="index.html"><span class="logo">◐</span> Raytracer <small>docs</small></a>
+    <div class="search">
+        <input id="search-input" type="search" autocomplete="off" spellcheck="false" aria-label="Rechercher">
+        <div id="search-results" class="search-results" role="listbox"></div>
+    </div>
+    <a class="lang-toggle" href="interface.en.html" aria-label="English" title="English">🌐 EN</a>
+</header>
+
+<div class="layout">
+    <aside class="sidebar">
+            <h4>Démarrer</h4>
+            <ul>
+                <li><a href="index.html">Accueil</a></li>
+                <li><a href="installation.html">Installation</a></li>
+                <li><a href="utilisation.html">Utilisation</a></li>
+            </ul>
+            <h4>Scène &amp; contenu</h4>
+            <ul>
+                <li><a href="format-scene.html">Format de scène</a></li>
+                <li><a href="primitives.html">Primitives</a></li>
+                <li><a href="materiaux.html">Matériaux</a></li>
+                <li><a href="fonctionnalites.html">Fonctionnalités</a></li>
+            </ul>
+            <h4>Moteur</h4>
+            <ul>
+                <li><a href="architecture.html">Architecture</a></li>
+                <li><a href="rendu.html">Pipeline de rendu</a></li>
+                <li><a href="plugins.html">Système de plugins</a></li>
+                <li><a href="cluster.html">Rendu en cluster</a></li>
+            </ul>
+            <h4>Interface</h4>
+            <ul>
+                <li><a href="interface.html" class="active">Interface graphique</a></li>
+            </ul>
+            <h4>Référence</h4>
+            <ul>
+                <li><a href="reference.html">Référence des classes</a></li>
+                <li><a href="faq.html">FAQ</a></li>
+            </ul>
+        </aside>
+
+    <main class="content has-toc">
+        <article class="article">
+            <p class="crumbs"><a href="index.html">Accueil</a> / Interface graphique</p>
+            <h1>Interface graphique</h1>
+            <p class="lead">L'interface interactive du Raytracer est un plugin chargé à l'exécution
+                (<code>user_interface.so</code>). Elle affiche la scène, les panneaux d'édition et le viewport de
+                rendu, et permet de manipuler les objets à la souris — jusqu'à l'édition individuelle des sommets
+                d'un maillage.</p>
+
+            <div class="badges">
+                <span class="pill">SFML</span>
+                <span class="pill gray">Plugin .so</span>
+                <span class="pill gray">ICoreAccess</span>
+                <span class="pill green">Édition interactive</span>
+            </div>
+
+            <h2 id="apercu">Vue d'ensemble</h2>
+            <p>L'interface graphique est implémentée comme un <strong>plugin à l'exécution</strong>
+                (<code>user_interface.so</code>) chargé par le chargeur de plugins du cœur. Le point d'entrée est la
+                classe <code>UserInterface</code> (qui implémente <code>IUserInterface</code>), et son type de plugin
+                est <code>PluginType::USER_INTERFACE</code>. Le code source vit dans
+                <code>srcs/plugins/user_interface/</code>.</p>
+
+            <p>Le cycle d'intégration à l'exécution est le suivant&nbsp;:</p>
+            <ol>
+                <li>le cœur charge les plugins depuis <code>./plugins</code>&nbsp;;</li>
+                <li>le plugin d'interface est récupéré par son type <code>USER_INTERFACE</code>&nbsp;;</li>
+                <li><code>create(ICoreAccess&amp;)</code> est appelé&nbsp;;</li>
+                <li>l'interface utilise <code>ICoreAccess</code> pour déclencher les actions de scène et de rendu&nbsp;;</li>
+                <li>à la fermeture, <code>destroy()</code> est appelé et l'instance du plugin est déchargée.</li>
+            </ol>
+
+            <p><code>UserInterface</code> crée et possède la <strong>boucle d'événements de la fenêtre SFML</strong>,
+                construit les menus, les panneaux latéraux et les widgets du viewport de rendu, transmet les actions
+                de l'utilisateur à <code>ICoreAccess</code>, synchronise la sélection du viewport avec celle des
+                panneaux, et affiche les notifications (toasts) et fenêtres auxiliaires. Elle prend en charge&nbsp;:</p>
+            <ul>
+                <li>les actions de cycle de vie de scène (nouveau / ouvrir / enregistrer / enregistrer sous / importer)&nbsp;;</li>
+                <li>la création d'objets depuis le menu (primitives / lumières)&nbsp;;</li>
+                <li>la sélection et l'édition de propriétés via les panneaux&nbsp;;</li>
+                <li>l'affichage de l'état du rendu et les contrôles de la vue de rendu&nbsp;;</li>
+                <li>les actions de connexion / démarrage de cluster via des fenêtres dédiées&nbsp;;</li>
+                <li>les notifications toast en cas de succès ou d'erreur.</li>
+            </ul>
+
+            <div class="note"><p>L'interface dépend de SFML (<code>graphics</code>, <code>window</code>,
+                <code>system</code>, <code>network</code>). Si le plugin renderer du viewport est absent, l'interface
+                le signale par un toast et continue de fonctionner.</p></div>
+
+            <h3 id="apercu-composant">Le contrat <code>Component</code></h3>
+            <p>Tous les widgets dérivent d'une abstraction commune, <code>Component</code>, et partagent le même
+                cycle de vie&nbsp;:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Étape</th><th>Rôle</th></tr></thead>
+                <tbody>
+                    <tr><td><code>setFont(...)</code></td><td>Attribue la police utilisée pour le texte.</td></tr>
+                    <tr><td><code>layout(...)</code></td><td>Calcule la géométrie (pour les widgets qui possèdent leur position/taille).</td></tr>
+                    <tr><td><code>update(mouse)</code></td><td>Calcule l'état <code>hovered</code> (survol) selon la position de la souris.</td></tr>
+                    <tr><td><code>handleEvent(event, mouse)</code></td><td>Mute l'état en réaction aux événements et déclenche les callbacks.</td></tr>
+                    <tr><td><code>draw(window)</code></td><td>Dessine le widget dans la fenêtre.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p>La structure de base expose les champs d'état <code>enabled</code>, <code>hovered</code> et
+                <code>visible</code>. Les helpers de projection et de picking du viewport (dont
+                <code>projectToPixel(...)</code>, <code>pickViewportLight(...)</code> et le filtre de sliders de
+                matériau <code>isMaterialFloatSlider(name, model)</code>) sont regroupés dans
+                <code>ViewportHelper</code>.</p>
+
+            <h2 id="panneaux">Panneaux</h2>
+            <p>Les panneaux (dans <code>srcs/plugins/user_interface/panels/</code>) forment la colonne d'inspection
+                latérale. Chacun se reconstruit dynamiquement selon l'objet sélectionné.</p>
+
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Panneau</th><th>Rôle</th></tr></thead>
+                <tbody>
+                    <tr><td><code>HierarchyPanel</code></td><td>Liste arborescente caméra / lumières / primitives, et gestion de la sélection.</td></tr>
+                    <tr><td><code>ObjectPanel</code></td><td>Inspecteur / éditeur des propriétés de l'objet sélectionné.</td></tr>
+                    <tr><td><code>MaterialPanel</code></td><td>Inspecteur focalisé sur le matériau de la primitive sélectionnée.</td></tr>
+                    <tr><td><code>RendererPanel</code></td><td>Affichage de la texture de rendu et contrôles de l'onglet de rendu.</td></tr>
+                    <tr><td><code>CameraPanel</code></td><td>Édition de la résolution, de la position et de la rotation de la caméra.</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <h3 id="hierarchy-panel">HierarchyPanel</h3>
+            <p>Affiche la scène sous forme de liste arborescente (caméra, lumières, primitives) et gère la
+                sélection. Il prend en charge la <strong>multi-sélection</strong>, la sélection de la caméra et la
+                synchronisation de la sélection avec le picking du viewport. Un callback de demande de masquage
+                (<code>setOnItemHideRequest</code>) permet de cacher un objet, et le panneau gère son propre
+                défilement et sa barre de défilement interne.</p>
+
+            <h3 id="object-panel">ObjectPanel</h3>
+            <p>Inspecteur et éditeur des propriétés de l'objet sélectionné. Sa méthode clé
+                <code>rebuild(const ISceneObject *currentObject)</code> reconfigure le panneau dynamiquement selon le
+                type d'objet à l'exécution. Il expose&nbsp;:</p>
+            <ul>
+                <li>les <strong>transformations communes</strong> — position, rotation et échelle (<em>scale</em>)&nbsp;;</li>
+                <li>pour les primitives — un <strong>menu déroulant de matériau</strong> et les propriétés flottantes
+                    converties en <strong>sliders</strong>&nbsp;;</li>
+                <li>pour les lumières — un <strong>sélecteur de couleur</strong> et un champ d'intensité.</li>
+            </ul>
+            <p>C'est aussi l'ancrage de l'édition de sommets&nbsp;: le bouton <span class="pill gray">Convert to Mesh</span>
+                (convertir en maillage), le <strong>navigateur de sommets</strong> <code>&lt; Point N / total &gt;</code>,
+                le champ <strong>Vertex</strong> et les boutons <kbd>-</kbd>&nbsp;/&nbsp;<kbd>+</kbd> de la ligne
+                <em>Size</em> y sont présentés (voir <a href="#edition-sommets">Édition de sommets</a>).</p>
+
+            <h3 id="material-panel">MaterialPanel</h3>
+            <p>Inspecteur focalisé sur le matériau des primitives sélectionnées. Sa méthode
+                <code>rebuild(const ISceneObject *currentObject)</code> construit les contrôles à partir de l'état
+                courant du matériau. Il propose&nbsp;:</p>
+            <ul>
+                <li>un <strong>sélecteur de modèle</strong> (<code>Phong</code> ou <code>PBR</code>) via un
+                    <code>SegmentedControl</code>&nbsp;;</li>
+                <li>l'édition de la <strong>couleur de base</strong> via un <code>ColorPicker</code>&nbsp;;</li>
+                <li>des <strong>sliders flottants dynamiques</strong>, filtrés par modèle de matériau grâce à
+                    <code>ViewportHelper::isMaterialFloatSlider(...)</code>.</li>
+            </ul>
+
+            <h3 id="renderer-panel">RendererPanel</h3>
+            <p>Affiche la texture de sortie du rendu et les contrôles de l'onglet de rendu supérieur&nbsp;: texte de
+                commentaire / statut du rendu, bouton de fermeture du rendu, et utilitaires de correspondance
+                pixel-espace (<code>getViewportPixel(...)</code>). Il maintient l'échelle et les bornes du viewport
+                synchronisées avec les dimensions du rendu courant.</p>
+
+            <h3 id="camera-panel">CameraPanel</h3>
+            <p>Permet d'éditer la caméra active&nbsp;: la <strong>résolution</strong> (largeur et hauteur), la
+                <strong>position</strong> et la <strong>rotation</strong>, via des champs de texte et des champs
+                vectoriels. Sa méthode <code>rebuild(ICamera *camera)</code> renseigne les champs depuis la caméra
+                courante.</p>
+
+            <h2 id="composants">Composants réutilisables</h2>
+            <p>Les widgets réutilisables sont définis dans
+                <code>srcs/plugins/user_interface/components/</code>. Ils sont assemblés par les panneaux et les
+                fenêtres.</p>
+
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Composant</th><th>Rôle</th></tr></thead>
+                <tbody>
+                    <tr><td><code>Button</code></td><td>Bouton cliquable, déclenche un callback <code>onClick</code>.</td></tr>
+                    <tr><td><code>Checkbox</code></td><td>Case à cocher booléenne.</td></tr>
+                    <tr><td><code>ColorPicker</code></td><td>Sélecteur de couleur (couleur de matériau, couleur de lumière).</td></tr>
+                    <tr><td><code>Dropdown</code></td><td>Menu déroulant de sélection (ex. matériau).</td></tr>
+                    <tr><td><code>Slider</code></td><td>Curseur pour une valeur flottante (propriétés de matériau).</td></tr>
+                    <tr><td><code>SegmentedControl</code></td><td>Sélecteur segmenté (ex. modèle Phong / PBR).</td></tr>
+                    <tr><td><code>TextField</code></td><td>Champ de saisie de texte / valeur.</td></tr>
+                    <tr><td><code>VectorField</code></td><td>Saisie d'un vecteur à trois composantes (position, rotation, échelle).</td></tr>
+                    <tr><td><code>Separator</code></td><td>Séparateur visuel entre les sections.</td></tr>
+                    <tr><td>Système de menu</td><td>Barre de menus et items de menu (<code>components/menu/</code>).</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <p>La plupart des widgets suivent le même <strong>patron commun</strong>&nbsp;:</p>
+            <ol>
+                <li>ils stockent leur géométrie dans des formes / textes SFML&nbsp;;</li>
+                <li>ils calculent l'état <code>hovered</code> dans <code>update(...)</code>&nbsp;;</li>
+                <li>ils mutent leur état dans <code>handleEvent(...)</code>&nbsp;;</li>
+                <li>ils exposent des <strong>callbacks</strong> (<code>onClick</code>, <code>onChange</code>, etc.)&nbsp;;</li>
+                <li>ils renvoient une indication de curseur via <code>getCursor()</code>.</li>
+            </ol>
+
+            <div class="tip"><p>Ce patron uniforme (<code>setFont</code> / <code>layout</code> / <code>update</code> /
+                <code>handleEvent</code> / <code>draw</code> + callbacks) rend l'ajout d'un nouveau widget très
+                mécanique&nbsp;: il suffit d'implémenter le contrat <code>Component</code>.</p></div>
+
+            <h2 id="fenetres">Fenêtres auxiliaires</h2>
+            <p>Les fenêtres pop-up sont implémentées dans
+                <code>srcs/plugins/user_interface/windows/</code>. Elles dérivent de la classe abstraite
+                <code>Window</code>, base des sous-fenêtres SFML en thread séparé. Chaque fenêtre dérivée implémente
+                <code>handleEvent(...)</code>, <code>drawUi()</code> et <code>updateUi()</code>&nbsp;; <code>loop()</code>
+                crée la fenêtre et exécute le cycle poll / update / draw, tandis que <code>destroy()</code> arrête le
+                drapeau d'exécution et joint (ou détache) le thread proprement.</p>
+
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Fenêtre</th><th>Rôle</th></tr></thead>
+                <tbody>
+                    <tr><td><code>ExploratorWindow</code></td><td>Explorateur de fichiers/dossiers pour l'ouverture ou l'enregistrement d'une scène (modes <code>OPEN</code>&nbsp;/&nbsp;<code>SAVE</code>).</td></tr>
+                    <tr><td><code>LoadWindow</code></td><td>Fenêtre de décision fusion / import entre la scène courante et la scène chargée.</td></tr>
+                    <tr><td><code>JoinClusterWindow</code></td><td>Saisie des paramètres de connexion au cluster (IP et port).</td></tr>
+                    <tr><td><code>MarketWindow</code></td><td>Marché de matériaux (onglets <em>Local</em> et <em>Online</em>) pour parcourir et ajouter des matériaux.</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <ul>
+                <li><strong>ExploratorWindow</strong>&nbsp;: listage de répertoire avec navigation vers le parent
+                    (<code>..</code>), filtrage des fichiers cachés, champ de nom de fichier en mode enregistrement, et
+                    bouton de confirmation (<em>Open</em>&nbsp;/&nbsp;<em>Save</em>).</li>
+                <li><strong>LoadWindow</strong>&nbsp;: présente des groupes de cases à cocher appariés pour les champs
+                    de la caméra et les coefficients de lumière d'environnement&nbsp;; l'utilisateur choisit, propriété
+                    par propriété, si la valeur vient de la scène courante ou de la scène chargée, puis les valeurs
+                    retenues sont écrites dans la scène active.</li>
+                <li><strong>JoinClusterWindow</strong>&nbsp;: champs IP et port (validation numérique)&nbsp;; le
+                    callback <code>windowCallback(std::string ip, size_t port)</code> est déclenché à la validation
+                    par <kbd>Entrée</kbd> ou au clic sur <em>JOIN</em>.</li>
+                <li><strong>MarketWindow</strong>&nbsp;: parcours d'une bibliothèque de matériaux avec recherche, sous
+                    deux onglets — matériaux locaux et matériaux en ligne — et boutons d'ajout à la scène.</li>
+            </ul>
+
+            <h2 id="toasts">Notifications toast</h2>
+            <p>Les toasts sont des notifications transitoires et non bloquantes empilées <strong>en bas à droite</strong>
+                de l'interface (<code>toast/Toast.hpp</code>, <code>toast/ToastManager.hpp</code>).</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Type</th><th>Usage</th></tr></thead>
+                <tbody>
+                    <tr><td><span class="pill">INFO</span></td><td>Information neutre.</td></tr>
+                    <tr><td><span class="pill green">SUCCESS</span></td><td>Confirmation d'une action réussie.</td></tr>
+                    <tr><td><span class="pill gray">WARNING</span></td><td>Avertissement non bloquant.</td></tr>
+                    <tr><td><span class="pill gray">ERROR</span></td><td>Erreur (ex. plugin renderer manquant).</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p>Le gestionnaire expose <code>push(title, content, type)</code> pour créer une entrée,
+                <code>update()</code> pour appliquer le fondu (apparition / disparition) et retirer les éléments
+                expirés, et <code>draw(window)</code> pour rendre la pile de toasts animés.</p>
+
+            <h2 id="gizmos">Gizmos de transformation</h2>
+            <p>Quand un objet unique est sélectionné dans le viewport, un <strong>gizmo</strong> permet de le
+                transformer directement à la souris. Trois outils sont disponibles&nbsp;:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Outil</th><th>Raccourci</th><th>Action</th></tr></thead>
+                <tbody>
+                    <tr><td>Déplacer (<em>Move</em>)</td><td><kbd>G</kbd></td><td>Translation via les flèches et plans du gizmo.</td></tr>
+                    <tr><td>Tourner (<em>Rotate</em>)</td><td><kbd>R</kbd></td><td>Rotation via les anneaux du gizmo.</td></tr>
+                    <tr><td>Redimensionner (<em>Scale</em>)</td><td><kbd>S</kbd></td><td>Mise à l'échelle via les poignées du gizmo.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p>La touche <kbd>T</kbd> bascule le repère du gizmo entre <strong>World</strong> (monde) et
+                <strong>Local</strong>. Ces raccourcis n'agissent que lorsque le viewport a le focus, qu'un objet est
+                sélectionné, que l'on n'est pas en mode édition de sommets et que le mode déplacement (vol libre) est
+                désactivé — afin que <kbd>G</kbd>&nbsp;/&nbsp;<kbd>R</kbd>&nbsp;/&nbsp;<kbd>S</kbd> n'entrent pas en
+                conflit avec les touches de vol ZQSD.</p>
+            <div class="note"><p>Le choix de l'outil est aussi accessible dans l'<code>ObjectPanel</code> (callbacks
+                <code>onGizmoModeChanged</code> / <code>onGizmoSpaceChanged</code>), et un badge d'état
+                (« lecture » du gizmo, repère World/Local) est dessiné dans le viewport.</p></div>
+
+            <h2 id="edition-sommets">Édition de sommets</h2>
+            <p>L'édition de sommets permet de déplacer les sommets individuels d'une primitive éditable directement
+                dans le viewport, en glissant des poignées à l'écran ou en tapant des coordonnées. C'est le pendant
+                interactif de la transformation d'objet (position / rotation / échelle) exposée dans l'ObjectPanel.</p>
+
+            <h3 id="edition-editable">Ce qui est éditable</h3>
+            <p>Une primitive est éditable lorsqu'elle implémente <code>IEditablePrimitive</code> en plus de
+                <code>IPrimitive</code>. L'interface découvre cette capacité à l'exécution avec
+                <code>dynamic_cast&lt;IEditablePrimitive *&gt;(primitive)</code> — le même patron de capacité
+                runtime que le renderer utilise pour la sélection — de sorte que le contrat de plugin
+                <code>IPrimitive</code> reste intact.</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Primitive</th><th>Sommets</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Triangle</strong></td><td>ses 3 coins.</td></tr>
+                    <tr><td><strong>Mesh</strong> (maillage)</td><td>les sommets uniques (soudés) du <code>.obj</code> chargé&nbsp;; un sommet partagé déplace toutes les faces incidentes.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p>Les primitives analytiques (cube, sphère, plan, cylindre, cône, tore, tanglecube, fractale) sont
+                définies par des paramètres plutôt que par des sommets et ne sont pas éditables sommet par sommet&nbsp;:
+                déplacez-les / redimensionnez-les avec les champs de transformation de l'ObjectPanel.</p>
+
+            <h3 id="edition-convert">Convert to Mesh</h3>
+            <p>Pour éditer une primitive analytique sommet par sommet, sélectionnez-la et pressez
+                <span class="pill gray">Convert to Mesh</span> dans l'ObjectPanel. Sa surface est triangulée en un
+                maillage (cuit dans <code>generated_meshes/&lt;name&gt;_&lt;n&gt;.obj</code>), la primitive est
+                remplacée par ce maillage, et le maillage est sélectionné pour entrer immédiatement en mode édition.
+                Comme il s'agit d'un maillage normal adossé à un fichier, il s'enregistre et se recharge, et accepte
+                les <code>vertex_overrides</code> comme tout autre maillage.</p>
+            <ul>
+                <li>Les primitives infinies (un plan) ne peuvent pas être converties.</li>
+                <li>Un <strong>cube</strong> est cuit exactement en ses 8 coins / 12 triangles (faces planes) et reste
+                    donc une boîte éditable propre.</li>
+                <li>Le reste utilise un échantillonnage de surface générique&nbsp;: les formes lisses / convexes
+                    (sphère, cône, cylindre) ressortent proprement, tandis que les formes non convexes (tore,
+                    tanglecube) sont approximées.</li>
+            </ul>
+
+            <h3 id="edition-entree">Entrer / sortir du mode édition</h3>
+            <ul>
+                <li><strong>Entrer</strong>&nbsp;: sélectionnez une seule primitive éditable, puis pressez
+                    <kbd>Tab</kbd> — ou <strong>double-cliquez</strong> dessus dans le viewport.</li>
+                <li><strong>Sortir</strong>&nbsp;: pressez de nouveau <kbd>Tab</kbd> ou <kbd>Échap</kbd>. Sélectionner un
+                    autre objet (dans la hiérarchie, ou en supprimant celui édité) quitte aussi le mode édition.</li>
+                <li>En mode édition, un bandeau <strong>« Edit Mode — &lt;nom&gt; »</strong> s'affiche au-dessus du
+                    viewport et un toast confirme la transition.</li>
+            </ul>
+            <p>Le picking d'objet classique dans le viewport est désactivé en mode édition, afin qu'un clic ne
+                sélectionne jamais un autre objet par accident. Le clic droit continue d'orbiter la caméra&nbsp;; les
+                touches de vol WASD/ZQSD restent disponibles sauf pendant un glissement de sommet actif (pour que les
+                touches de verrouillage d'axe ne déplacent pas aussi la caméra).</p>
+
+            <h3 id="edition-poignees">Poignées, survol et picking</h3>
+            <p>Chaque sommet est projeté à l'écran et dessiné comme un petit cercle&nbsp;:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Couleur</th><th>Signification</th></tr></thead>
+                <tbody>
+                    <tr><td>Bleu</td><td>sommet au repos.</td></tr>
+                    <tr><td>Blanc</td><td>le sommet sous le curseur.</td></tr>
+                    <tr><td>Jaune</td><td>le sommet sélectionné.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p>Le clic sélectionne le sommet dont la poignée est la plus proche du curseur, dans un petit rayon en
+                pixels&nbsp;; en cas d'égalité (poignées superposées), le sommet le plus proche de la caméra l'emporte.
+                Les sommets derrière la caméra ou hors écran sont ignorés. Pour les maillages très denses, le nombre de
+                poignées dessinées est plafonné (le picking les considère toutes).</p>
+            <p>Alternativement, utilisez le navigateur <code>&lt; Point N / total &gt;</code> de l'ObjectPanel (juste
+                au-dessus de la ligne <em>Size</em>)&nbsp;: les flèches parcourent les sommets un par un sans viser les
+                poignées à l'écran. Le pas entre en mode édition si nécessaire et met en évidence le sommet courant en
+                <strong>rouge vif</strong> sur la forme.</p>
+
+            <h3 id="edition-glisser">Glisser un sommet</h3>
+            <p>Glissez une poignée pour déplacer son sommet. Par défaut, le sommet glisse dans le plan qui passe par
+                sa position de départ et est <strong>parallèle à l'écran</strong> (normale = direction de la caméra) —
+                le comportement intuitif « déplace-le là où je pointe ».</p>
+            <ul>
+                <li><strong>Verrouillage d'axe</strong>&nbsp;: maintenez <kbd>X</kbd>, <kbd>Y</kbd> ou <kbd>Z</kbd>
+                    pendant le glissement pour contraindre le déplacement à cet axe du monde.</li>
+                <li><strong>Clavier</strong>&nbsp;: les coordonnées monde du sommet sélectionné apparaissent dans un
+                    champ <strong>Vertex</strong> de l'ObjectPanel&nbsp;; taper une valeur déplace le sommet et reste
+                    synchronisé avec le glissement.</li>
+                <li><strong>Grossir / rétrécir (boutons <kbd>-</kbd>&nbsp;/&nbsp;<kbd>+</kbd>)</strong>&nbsp;: les
+                    boutons <kbd>-</kbd>&nbsp;/&nbsp;<kbd>+</kbd> de la ligne <em>Size</em> éloignent / rapprochent le
+                    sommet sélectionné du centroïde de la forme, pour pousser ou tirer un seul point. <strong>Sans</strong>
+                    sommet sélectionné, ces mêmes boutons redimensionnent l'objet entier.</li>
+            </ul>
+            <p>Après chaque édition, le BVH de la scène est marqué « sale » et le viewport re-trace, de sorte que le
+                changement est visible immédiatement.</p>
+
+            <h3 id="edition-mesh">Spécificités des maillages</h3>
+            <ul>
+                <li>Déplacer un sommet partagé met à jour <strong>toutes les faces incidentes</strong>.</li>
+                <li>Les normales des faces affectées sont recalculées, et les normales de sommet lisses (interpolées)
+                    sont rafraîchies comme la moyenne des normales des faces incidentes.</li>
+                <li>Le <strong>BVH local</strong> du maillage est reconstruit au relâchement du sommet
+                    (<code>onGeometryChanged</code>). Pour les petits maillages il est aussi reconstruit en direct
+                    pendant le glissement&nbsp;; pour les grands maillages (&gt; ~4000 triangles), la surface rendue est
+                    légèrement en retard pendant le glissement et se cale sur la forme finale au relâchement, ce qui
+                    garde le glissement réactif.</li>
+            </ul>
+
+            <h3 id="edition-sauvegarde">Sauvegarde des éditions (sérialisation)</h3>
+            <ul>
+                <li><strong>Triangle</strong> — ses trois coins font déjà partie du JSON de scène, donc les positions
+                    éditées sont enregistrées et rechargées telles quelles.</li>
+                <li><strong>Mesh</strong> — le fichier <code>.obj</code> n'est jamais modifié. Les éditions sont
+                    stockées comme <strong>surcharges en espace-objet</strong> dans une liste <code>vertex_overrides</code>
+                    de l'objet maillage, ré-appliquées après le chargement du <code>.obj</code>.</li>
+            </ul>
+            <pre><code class="language-json">{
+    "name": "Cube",
+    "type": "mesh",
+    "file": "tests/obj/cube.obj",
+    "position": [26.0, 10.0, 15.0],
+    "rotation": [0.0, 0.0, 20.0],
+    "scale": [14.0, 14.0, 14.0],
+    "material": "Blue",
+    "vertex_overrides": [
+        { "index": 0, "position": [1.0, -1.0, 0.857] }
+    ]
+}</code></pre>
+            <p>Comme les surcharges sont en espace-objet, elles survivent aux changements ultérieurs de transformation
+                du maillage et font un aller-retour propre&nbsp;: <strong>charger → éditer → enregistrer → recharger</strong>
+                restitue la forme éditée. Voir <code>tests/configs/vertex_edit.json</code> pour une scène (un Triangle
+                et un petit cube maillé) prête à l'essai.</p>
+
+            <h3 id="edition-limites">Limitations</h3>
+            <ul>
+                <li>L'édition change uniquement la géométrie&nbsp;; elle n'ajoute ni ne retire de sommets/faces.</li>
+                <li>Les normales lisses recalculées aux sommets édités sont des moyennes géométriques, donc les arêtes
+                    franches définies dans le <code>.obj</code> (<code>vn</code>) sont localement adoucies là où vous
+                    éditez.</li>
+                <li>Le plan de déplacement est parallèle à la vue&nbsp;; il n'y a pas de glissement séparé en
+                    profondeur (utilisez le champ Vertex ou un verrouillage d'axe pour un placement précis).</li>
+            </ul>
+
+            <h2 id="raccourcis">Raccourcis clavier</h2>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Touche</th><th>Contexte</th><th>Action</th></tr></thead>
+                <tbody>
+                    <tr><td><kbd>G</kbd></td><td>Viewport, objet sélectionné</td><td>Outil gizmo <strong>Déplacer</strong>.</td></tr>
+                    <tr><td><kbd>R</kbd></td><td>Viewport, objet sélectionné</td><td>Outil gizmo <strong>Tourner</strong>.</td></tr>
+                    <tr><td><kbd>S</kbd></td><td>Viewport, objet sélectionné</td><td>Outil gizmo <strong>Redimensionner</strong>.</td></tr>
+                    <tr><td><kbd>T</kbd></td><td>Viewport, objet sélectionné</td><td>Bascule le repère <strong>World / Local</strong>.</td></tr>
+                    <tr><td><kbd>Tab</kbd></td><td>Primitive éditable sélectionnée</td><td>Entre / sort du mode édition de sommets.</td></tr>
+                    <tr><td>Double-clic</td><td>Primitive éditable (viewport)</td><td>Entre en mode édition de sommets.</td></tr>
+                    <tr><td><kbd>Échap</kbd></td><td>Mode édition</td><td>Sort du mode édition de sommets.</td></tr>
+                    <tr><td><kbd>X</kbd>&nbsp;/&nbsp;<kbd>Y</kbd>&nbsp;/&nbsp;<kbd>Z</kbd></td><td>Pendant un glissement de sommet</td><td>Verrouille le déplacement sur l'axe X / Y / Z du monde.</td></tr>
+                    <tr><td><kbd>-</kbd>&nbsp;/&nbsp;<kbd>+</kbd></td><td>Ligne <em>Size</em> de l'ObjectPanel</td><td>Éloigne / rapproche le sommet du centroïde (ou redimensionne l'objet si aucun sommet n'est sélectionné).</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <div class="note"><p>Les touches de déplacement libre de la caméra (type WASD/ZQSD, avec la molette pour la
+                vitesse) restent actives dans le viewport hors mode édition&nbsp;; c'est pourquoi les raccourcis de
+                gizmo sont désactivés quand le mode déplacement est actif.</p></div>
+        </article>
+
+        <nav class="toc" aria-label="Sommaire">
+            <strong>Sur cette page</strong>
+            <ul>
+                <li><a href="#apercu">Vue d'ensemble</a></li>
+                <li><a href="#panneaux">Panneaux</a></li>
+                <li><a href="#composants">Composants réutilisables</a></li>
+                <li><a href="#fenetres">Fenêtres auxiliaires</a></li>
+                <li><a href="#toasts">Notifications toast</a></li>
+                <li><a href="#gizmos">Gizmos de transformation</a></li>
+                <li><a href="#edition-sommets">Édition de sommets</a></li>
+                <li><a href="#raccourcis">Raccourcis clavier</a></li>
+            </ul>
+        </nav>
+    </main>
+</div>
+
+<footer class="site-footer">
+    <span>Raytracer — documentation technique</span>
+    <span>C++17 · SFML · Architecture à plugins</span>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="assets/search-index.js"></script>
+<script src="assets/search.js"></script>
+<script src="assets/main.js"></script>
+</body>
+</html>

@@ -12,39 +12,46 @@
 
 <header class="topbar">
     <button class="menu-toggle" data-menu-toggle aria-label="Menu">☰</button>
-    <a class="brand" href="index.html">
-        <span class="logo">◐</span> Raytracer <small>docs</small>
-    </a>
-    <nav>
-        <a href="index.html" class="active">Accueil</a>
-        <a href="installation.html">Installation</a>
-        <a href="utilisation.html">Utilisation</a>
-        <a href="architecture.html">Architecture</a>
-        <a href="fonctionnalites.html">Fonctionnalités</a>
-        <a href="reference.html">Référence</a>
-        <a href="faq.html">FAQ</a>
-    </nav>
+    <a class="brand" href="index.html"><span class="logo">◐</span> Raytracer <small>docs</small></a>
+    <div class="search">
+        <input id="search-input" type="search" autocomplete="off" spellcheck="false" aria-label="Rechercher">
+        <div id="search-results" class="search-results" role="listbox"></div>
+    </div>
+    <a class="lang-toggle" href="index.en.html" aria-label="English" title="English">🌐 EN</a>
 </header>
 
 <div class="layout">
     <aside class="sidebar">
-        <h4>Démarrer</h4>
-        <ul>
-            <li><a href="index.html" class="active">Accueil</a></li>
-            <li><a href="installation.html">Installation</a></li>
-            <li><a href="utilisation.html">Utilisation</a></li>
-        </ul>
-        <h4>Comprendre</h4>
-        <ul>
-            <li><a href="architecture.html">Architecture</a></li>
-            <li><a href="fonctionnalites.html">Fonctionnalités</a></li>
-            <li><a href="reference.html">Référence des classes</a></li>
-        </ul>
-        <h4>Aide</h4>
-        <ul>
-            <li><a href="faq.html">FAQ</a></li>
-        </ul>
-    </aside>
+            <h4>Démarrer</h4>
+            <ul>
+                <li><a href="index.html" class="active">Accueil</a></li>
+                <li><a href="installation.html">Installation</a></li>
+                <li><a href="utilisation.html">Utilisation</a></li>
+            </ul>
+            <h4>Scène &amp; contenu</h4>
+            <ul>
+                <li><a href="format-scene.html">Format de scène</a></li>
+                <li><a href="primitives.html">Primitives</a></li>
+                <li><a href="materiaux.html">Matériaux</a></li>
+                <li><a href="fonctionnalites.html">Fonctionnalités</a></li>
+            </ul>
+            <h4>Moteur</h4>
+            <ul>
+                <li><a href="architecture.html">Architecture</a></li>
+                <li><a href="rendu.html">Pipeline de rendu</a></li>
+                <li><a href="plugins.html">Système de plugins</a></li>
+                <li><a href="cluster.html">Rendu en cluster</a></li>
+            </ul>
+            <h4>Interface</h4>
+            <ul>
+                <li><a href="interface.html">Interface graphique</a></li>
+            </ul>
+            <h4>Référence</h4>
+            <ul>
+                <li><a href="reference.html">Référence des classes</a></li>
+                <li><a href="faq.html">FAQ</a></li>
+            </ul>
+        </aside>
 
     <main class="content">
         <article class="article">
@@ -66,65 +73,32 @@
             </div>
 
             <h2 id="objectif">Objectif du projet</h2>
-            <p>
-                Le Raytracer transforme une description de scène (fichier JSON) en une image. Pour
-                chaque pixel, le moteur&nbsp;:
-            </p>
+            <p>Le Raytracer transforme une description de scène (fichier JSON) en une image. Pour chaque pixel, le moteur&nbsp;:</p>
             <ol>
                 <li>génère un rayon primaire depuis la caméra&nbsp;;</li>
                 <li>cherche l’intersection valide la plus proche parmi la géométrie de la scène&nbsp;;</li>
                 <li>calcule l’ombrage à partir des lumières et de la réponse du matériau&nbsp;;</li>
                 <li>écrit la couleur finale dans le tampon image (exporté en PNG).</li>
             </ol>
-            <p>
-                Le projet se distingue par une <strong>architecture à interfaces</strong> et un
-                <strong>système de plugins chargés à l’exécution</strong> (<code>.so</code>) pour le
-                rendu et l’interface graphique, ainsi qu’une interface interactive permettant d’éditer
-                la scène, y compris les sommets des maillages.
-            </p>
+            <p>Le projet se distingue par une <strong>architecture à interfaces</strong> et un
+                <strong>système de plugins chargés à l’exécution</strong> (<code>.so</code>) pour le rendu et
+                l’interface graphique, ainsi qu’une interface interactive permettant d’éditer la scène, y
+                compris les sommets des maillages.</p>
+
+            <div class="tip"><p>Utilisez la <strong>barre de recherche</strong> en haut (raccourci <kbd>/</kbd>)
+                pour trouver rapidement une option, une classe ou une clé de scène. La documentation existe en
+                <strong>français</strong> et en <strong>anglais</strong> (bouton <span class="pill gray">🌐 EN</span>).</p></div>
 
             <h2 id="apercu">Aperçu des fonctionnalités</h2>
             <div class="cards">
-                <a class="card" href="fonctionnalites.html#primitives">
-                    <div class="icon">🔷</div>
-                    <h3>10 primitives</h3>
-                    <p>Sphère, plan, cube, cylindre, cône, triangle, tore, tanglecube, fractale, maillage <code>.obj</code>.</p>
-                </a>
-                <a class="card" href="fonctionnalites.html#lumieres">
-                    <div class="icon">💡</div>
-                    <h3>Lumières &amp; ombres</h3>
-                    <p>Lumières ponctuelle et directionnelle, rayons d’ombre pour la visibilité.</p>
-                </a>
-                <a class="card" href="fonctionnalites.html#materiaux">
-                    <div class="icon">🎨</div>
-                    <h3>Matériaux PHONG / PBR</h3>
-                    <p>Couleur, spéculaire, réflectivité, transparence, IOR, métallique, rugosité, textures…</p>
-                </a>
-                <a class="card" href="fonctionnalites.html#bvh">
-                    <div class="icon">⚡</div>
-                    <h3>Accélération BVH</h3>
-                    <p>Hiérarchie de volumes englobants construite avant le rendu ; BVH local par maillage.</p>
-                </a>
-                <a class="card" href="architecture.html#plugins">
-                    <div class="icon">🧩</div>
-                    <h3>Plugins .so</h3>
-                    <p>Renderers et interface chargés dynamiquement via <code>dlopen</code>.</p>
-                </a>
-                <a class="card" href="fonctionnalites.html#edition-sommets">
-                    <div class="icon">✏️</div>
-                    <h3>Édition de sommets</h3>
-                    <p>Déplacement interactif des sommets d’un triangle ou d’un maillage dans le viewport.</p>
-                </a>
-                <a class="card" href="fonctionnalites.html#cluster">
-                    <div class="icon">🌐</div>
-                    <h3>Rendu en cluster</h3>
-                    <p>Infrastructure client/serveur pour répartir le rendu par tuiles sur le réseau.</p>
-                </a>
-                <a class="card" href="utilisation.html#headless">
-                    <div class="icon">🖼️</div>
-                    <h3>Mode headless</h3>
-                    <p>Rendu direct vers un fichier PNG sans interface (<code>-r sortie.png</code>).</p>
-                </a>
+                <a class="card" href="fonctionnalites.html#primitives"><div class="icon">🔷</div><h3>10 primitives</h3><p>Sphère, plan, cube, cylindre, cône, triangle, tore, tanglecube, fractale, maillage <code>.obj</code>.</p></a>
+                <a class="card" href="fonctionnalites.html#lumieres"><div class="icon">💡</div><h3>Lumières &amp; ombres</h3><p>Lumières ponctuelle et directionnelle, rayons d’ombre pour la visibilité.</p></a>
+                <a class="card" href="fonctionnalites.html#materiaux"><div class="icon">🎨</div><h3>Matériaux PHONG / PBR</h3><p>Couleur, spéculaire, réflectivité, transparence, IOR, métallique, rugosité, textures…</p></a>
+                <a class="card" href="fonctionnalites.html#bvh"><div class="icon">⚡</div><h3>Accélération BVH</h3><p>Hiérarchie de volumes englobants construite avant le rendu ; BVH local par maillage.</p></a>
+                <a class="card" href="architecture.html#plugins"><div class="icon">🧩</div><h3>Plugins .so</h3><p>Renderers et interface chargés dynamiquement via <code>dlopen</code>.</p></a>
+                <a class="card" href="interface.html#edition-sommets"><div class="icon">✏️</div><h3>Édition de sommets</h3><p>Déplacement interactif des sommets d’un triangle ou d’un maillage dans le viewport.</p></a>
+                <a class="card" href="architecture.html#cluster"><div class="icon">🌐</div><h3>Rendu en cluster</h3><p>Infrastructure client/serveur pour répartir le rendu par tuiles sur le réseau.</p></a>
+                <a class="card" href="utilisation.html#headless"><div class="icon">🖼️</div><h3>Mode headless</h3><p>Rendu direct vers un fichier PNG sans interface (<code>-r sortie.png</code>).</p></a>
             </div>
 
             <h2 id="demarrage">Démarrage rapide</h2>
@@ -136,7 +110,7 @@ make
 
 # Rendu direct vers un PNG (sans interface)
 ./raytracer -r sortie.png tests/configs/subject.json</code></pre>
-            <p>Voir la page <a href="installation.html">Installation</a> pour les prérequis et
+            <p>Voir <a href="installation.html">Installation</a> pour les prérequis et
                <a href="utilisation.html">Utilisation</a> pour le détail des options et du format de scène.</p>
 
             <h2 id="structure">Organisation de la documentation</h2>
@@ -144,19 +118,20 @@ make
             <table>
                 <thead><tr><th>Section</th><th>Contenu</th></tr></thead>
                 <tbody>
-                    <tr><td><a href="installation.html">Installation</a></td><td>Prérequis, dépendances, compilation.</td></tr>
+                    <tr><td><a href="installation.html">Installation</a></td><td>Prérequis, dépendances, compilation, dépannage.</td></tr>
                     <tr><td><a href="utilisation.html">Utilisation</a></td><td>Ligne de commande, format des fichiers de scène, exemples réels.</td></tr>
-                    <tr><td><a href="architecture.html">Architecture</a></td><td>Organisation du code, modules et interactions, pipeline de rendu.</td></tr>
-                    <tr><td><a href="fonctionnalites.html">Fonctionnalités</a></td><td>Primitives, lumières, matériaux, ombres, réflexions, cluster, édition.</td></tr>
-                    <tr><td><a href="reference.html">Référence</a></td><td>Interfaces et classes principales.</td></tr>
+                    <tr><td><a href="architecture.html">Architecture</a></td><td>Organisation du code, modules, outils et interactions, pipeline de rendu, cluster.</td></tr>
+                    <tr><td><a href="fonctionnalites.html">Fonctionnalités</a></td><td>Primitives, lumières, matériaux, ombres, réflexions, BVH, maillages.</td></tr>
+                    <tr><td><a href="interface.html">Interface graphique</a></td><td>Panneaux, composants, fenêtres, gizmos, édition de sommets, raccourcis.</td></tr>
+                    <tr><td><a href="reference.html">Référence</a></td><td>Interfaces, classes principales, types mathématiques.</td></tr>
                     <tr><td><a href="faq.html">FAQ</a></td><td>Problèmes courants et solutions.</td></tr>
                 </tbody>
             </table>
             </div>
 
-            <div class="note"><p>Cette documentation est générée à partir du code réel du projet
-               (Makefile, en-têtes, parseur de scène, exemples de <code>tests/configs/</code>). Une
-               documentation Markdown plus fine existe aussi dans le dossier <code>docs/</code> du dépôt.</p></div>
+            <div class="note"><p>Cette documentation est générée à partir du code réel du projet (Makefile,
+               en-têtes, parseur de scène, exemples de <code>tests/configs/</code>) et de la documentation
+               Markdown du dossier <code>docs/</code>.</p></div>
         </article>
     </main>
 </div>
@@ -167,6 +142,8 @@ make
 </footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="assets/search-index.js"></script>
+<script src="assets/search.js"></script>
 <script src="assets/main.js"></script>
 </body>
 </html>

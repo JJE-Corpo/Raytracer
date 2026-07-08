@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rendu en cluster — Raytracer</title>
+<meta name="description" content="Rendu distribué du Raytracer : un serveur découpe l’image en tuiles et des workers connectés au réseau calculent et renvoient les pixels.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+    <button class="menu-toggle" data-menu-toggle aria-label="Menu">☰</button>
+    <a class="brand" href="index.html"><span class="logo">◐</span> Raytracer <small>docs</small></a>
+    <div class="search">
+        <input id="search-input" type="search" autocomplete="off" spellcheck="false" aria-label="Rechercher">
+        <div id="search-results" class="search-results" role="listbox"></div>
+    </div>
+    <a class="lang-toggle" href="cluster.en.html" aria-label="English" title="English">🌐 EN</a>
+</header>
+
+<div class="layout">
+    <aside class="sidebar">
+            <h4>Démarrer</h4>
+            <ul>
+                <li><a href="index.html">Accueil</a></li>
+                <li><a href="installation.html">Installation</a></li>
+                <li><a href="utilisation.html">Utilisation</a></li>
+            </ul>
+            <h4>Scène &amp; contenu</h4>
+            <ul>
+                <li><a href="format-scene.html">Format de scène</a></li>
+                <li><a href="primitives.html">Primitives</a></li>
+                <li><a href="materiaux.html">Matériaux</a></li>
+                <li><a href="fonctionnalites.html">Fonctionnalités</a></li>
+            </ul>
+            <h4>Moteur</h4>
+            <ul>
+                <li><a href="architecture.html">Architecture</a></li>
+                <li><a href="rendu.html">Pipeline de rendu</a></li>
+                <li><a href="plugins.html">Système de plugins</a></li>
+                <li><a href="cluster.html" class="active">Rendu en cluster</a></li>
+            </ul>
+            <h4>Interface</h4>
+            <ul>
+                <li><a href="interface.html">Interface graphique</a></li>
+            </ul>
+            <h4>Référence</h4>
+            <ul>
+                <li><a href="reference.html">Référence des classes</a></li>
+                <li><a href="faq.html">FAQ</a></li>
+            </ul>
+        </aside>
+
+    <main class="content has-toc">
+        <article class="article">
+            <p class="crumbs"><a href="index.html">Accueil</a> / Rendu en cluster</p>
+            <h1>Rendu en cluster</h1>
+            <p class="lead">Le module cluster (<code>srcs/core/cluster/*</code>, interfaces <code>srcs/common/cluster/*</code>)
+               permet de <strong>répartir le rendu d’une image par tuiles sur plusieurs machines du réseau</strong>.
+               Une machine joue le rôle de <em>serveur</em> : elle détient la scène et distribue les tuiles à rendre.
+               Les autres machines sont des <em>workers</em> (clients) : elles calculent les tuiles reçues et
+               renvoient les pixels au serveur, qui assemble l’image finale.</p>
+
+            <h2 id="vue-ensemble">Vue d’ensemble</h2>
+            <p>Le but du cluster est d’accélérer un rendu en faisant travailler plusieurs ordinateurs en parallèle.
+               L’image est découpée en <strong>tuiles</strong> rectangulaires (taille par défaut <code>32×32</code>),
+               chacune identifiée par un <code>tile_id</code>. Le serveur maintient une file de tuiles à faire et
+               les envoie aux workers connectés&nbsp;; chaque worker rend sa tuile localement puis renvoie le tableau
+               de pixels correspondant. Le serveur accumule ces pixels dans le tampon d’image.</p>
+            <p>Le rendu est <strong>progressif par échantillons</strong> (<code>sample</code>)&nbsp;: chaque tuile est
+               associée à un numéro d’échantillon, et une nouvelle passe complète peut être relancée pour affiner le
+               résultat. La coordination des tuiles est gérée par <code>ClusterRenderCoordinator</code>, et
+               l’accumulation par <code>ClusterRenderer</code> (qui implémente à la fois <code>ISceneRenderer</code>
+               et <code>IClusterTileSink</code>).</p>
+            <div class="note"><p>Le mode cluster est <strong>optionnel</strong> et s’active en ligne de commande
+               (<code>--server</code> / <code>--connect</code>) ou depuis l’interface. Sans ces options, le Raytracer
+               fonctionne en solo, exactement comme décrit dans le <a href="rendu.html">pipeline de rendu</a>.</p></div>
+
+            <h2 id="roles">Serveur et workers</h2>
+            <p>Le module distingue deux rôles, exposés par <code>ClusterMode</code>
+               (<code>CLIENT</code>, <code>SERVER</code>, <code>NONE</code>)&nbsp;:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Rôle</th><th>Classe</th><th>Responsabilités</th></tr></thead>
+                <tbody>
+                    <tr>
+                        <td><span class="pill green">Serveur</span> (hôte)</td>
+                        <td><code>ClusterServer</code> (<code>server/*</code>)</td>
+                        <td>Détient la scène, écoute les connexions TCP entrantes, gère une liste de
+                            <code>Connection</code>, distribue les tuiles (<code>dispatchRenderRequests</code>),
+                            reçoit les pixels et diffuse l’état de rendu à tous les workers.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="pill">Worker</span> (client)</td>
+                        <td><code>ClusterClient</code> (<code>client/*</code>)</td>
+                        <td>Se connecte au serveur, récupère la scène, attend des demandes de tuiles, rend chaque
+                            tuile dans un thread dédié (<code>renderLoop</code>) et renvoie les pixels.</td>
+                    </tr>
+                </tbody>
+            </table>
+            </div>
+            <p>Côté serveur, chaque worker est représenté par une <code>Connection</code> qui suit un
+               <code>ConnectionState</code> (<code>PENDING</code>, <code>CONNECTED</code>, <code>DISCONNECTED</code>,
+               <code>REFUSED</code>). Côté worker, le client suit son propre <code>ClientState</code>
+               (au fil de la session&nbsp;: récupération des données, réception, rendu, envoi, repos) et l’état de
+               rendu du serveur (<code>ServerRenderState</code>&nbsp;: <code>IDLING</code> ou <code>RENDERING</code>).</p>
+
+            <h2 id="api">API — IClusterModule</h2>
+            <p>Le point d’entrée est l’interface <code>IClusterModule</code>
+               (<code>srcs/common/cluster/IClusterModule.hpp</code>), implémentée par <code>ClusterModule</code>.
+               Elle possède un serveur <em>ou</em> un client (jamais les deux à la fois) et refuse de démarrer si un
+               mode est déjà actif.</p>
+            <pre><code class="language-cpp">namespace rc
+{
+    enum class ClusterMode { CLIENT, SERVER, NONE };
+
+    class IClusterModule
+    {
+        public:
+            virtual ClusterMode   getClusterMode()   const = 0;
+            virtual IClusterServer *getClusterServer() const = 0;
+            virtual IClusterClient *getClusterClient() const = 0;
+
+            // Démarre un serveur qui détient `scene` ; port 0 = port automatique.
+            virtual void startServer(IScene *scene, size_t port = 0) = 0;
+
+            // Rejoint un serveur en tant que worker.
+            virtual void joinCluster(const std::string &address, size_t port) = 0;
+
+            // Quitte le cluster (uniquement valable en mode CLIENT).
+            virtual void leaveCluster() = 0;
+    };
+}</code></pre>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Méthode</th><th>Effet</th></tr></thead>
+                <tbody>
+                    <tr><td><code>startServer(scene, port)</code></td><td>Crée un <code>ClusterServer</code> pour la scène et le démarre&nbsp;; passe en mode <code>SERVER</code>. Lève une exception si un cluster est déjà actif ou si le démarrage échoue.</td></tr>
+                    <tr><td><code>joinCluster(address, port)</code></td><td>Crée un <code>ClusterClient</code> et se connecte à <code>address:port</code>&nbsp;; passe en mode <code>CLIENT</code>. Lève une exception en cas d’échec de connexion.</td></tr>
+                    <tr><td><code>leaveCluster()</code></td><td>Déconnecte et détruit le client, repasse en mode <code>NONE</code>. Lève une exception si l’on n’est pas connecté en tant que client.</td></tr>
+                    <tr><td><code>getClusterMode()</code></td><td>Renvoie le mode courant (<code>CLIENT</code> / <code>SERVER</code> / <code>NONE</code>).</td></tr>
+                    <tr><td><code>getClusterServer()</code> / <code>getClusterClient()</code></td><td>Accès à l’instance active (ou <code>nullptr</code>).</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <h2 id="protocole">Déroulé d’une session</h2>
+            <p>La communication passe par des sockets TCP. Chaque message est encadré par un en-tête de <strong>6 octets</strong>
+               (identifiant de paquet sur 2 octets + taille de la charge utile sur 4 octets, en ordre réseau), suivi de la
+               charge utile sérialisée. Le déroulé nominal d’une session est le suivant&nbsp;:</p>
+            <ol>
+                <li><strong>Connexion</strong> — le worker ouvre une connexion TCP vers le serveur et envoie
+                    <code>ClientJoinRequest</code>.</li>
+                <li><strong>Acceptation</strong> — le serveur marque la connexion <code>CONNECTED</code> et répond
+                    <code>ServerJoinResponse</code>.</li>
+                <li><strong>Demande de scène</strong> — le worker envoie <code>ClientFetchSceneData</code>.</li>
+                <li><strong>Envoi de la scène</strong> — le serveur sérialise la scène en JSON
+                    (<code>SceneRegister</code>) et renvoie <code>ServerSceneData</code>.</li>
+                <li><strong>Préparation</strong> — le worker analyse le JSON (<code>SceneParser</code>), construit le
+                    BVH et passe au repos (<code>IDLING</code>).</li>
+                <li><strong>Distribution</strong> — pendant le rendu, le serveur assigne des tuiles avec
+                    <code>ServerRenderRequest</code> (identifiant, échantillon, coordonnées).</li>
+                <li><strong>Retour des pixels</strong> — le worker rend la tuile et renvoie <code>ClientTileData</code>
+                    (les pixels de la tuile).</li>
+                <li><strong>Assemblage</strong> — le serveur valide la tuile (<code>markComplete</code>) et accumule
+                    les pixels dans l’image (<code>applyTileSample</code>).</li>
+                <li><strong>État &amp; annulation</strong> — le serveur diffuse son état
+                    (<code>ServerRenderState</code>) et peut annuler les tuiles en cours (<code>ServerCancelRender</code>).</li>
+            </ol>
+            <pre><code class="language-text">Worker (client)                         Serveur (détient la scène)
+     |                                            |
+     |  1. connexion TCP + ClientJoinRequest      |
+     | -----------------------------------------&gt; |
+     |                                            |  &rarr; CONNECTED
+     |        2. ServerJoinResponse               |
+     | &lt;----------------------------------------- |
+     |                                            |
+     |     3. ClientFetchSceneData                |
+     | -----------------------------------------&gt; |
+     |                                            |
+     |     4. ServerSceneData (scène en JSON)     |
+     | &lt;----------------------------------------- |
+     |  (parseScene + buildBvh, état IDLING)      |
+     |                                            |
+     |     5. ServerRenderRequest (tuile)         |
+     | &lt;----------------------------------------- |
+     |  (render_tile_sample sur la tuile)         |
+     |     6. ClientTileData (pixels)             |
+     | -----------------------------------------&gt; |
+     |                                            |  markComplete + applyTileSample
+     |          ...  autres tuiles  ...           |
+     |   ServerRenderState / ServerCancelRender   |
+     | &lt;----------------------------------------- |</code></pre>
+            <p>Une file de tuiles avec délai de garde (<code>requeueTimedOut</code>, ~5&nbsp;s) permet de
+               réassigner à un autre worker une tuile qui n’est pas revenue à temps, ce qui rend le rendu tolérant aux
+               workers lents ou perdus.</p>
+
+            <h2 id="paquets">Types de paquets</h2>
+            <p>Les paquets sont typés par <code>PacketID</code> et reconstruits à la réception par
+               <code>PacketFactory::createPacket(id, payload)</code>. Chaque paquet implémente <code>IPacket</code>
+               (<code>serialize</code> / <code>deserialize</code> / <code>handle</code> / <code>getId</code>) et
+               s’auto-traite via un <code>IPacketHandler</code> (la connexion côté serveur, le client côté worker).
+               Le tableau ci-dessous liste les paquets <strong>réellement enregistrés</strong> dans la fabrique&nbsp;:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Paquet</th><th>Sens</th><th>Contenu</th></tr></thead>
+                <tbody>
+                    <tr><td><code>PacketClientJoinRequest</code></td><td><span class="pill">worker → serveur</span></td><td>Demande de connexion (charge utile vide).</td></tr>
+                    <tr><td><code>PacketServerJoinResponse</code></td><td><span class="pill green">serveur → worker</span></td><td>Acceptation de la connexion (charge utile vide).</td></tr>
+                    <tr><td><code>PacketClientFetchSceneData</code></td><td><span class="pill">worker → serveur</span></td><td>Demande d’envoi de la scène (charge utile vide).</td></tr>
+                    <tr><td><code>PacketServerSceneData</code></td><td><span class="pill green">serveur → worker</span></td><td>Scène complète sérialisée en JSON (<code>sceneData</code>).</td></tr>
+                    <tr><td><code>PacketServerClusterData</code></td><td><span class="pill green">serveur → worker</span></td><td>Nombre de workers connectés (<code>nb_clients</code>).</td></tr>
+                    <tr><td><code>PacketServerRenderRequest</code></td><td><span class="pill green">serveur → worker</span></td><td>Demande de rendu d’une tuile&nbsp;: <code>tile_id</code>, <code>sample</code>, <code>start_x</code>, <code>start_y</code>, <code>end_x</code>, <code>end_y</code>.</td></tr>
+                    <tr><td><code>PacketClientTileData</code></td><td><span class="pill">worker → serveur</span></td><td>Pixels calculés d’une tuile&nbsp;: mêmes identifiants/coordonnées + tableau <code>pixels</code> (<code>ColorF</code>).</td></tr>
+                    <tr><td><code>PacketServerRenderState</code></td><td><span class="pill green">serveur → worker</span></td><td>État de rendu du serveur (<code>IDLING</code> / <code>RENDERING</code>).</td></tr>
+                    <tr><td><code>PacketServerCancelRender</code></td><td><span class="pill green">serveur → worker</span></td><td>Annulation du rendu en cours (charge utile vide).</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <div class="note"><p>L’énumération <code>PacketID</code> réserve aussi deux identifiants
+               (<code>CLIENT_FETCH_CLUSTER_DATA</code> et <code>SERVER_TILE_DATA</code>) qui ne sont pas encore
+               enregistrés dans <code>PacketFactory</code> — ils n’ont donc pas d’effet à ce stade.</p></div>
+            <p>Format sur le fil (identique dans les deux sens)&nbsp;:</p>
+            <pre><code class="language-text">┌───────────────┬────────────────────┬───────────────────────┐
+│ id (2 octets) │ taille (4 octets)  │ charge utile (N octets)│
+└───────────────┴────────────────────┴───────────────────────┘
+      uint16            uint32              sérialisation IPacket
+   (ordre réseau)   (ordre réseau)</code></pre>
+
+            <h2 id="demarrer">Démarrer un cluster</h2>
+            <p>Les options sont analysées par <code>srcs/config/Options.hpp</code>. Le fichier de scène est un argument
+               positionnel optionnel&nbsp;; sans lui, une scène par défaut est chargée.</p>
+            <p><strong>Sur la machine serveur</strong> (elle détient la scène)&nbsp;:</p>
+            <pre><code class="language-bash"># Démarre l'interface et un serveur de cluster sur le port 8080
+./raytracer --server 8080 scenes/demo.cfg
+
+# Port automatique (choisi par le système) si l'on omet le numéro
+./raytracer --server scenes/demo.cfg</code></pre>
+            <p><strong>Sur chaque worker</strong> (il rejoint le serveur)&nbsp;:</p>
+            <pre><code class="language-bash"># Rejoint le serveur situé à l'IP et au port indiqués
+./raytracer --connect 192.168.1.10 8080</code></pre>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Option</th><th>Effet</th></tr></thead>
+                <tbody>
+                    <tr><td><code>--server [PORT]</code></td><td>Lance l’interface et démarre le serveur (<code>startServer</code>). <code>PORT</code> est optionnel (défaut&nbsp;: port automatique).</td></tr>
+                    <tr><td><code>--connect IP PORT</code></td><td>Lance l’interface et rejoint le serveur <code>IP:PORT</code> (<code>joinCluster</code>). <code>IP</code> <em>et</em> <code>PORT</code> sont obligatoires.</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <div class="warn"><p><strong>Règles d’exclusion.</strong> Le mode headless <code>-r</code> / <code>--render</code>
+               <strong>ne peut pas</strong> être combiné avec <code>--server</code> ni <code>--connect</code>
+               (le cluster nécessite l’interface). De plus, <code>--server</code> et <code>--connect</code> sont
+               <strong>mutuellement exclusifs</strong> — une instance est serveur <em>ou</em> worker, jamais les deux.</p></div>
+
+            <h2 id="interface">Rejoindre depuis l’interface</h2>
+            <p>En plus de la ligne de commande, on peut rejoindre un cluster depuis l’interface graphique via la
+               fenêtre <code>JoinClusterWindow</code>
+               (<code>srcs/plugins/user_interface/windows/JoinClusterWindow.hpp</code>). C’est une petite fenêtre
+               « Join a cluster » (400×180) proposant&nbsp;:</p>
+            <ul>
+                <li>un champ <strong>IP</strong> (adresse du serveur)&nbsp;;</li>
+                <li>un champ <strong>Port</strong>, restreint aux entiers non signés&nbsp;;</li>
+                <li>un bouton <strong>JOIN</strong>.</li>
+            </ul>
+            <p>La validation d’un champ ou le clic sur <kbd>JOIN</kbd> déclenche un rappel
+               <code>windowCallback(ip, port)</code> qui appelle in fine <code>joinCluster(ip, port)</code> sur le
+               module. Valider le champ IP fait passer le focus au champ Port, et le port doit être renseigné pour que
+               la connexion soit tentée.</p>
+
+            <h2 id="limites">Limites &amp; comportement</h2>
+            <p>D’après le code actuel&nbsp;:</p>
+            <ul>
+                <li><strong>IPv4 uniquement</strong> — les sockets utilisent <code>AF_INET</code> /
+                    <code>inet_pton(AF_INET, …)</code>&nbsp;; les adresses IPv6 ne sont pas gérées.</li>
+                <li><strong>Transport en clair</strong> — communication TCP brute, sans authentification ni
+                    chiffrement. À réserver à un réseau local de confiance.</li>
+                <li><strong>Scène transmise en JSON</strong> — le serveur re-sérialise la scène via
+                    <code>SceneRegister</code> et le worker la reconstruit avec <code>SceneParser</code>&nbsp;; chaque
+                    worker reconstruit son propre BVH à la réception.</li>
+                <li><strong>Tolérance aux workers lents</strong> — une tuile non revenue avant le délai de garde
+                    (~5&nbsp;s) est réassignée&nbsp;; la gestion fine des déconnexions en cours de rendu reste
+                    minimale (<code>handleClientDisconnect</code> est actuellement un point d’extension quasi vide).</li>
+                <li><strong>Un seul rôle à la fois</strong> — le module refuse de démarrer un serveur ou de rejoindre
+                    un cluster s’il est déjà en mode <code>SERVER</code> ou <code>CLIENT</code>.</li>
+                <li><strong>Rendu piloté par le serveur</strong> — les workers ne rendent que les tuiles que le
+                    serveur leur assigne&nbsp;; ils restent au repos tant qu’aucune demande n’arrive.</li>
+            </ul>
+
+            <div class="cards">
+                <a class="card" href="architecture.html#cluster"><div class="icon">🧭</div><h3>Architecture</h3><p>Où le module cluster s’insère dans l’organisation générale du code.</p></a>
+                <a class="card" href="rendu.html"><div class="icon">🎞️</div><h3>Pipeline de rendu</h3><p>Comment une tuile est calculée localement, avant d’être distribuée.</p></a>
+                <a class="card" href="utilisation.html"><div class="icon">⌨️</div><h3>Utilisation</h3><p>Options de ligne de commande et lancement du programme.</p></a>
+            </div>
+        </article>
+
+        <nav class="toc" aria-label="Sommaire">
+            <strong>Sur cette page</strong>
+            <ul>
+                <li><a href="#vue-ensemble">Vue d’ensemble</a></li>
+                <li><a href="#roles">Serveur et workers</a></li>
+                <li><a href="#api">API — IClusterModule</a></li>
+                <li><a href="#protocole">Déroulé d’une session</a></li>
+                <li><a href="#paquets">Types de paquets</a></li>
+                <li><a href="#demarrer">Démarrer un cluster</a></li>
+                <li><a href="#interface">Rejoindre depuis l’interface</a></li>
+                <li><a href="#limites">Limites &amp; comportement</a></li>
+            </ul>
+        </nav>
+    </main>
+</div>
+
+<footer class="site-footer">
+    <span>Raytracer — documentation technique</span>
+    <span>C++17 · SFML · Architecture à plugins</span>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="assets/search-index.js"></script>
+<script src="assets/search.js"></script>
+<script src="assets/main.js"></script>
+</body>
+</html>
